@@ -4,7 +4,7 @@ import re
 from datetime import time
 from pathlib import Path
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from checklists.models import MetricType, Position, TaskTemplate, UserProfile
 
@@ -60,12 +60,6 @@ def parse_time_range(text):
 
 
 def upsert_user(username, password, display_name, is_admin=False, position=None):
-    """Cria/atualiza usuário inicial.
-
-    Em instalações novas, somente o usuário técnico `checkupadmin` é criado
-    automaticamente. Demais administradores e usuários operacionais devem ser
-    cadastrados pela tela Usuários, com login nominal.
-    """
     user, created = User.objects.get_or_create(username=username, defaults={
         'first_name': display_name,
         'is_staff': is_admin,
@@ -104,21 +98,19 @@ class Command(BaseCommand):
             position.save()
             positions[code] = position
 
-        upsert_user(
-            'checkupadmin',
-            os.environ.get('INITIAL_CHECKUPADMIN_PASSWORD', 'Trocar@Senha2026'),
-            'Administrador Checkups',
-            True,
-        )
+        initial_password = os.environ.get('INITIAL_CHECKLISTADMIN_PASSWORD') or os.environ.get('INITIAL_CHECKUPADMIN_PASSWORD')
+        if not initial_password:
+            raise CommandError('Defina INITIAL_CHECKLISTADMIN_PASSWORD no ambiente antes de executar o seed inicial.')
+        upsert_user('checklistadmin', initial_password, 'Administrador Checklist', True)
 
-        # Usuários administrativos pessoais não são mais criados automaticamente.
-        # Se já existirem de versões anteriores, permanecem ativos para evitar
-        # bloqueio inesperado. O checkupadmin pode editar/desativar pela tela Usuários.
+        # Usuários administrativos pessoais não são criados automaticamente.
         # Usuários operacionais genéricos antigos são desativados para evitar login compartilhado.
-        for old_username in ['atendente.comercial', 'instrutor.aula.livre']:
+        for old_username in ['atendente.comercial', 'instrutor.aula.livre', 'checkupadmin']:
             try:
                 old_user = User.objects.get(username=old_username)
             except User.DoesNotExist:
+                continue
+            if old_username == 'checkupadmin' and not User.objects.filter(username='checklistadmin').exists():
                 continue
             old_user.is_active = False
             old_user.save(update_fields=['is_active'])
@@ -164,7 +156,6 @@ class Command(BaseCommand):
                     )
                     total += 1
 
-        # Indicadores iniciais mensais. Podem ser editados no Admin.
         atendente = positions['atendente-comercial']
         instrutor = positions['instrutor-aula-livre']
         metrics = [
