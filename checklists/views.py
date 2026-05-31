@@ -21,7 +21,8 @@ from .activity_import import (
 )
 from .services import (
     absence_for_user_on_date, create_due_occurrences, create_occurrences_for_positions,
-    filter_absence_ignored_occurrences, get_user_position, is_admin_user, metrics_summary,
+    filter_absence_ignored_occurrences, get_user_position, is_admin_user,
+    METRIC_PERIOD_CHOICES, METRIC_PERIOD_MONTHLY, metric_dashboard_data,
     month_range, monthly_summary, overdue_occurrences, position_absences_on_date,
     position_is_fully_absent_on_date, status_duration_summary, user_is_absent_on_date,
     visible_positions, working_days_between,
@@ -53,6 +54,13 @@ def _parse_month_year(request):
     year = int(request.GET.get('ano', today.year))
     month = int(request.GET.get('mes', today.month))
     return year, month
+
+
+def _parse_metric_period(request):
+    period = request.GET.get('periodo') or METRIC_PERIOD_MONTHLY
+    if period not in dict(METRIC_PERIOD_CHOICES):
+        period = METRIC_PERIOD_MONTHLY
+    return period, _parse_date(request.GET.get('data'))
 
 
 def _selected_position(request):
@@ -94,14 +102,18 @@ def dashboard(request):
         return redirect('activities')
 
     today = timezone.localdate()
-    year, month = _parse_month_year(request)
+    metric_period, reference_date = _parse_metric_period(request)
     positions = visible_positions(request.user)
+    selected_position_id = request.GET.get('cargo') or ''
+    if selected_position_id and selected_position_id.isdigit():
+        positions = positions.filter(pk=selected_position_id)
+    year, month = reference_date.year, reference_date.month
 
     create_occurrences_for_positions(positions, today)
 
     summary = monthly_summary(year, month, positions)
     overdue = overdue_occurrences(positions, limit=20)
-    metric_rows = metrics_summary(year, month, positions)
+    metric_dashboard = metric_dashboard_data(metric_period, reference_date, positions)
     recent_candidates = ChecklistOccurrence.objects.filter(position__in=positions).select_related('position', 'template').order_by('-updated_at')[:80]
     recent = filter_absence_ignored_occurrences(recent_candidates)[:20]
 
@@ -109,9 +121,13 @@ def dashboard(request):
         'today': today,
         'year': year,
         'month': month,
-        'positions': positions,
+        'reference_date': reference_date,
+        'positions': visible_positions(request.user),
+        'selected_position_id': selected_position_id,
+        'period_choices': METRIC_PERIOD_CHOICES,
+        'metric_period': metric_dashboard['period'],
+        'metric_dashboard': metric_dashboard,
         'summary': summary,
-        'metric_rows': metric_rows,
         'overdue': overdue,
         'recent': recent,
         'is_admin': is_admin_user(request.user),
@@ -530,6 +546,8 @@ def metrics(request):
     position = _selected_position(request)
     if not position:
         return HttpResponseForbidden('Usuário sem cargo vinculado.')
+    metric_period, reference_date = _parse_metric_period(request)
+    dashboard_user = None if is_admin_user(request.user) else request.user
 
     if request.method == 'POST':
         form = MetricRecordForm(request.POST, request.FILES)
@@ -548,7 +566,7 @@ def metrics(request):
             obj.save()
             ActivityLog.objects.create(actor=request.user, position=position, action='Indicador registrado', object_type='MetricRecord', object_id=str(obj.id), details=f'Responsável: {obj.executor_full_name}')
             messages.success(request, 'Indicador registrado.')
-            return redirect(f'{request.path}?cargo={position.id}')
+            return redirect(f'{request.path}?cargo={position.id}&periodo={metric_period}&data={reference_date.isoformat()}')
     else:
         form = MetricRecordForm(initial={'date': timezone.localdate()})
         applicable_metrics = (
@@ -560,11 +578,16 @@ def metrics(request):
         form.fields['metric'].queryset = applicable_metrics
 
     records = MetricRecord.objects.filter(position=position).select_related('metric', 'metric__activity').order_by('-date', '-created_at')[:100]
+    metric_dashboard = metric_dashboard_data(metric_period, reference_date, [position], user=dashboard_user)
     return render(request, 'checklists/metrics.html', {
         'position': position,
         'positions': positions,
         'form': form,
         'applicable_metrics': applicable_metrics,
+        'period_choices': METRIC_PERIOD_CHOICES,
+        'metric_period': metric_dashboard['period'],
+        'reference_date': reference_date,
+        'metric_dashboard': metric_dashboard,
         'records': records,
         'is_admin': is_admin_user(request.user),
     })

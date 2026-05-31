@@ -2,8 +2,56 @@
 {% block content %}
 <div class="page-title">
   <div><h1>Indicadores</h1><p class="muted">Registre números operacionais do cargo. O funcionário será identificado pelo login atual.</p></div>
-  <form method="get" class="filters">{% if is_admin %}<select class="input" name="cargo">{% for p in positions %}<option value="{{ p.id }}" {% if p.id == position.id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select>{% endif %}<button class="btn">Abrir</button></form>
+  <form method="get" class="filters">
+    <select class="input" name="periodo">
+      {% for value,label in period_choices %}
+        <option value="{{ value }}" {% if metric_period == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input class="input" type="date" name="data" value="{{ reference_date|date:'Y-m-d' }}">
+    {% if is_admin %}<select class="input" name="cargo">{% for p in positions %}<option value="{{ p.id }}" {% if p.id == position.id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select>{% endif %}
+    <button class="btn">Abrir</button>
+  </form>
 </div>
+
+<section class="panel">
+  <h2>Metas e realizado — {{ metric_dashboard.period_label }} ({{ metric_dashboard.start|date:"d/m/Y" }} a {{ metric_dashboard.end|date:"d/m/Y" }})</h2>
+  <div class="grid cards">
+    {% for total in metric_dashboard.position_totals %}
+    <article class="card">
+      <h3>{{ total.position }}</h3>
+      <div class="metric-big">{% if total.rate != None %}{{ total.rate }}%{% else %}-{% endif %}</div>
+      <p class="muted">{{ total.metric_count }} indicador(es)</p>
+      <div class="statline"><span>Realizado</span><strong>{{ total.value|floatformat:2 }}</strong></div>
+      <div class="statline"><span>Meta</span><strong>{{ total.target|floatformat:2 }}</strong></div>
+    </article>
+    {% empty %}
+    <article class="card"><p>Nenhum indicador ativo para este cargo.</p></article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>{% if is_admin %}Indicadores no período{% else %}Meus indicadores no período{% endif %}</h2>
+  <table>
+    <thead><tr><th>Área</th><th>Indicador</th><th>Atividade</th><th>Frequência</th><th>Realizado</th><th>Meta</th><th>%</th></tr></thead>
+    <tbody>
+      {% for m in metric_dashboard.metric_rows %}
+      <tr>
+        <td>{{ m.area }}</td>
+        <td>{{ m.metric }}</td>
+        <td>{{ m.activity|default:"-" }}</td>
+        <td>{{ m.frequency }}</td>
+        <td>{{ m.value|floatformat:2 }} {{ m.unit }}</td>
+        <td>{{ m.target|floatformat:2 }} {{ m.unit }}</td>
+        <td>{% if m.rate != None %}{{ m.rate }}%{% else %}-{% endif %}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7">Nenhum indicador ativo para este cargo.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
 
 <section class="panel">
   <h2>Indicadores aplicáveis — {{ position.name }}</h2>

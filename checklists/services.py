@@ -1,14 +1,28 @@
+from calendar import monthrange as calendar_monthrange
 from collections import defaultdict
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 from .models import (
     ChecklistOccurrence, ChecklistOccurrenceStatusEvent, EmployeeAbsence,
-    MetricRecord, Position, TaskTemplate, UserProfile,
+    MetricRecord, MetricType, Position, TaskTemplate, UserProfile,
 )
 
 User = get_user_model()
+
+METRIC_PERIOD_DAILY = 'diario'
+METRIC_PERIOD_WEEKLY = 'semanal'
+METRIC_PERIOD_MONTHLY = 'mensal'
+METRIC_PERIOD_ANNUAL = 'anual'
+METRIC_PERIOD_CHOICES = [
+    (METRIC_PERIOD_DAILY, 'Diário'),
+    (METRIC_PERIOD_WEEKLY, 'Semanal'),
+    (METRIC_PERIOD_MONTHLY, 'Mensal'),
+    (METRIC_PERIOD_ANNUAL, 'Anual'),
+]
+METRIC_PERIOD_LABELS = dict(METRIC_PERIOD_CHOICES)
 
 
 def get_profile(user):
@@ -208,6 +222,25 @@ def month_range(year, month):
     return start, end
 
 
+def metric_period_range(period, reference_date=None):
+    if period not in METRIC_PERIOD_LABELS:
+        period = METRIC_PERIOD_MONTHLY
+    reference_date = reference_date or timezone.localdate()
+
+    if period == METRIC_PERIOD_DAILY:
+        start = end = reference_date
+    elif period == METRIC_PERIOD_WEEKLY:
+        start = reference_date - timedelta(days=reference_date.weekday())
+        end = start + timedelta(days=6)
+    elif period == METRIC_PERIOD_ANNUAL:
+        start = date(reference_date.year, 1, 1)
+        end = date(reference_date.year, 12, 31)
+    else:
+        start, end = month_range(reference_date.year, reference_date.month)
+
+    return start, end, METRIC_PERIOD_LABELS[period], period
+
+
 def monthly_summary(year, month, positions):
     start, end = month_range(year, month)
     qs = ChecklistOccurrence.objects.filter(date__range=(start, end), position__in=positions).select_related('position')
@@ -262,3 +295,178 @@ def metrics_summary(year, month, positions):
         item['rate'] = round((item['value'] / target) * 100, 1) if target else None
         rows.append(item)
     return sorted(rows, key=lambda x: (x['position'], x['metric']))
+
+
+def _quantize_moneyless(value, places='0.01'):
+    return Decimal(value).quantize(Decimal(places), rounding=ROUND_HALF_UP)
+
+
+def _rate(value, target):
+    if not target:
+        return None
+    return _quantize_moneyless((value / target) * Decimal('100'), '0.1')
+
+
+def _days_in_year(year):
+    return (date(year + 1, 1, 1) - date(year, 1, 1)).days
+
+
+def _month_factor(start, end):
+    if start.year == end.year and start.month == end.month:
+        _, days_in_month = calendar_monthrange(start.year, start.month)
+        return Decimal((end - start).days + 1) / Decimal(days_in_month)
+    return Decimal((end.year - start.year) * 12 + end.month - start.month + 1)
+
+
+def metric_target_for_period(metric, start, end):
+    """Calcula meta proporcional do indicador para o intervalo selecionado.
+
+    O valor de meta cadastrado no indicador é interpretado conforme a frequência
+    configurada nele: diária, semanal, mensal ou anual.
+    """
+    base = Decimal(metric.monthly_target or 0)
+    days = Decimal((end - start).days + 1)
+    if metric.frequency == MetricType.FREQ_DAILY:
+        factor = days
+    elif metric.frequency == MetricType.FREQ_WEEKLY:
+        factor = days / Decimal('7')
+    elif metric.frequency == MetricType.FREQ_ANNUAL:
+        if start.year == end.year:
+            factor = days / Decimal(_days_in_year(start.year))
+        else:
+            factor = Decimal('0')
+            cursor = start
+            while cursor <= end:
+                year_end = min(date(cursor.year, 12, 31), end)
+                factor += Decimal((year_end - cursor).days + 1) / Decimal(_days_in_year(cursor.year))
+                cursor = year_end + timedelta(days=1)
+    else:
+        factor = _month_factor(start, end)
+    return _quantize_moneyless(base * factor)
+
+
+def metric_dashboard_data(period, reference_date, positions, user=None):
+    start, end, period_label, period = metric_period_range(period, reference_date)
+    positions = list(positions)
+    position_ids = [position.id for position in positions]
+
+    metrics = list(
+        MetricType.objects.filter(active=True)
+        .filter(Q(position__in=positions) | Q(position__isnull=True))
+        .select_related('position', 'activity')
+        .order_by('position__name', 'area', 'name')
+    )
+
+    profiles_by_position = defaultdict(list)
+    if user:
+        profile = get_profile(user)
+        if profile and profile.position_id in position_ids:
+            profiles_by_position[profile.position_id].append(profile)
+    else:
+        profiles = UserProfile.objects.filter(
+            system_role=UserProfile.ROLE_OPERATOR,
+            position_id__in=position_ids,
+            active=True,
+            user__is_active=True,
+        ).select_related('user', 'position').order_by('position__name', 'display_name')
+        for profile in profiles:
+            profiles_by_position[profile.position_id].append(profile)
+
+    records = MetricRecord.objects.filter(
+        date__range=(start, end),
+        position_id__in=position_ids,
+    ).select_related('metric', 'position', 'created_by', 'created_by__userprofile')
+    if user:
+        records = records.filter(created_by=user)
+
+    record_totals = defaultdict(Decimal)
+    user_totals = defaultdict(Decimal)
+    user_labels = {}
+    for record in records:
+        record_totals[(record.position_id, record.metric_id)] += Decimal(record.value or 0)
+        user_id = record.created_by_id or 0
+        user_name = record.executor_full_name or 'Sem usuário'
+        if record.created_by_id:
+            profile = get_profile(record.created_by)
+            if profile and profile.display_name:
+                user_name = profile.display_name
+            else:
+                user_name = record.created_by.get_full_name().strip() or record.created_by.username
+        user_totals[(record.position_id, record.metric_id, user_id)] += Decimal(record.value or 0)
+        user_labels[(record.position_id, user_id)] = user_name
+
+    rows = []
+    user_rows = []
+    totals_by_position = {}
+    for position in positions:
+        profiles = profiles_by_position.get(position.id, [])
+        operator_count = len(profiles) if profiles else 1
+        totals_by_position[position.id] = {
+            'position': position.name,
+            'target': Decimal('0'),
+            'value': Decimal('0'),
+            'metric_count': 0,
+            'operator_count': len(profiles),
+        }
+
+        applicable_metrics = [
+            metric for metric in metrics
+            if metric.position_id in (None, position.id)
+        ]
+        for metric in applicable_metrics:
+            user_target = metric_target_for_period(metric, start, end)
+            target = user_target if user else user_target * Decimal(operator_count)
+            value = record_totals.get((position.id, metric.id), Decimal('0'))
+            row = {
+                'position_id': position.id,
+                'position': position.name,
+                'area': metric.area,
+                'metric': metric.name,
+                'activity': metric.activity.title if metric.activity else '',
+                'frequency': metric.get_frequency_display(),
+                'unit': metric.unit,
+                'target': target,
+                'value': value,
+                'rate': _rate(value, target),
+            }
+            rows.append(row)
+            totals_by_position[position.id]['target'] += target
+            totals_by_position[position.id]['value'] += value
+            totals_by_position[position.id]['metric_count'] += 1
+
+            if not user and len(profiles) > 1:
+                for profile in profiles:
+                    person_value = user_totals.get((position.id, metric.id, profile.user_id), Decimal('0'))
+                    user_rows.append({
+                        'position': position.name,
+                        'user': profile.display_name,
+                        'area': metric.area,
+                        'metric': metric.name,
+                        'activity': metric.activity.title if metric.activity else '',
+                        'unit': metric.unit,
+                        'target': user_target,
+                        'value': person_value,
+                        'rate': _rate(person_value, user_target),
+                    })
+
+    for item in totals_by_position.values():
+        item['rate'] = _rate(item['value'], item['target'])
+        item['target'] = _quantize_moneyless(item['target'])
+        item['value'] = _quantize_moneyless(item['value'])
+
+    for row in rows:
+        row['target'] = _quantize_moneyless(row['target'])
+        row['value'] = _quantize_moneyless(row['value'])
+    for row in user_rows:
+        row['target'] = _quantize_moneyless(row['target'])
+        row['value'] = _quantize_moneyless(row['value'])
+
+    return {
+        'period': period,
+        'period_label': period_label,
+        'start': start,
+        'end': end,
+        'position_totals': sorted(totals_by_position.values(), key=lambda item: item['position']),
+        'metric_rows': sorted(rows, key=lambda item: (item['position'], item['area'], item['metric'])),
+        'user_rows': sorted(user_rows, key=lambda item: (item['position'], item['user'], item['metric'])),
+    }
