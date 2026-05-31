@@ -1,6 +1,6 @@
 # Checklist de Teste de Produção
 
-Este documento deve ser usado antes de colocar o sistema Checkups em uso oficial na My Robot Barra da Tijuca.
+Este documento deve ser usado antes de colocar o sistema Checklist em uso oficial na My Robot Barra da Tijuca.
 
 O objetivo é validar instalação, autenticação, cadastro de funcionários, checklists, evidências, relatórios, backup e restauração.
 
@@ -12,7 +12,7 @@ Confirmar:
 - [ ] Servidor atualizado com `sudo apt update && sudo apt upgrade -y`.
 - [ ] Docker instalado.
 - [ ] Usuário operacional adicionado ao grupo `docker`.
-- [ ] Projeto clonado em `/opt/checkups`.
+- [ ] Projeto clonado em `/opt/checklist`.
 - [ ] Arquivo `.env` criado a partir de `.env.example`.
 - [ ] `DJANGO_SECRET_KEY` trocada por chave forte.
 - [ ] `POSTGRES_PASSWORD` trocada por senha forte.
@@ -28,7 +28,7 @@ Confirmar:
 Executar:
 
 ```bash
-cd /opt/checkups
+cd /opt/checklist
 docker compose up -d --build
 ```
 
@@ -227,7 +227,7 @@ Validar:
 Executar:
 
 ```bash
-cd /opt/checkups
+cd /opt/checklist
 mkdir -p logs
 bash scripts/backup.sh
 ```
@@ -252,7 +252,7 @@ crontab -e
 Adicionar:
 
 ```cron
-0 20 * * * cd /opt/checkups && /bin/bash scripts/backup.sh >> logs/backup.log 2>&1
+0 20 * * * cd /opt/checklist && /bin/bash scripts/backup.sh >> logs/backup.log 2>&1
 ```
 
 Validar no dia seguinte:
@@ -269,14 +269,14 @@ Nunca validar produção sem teste de restauração.
 Criar pasta temporária:
 
 ```bash
-sudo mkdir -p /opt/checkups-restore-test
-sudo chown -R $USER:$USER /opt/checkups-restore-test
+sudo mkdir -p /opt/checklist-restore-test
+sudo chown -R $USER:$USER /opt/checklist-restore-test
 ```
 
 Copiar o projeto ou clonar novamente. Depois executar o restore usando um backup real:
 
 ```bash
-cd /opt/checkups-restore-test
+cd /opt/checklist-restore-test
 ./scripts/restore.sh /caminho/do/backup/AAAA-MM-DD_HHMMSS
 ```
 
@@ -321,3 +321,4 @@ Restauração testada? (sim/não):
 Pendências encontradas:
 Decisão: aprovado / aprovado com ressalvas / reprovado
 ```
+

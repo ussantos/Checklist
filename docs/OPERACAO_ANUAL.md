@@ -1,6 +1,6 @@
 # Operação Anual e Retenção por 5 anos
 
-Este documento descreve como encerrar uma instância anual do sistema Checkups, congelar seus dados e iniciar uma nova instância para o próximo ano.
+Este documento descreve como encerrar uma instância anual do sistema Checklist, congelar seus dados e iniciar uma nova instância para o próximo ano.
 
 A estratégia recomendada é manter uma instância ativa por ano civil, preservando os anos anteriores como histórico consultável/restaurável.
 
@@ -17,24 +17,24 @@ A estratégia recomendada é manter uma instância ativa por ano civil, preserva
 Use uma pasta por ano:
 
 ```text
-/opt/checkups/2026
-/opt/checkups/2027
-/opt/checkups/2028
-/opt/checkups/2029
-/opt/checkups/2030
+/opt/checklist/2026
+/opt/checklist/2027
+/opt/checklist/2028
+/opt/checklist/2029
+/opt/checklist/2030
 ```
 
 Opcionalmente, mantenha um link simbólico para a instância atual:
 
 ```text
-/opt/checkups/atual -> /opt/checkups/2026
+/opt/checklist/atual -> /opt/checklist/2026
 ```
 
 Exemplo:
 
 ```bash
-sudo mkdir -p /opt/checkups/2026
-sudo ln -sfn /opt/checkups/2026 /opt/checkups/atual
+sudo mkdir -p /opt/checklist/2026
+sudo ln -sfn /opt/checklist/2026 /opt/checklist/atual
 ```
 
 ## 3. Convenção de nomes
@@ -44,19 +44,19 @@ Use nomes claros para containers e diretórios se for manter mais de uma instân
 Exemplo para 2026:
 
 ```text
-Projeto: checkups_2026
-Pasta: /opt/checkups/2026
+Projeto: checklist_2026
+Pasta: /opt/checklist/2026
 Banco: myrobot_checklist_2026
-Backup local: /opt/checkups/2026/backups
+Backup local: /opt/checklist/2026/backups
 ```
 
 Para 2027:
 
 ```text
-Projeto: checkups_2027
-Pasta: /opt/checkups/2027
+Projeto: checklist_2027
+Pasta: /opt/checklist/2027
 Banco: myrobot_checklist_2027
-Backup local: /opt/checkups/2027/backups
+Backup local: /opt/checklist/2027/backups
 ```
 
 ## 4. Encerramento do ano
@@ -68,7 +68,7 @@ Executar no último dia útil do ano ou na primeira semana de janeiro, antes de 
 Registrar internamente:
 
 ```text
-Sistema Checkups ano AAAA será congelado em DD/MM/AAAA às HH:MM.
+Sistema Checklist ano AAAA será congelado em DD/MM/AAAA às HH:MM.
 Após esse horário, novos lançamentos deverão ser feitos apenas na instância do ano seguinte.
 ```
 
@@ -81,7 +81,7 @@ Avisar os usuários para não registrarem novas evidências durante o processo.
 Na pasta do ano:
 
 ```bash
-cd /opt/checkups/2026
+cd /opt/checklist/2026
 bash scripts/backup.sh
 ```
 
@@ -99,7 +99,7 @@ Confirmar que o backup gerou:
 ### 4.4. Gerar checksum SHA256
 
 ```bash
-cd /opt/checkups/2026
+cd /opt/checklist/2026
 mkdir -p backups/checksums
 sha256sum backups/*.tar.gz > backups/checksums/SHA256SUMS_2026.txt
 sha256sum backups/*.sql* >> backups/checksums/SHA256SUMS_2026.txt 2>/dev/null || true
@@ -112,19 +112,19 @@ Guarde o arquivo `SHA256SUMS_2026.txt` junto com os backups.
 Se `rclone` estiver configurado:
 
 ```bash
-rclone copy /opt/checkups/2026/backups gdrive:MyRobotBackups/checkups/2026 --progress
+rclone copy /opt/checklist/2026/backups gdrive:MyRobotBackups/checklist/2026 --progress
 ```
 
 Ou OneDrive:
 
 ```bash
-rclone copy /opt/checkups/2026/backups onedrive:MyRobotBackups/checkups/2026 --progress
+rclone copy /opt/checklist/2026/backups onedrive:MyRobotBackups/checklist/2026 --progress
 ```
 
 Validar:
 
 ```bash
-rclone ls gdrive:MyRobotBackups/checkups/2026
+rclone ls gdrive:MyRobotBackups/checklist/2026
 ```
 
 ## 5. Teste obrigatório de restauração
@@ -132,15 +132,15 @@ rclone ls gdrive:MyRobotBackups/checkups/2026
 Antes de considerar o ano congelado, restaure em ambiente temporário.
 
 ```bash
-sudo mkdir -p /opt/checkups-restore-test-2026
-sudo chown -R $USER:$USER /opt/checkups-restore-test-2026
+sudo mkdir -p /opt/checklist-restore-test-2026
+sudo chown -R $USER:$USER /opt/checklist-restore-test-2026
 ```
 
 Copie o projeto ou clone o repositório:
 
 ```bash
-cd /opt/checkups-restore-test-2026
-git clone https://github.com/ussantos/checkups.git .
+cd /opt/checklist-restore-test-2026
+git clone https://github.com/ussantos/Checklist.git .
 ```
 
 Copie ou ajuste o `.env` de teste.
@@ -148,7 +148,7 @@ Copie ou ajuste o `.env` de teste.
 Execute o restore:
 
 ```bash
-./scripts/restore.sh /opt/checkups/2026/backups/NOME_DO_BACKUP_FINAL
+./scripts/restore.sh /opt/checklist/2026/backups/NOME_DO_BACKUP_FINAL
 ```
 
 Validar:
@@ -181,7 +181,7 @@ Existem três opções.
 Mais simples e econômica.
 
 ```bash
-cd /opt/checkups/2026
+cd /opt/checklist/2026
 docker compose down
 ```
 
@@ -223,10 +223,10 @@ Exportar:
 Exemplo para 2027:
 
 ```bash
-sudo mkdir -p /opt/checkups/2027
-sudo chown -R $USER:$USER /opt/checkups/2027
-cd /opt/checkups/2027
-git clone https://github.com/ussantos/checkups.git .
+sudo mkdir -p /opt/checklist/2027
+sudo chown -R $USER:$USER /opt/checklist/2027
+cd /opt/checklist/2027
+git clone https://github.com/ussantos/Checklist.git .
 cp .env.example .env
 nano .env
 ```
@@ -253,7 +253,7 @@ Validar usando `docs/TESTE_PRODUCAO.md`.
 Se usar link simbólico:
 
 ```bash
-sudo ln -sfn /opt/checkups/2027 /opt/checkups/atual
+sudo ln -sfn /opt/checklist/2027 /opt/checklist/atual
 ```
 
 ## 9. Rotina de retenção por 5 anos
@@ -275,7 +275,7 @@ Estrutura recomendada:
 
 ```text
 MyRobotBackups/
-└── checkups/
+└── checklist/
     ├── 2026/
     │   ├── backups/
     │   ├── checksums/
@@ -335,3 +335,4 @@ Portanto:
 - não envie backups por WhatsApp ou e-mail comum;
 - mantenha registro de quem acessa restaurações;
 - valide descarte de dados com contabilidade/jurídico quando houver dúvida.
+

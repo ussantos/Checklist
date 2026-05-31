@@ -1,6 +1,6 @@
-# Checkups — My Robot Barra da Tijuca
+# Checklist — My Robot Barra da Tijuca
 
-Sistema web interno para controle de checkups/checklists operacionais da My Robot Barra da Tijuca.
+Sistema web interno para controle de checklist/checklists operacionais da My Robot Barra da Tijuca.
 
 A aplicação controla a rotina por **cargo**, mas o acesso é feito por **usuário nominal**. Isso evita uso de login genérico e preserva evidência trabalhista/operacional: cada lançamento fica associado ao usuário logado e ao cargo exercido.
 
@@ -35,8 +35,8 @@ O sistema trabalha com três tipos de usuário:
 
 ## Funcionamento de usuários
 
-- O primeiro usuário da aplicação é o administrador técnico `checkupadmin`.
-- O `checkupadmin` é criado automaticamente pelo seed inicial.
+- O primeiro usuário da aplicação é o administrador técnico `checklistadmin`.
+- O `checklistadmin` é criado automaticamente pelo seed inicial.
 - A partir dele, devem ser cadastrados usuários nominais com uma das funções: **Administrador**, **Atendente Comercial** ou **Instrutor de Aula Livre**.
 - Não há usuários operacionais genéricos para execução diária.
 - No cadastro, o administrador informa nome completo, usuário de login, e-mail opcional, função/perfil e senha forte.
@@ -110,27 +110,27 @@ O limite de tamanho é definido no `.env` pela variável `MAX_EVIDENCE_FILE_SIZE
 
 ## Instalação no Ubuntu 24.04 LTS
 
-Instale o Docker, clone este repositório em `/opt/checkups`, crie o arquivo `.env` com base no `.env.example`, ajuste as variáveis de ambiente e suba a aplicação.
+Instale o Docker, clone este repositório em `/opt/checklist`, crie o arquivo `.env` com base no `.env.example`, ajuste as variáveis de ambiente e suba a aplicação.
 
 Variável obrigatória para o administrador inicial:
 
 ```env
-INITIAL_CHECKUPADMIN_PASSWORD=Trocar@Senha2026
+INITIAL_CHECKLISTADMIN_PASSWORD=Trocar@Senha2026
 ```
 
 Depois de subir o sistema, acesse com:
 
 ```text
-Usuário: checkupadmin
-Senha: valor definido em INITIAL_CHECKUPADMIN_PASSWORD
+Usuário: checklistadmin
+Senha: valor definido em INITIAL_CHECKLISTADMIN_PASSWORD
 ```
 
-Após o primeiro acesso, troque a senha do `checkupadmin` e crie os administradores nominais necessários.
+Após o primeiro acesso, troque a senha do `checklistadmin` e crie os administradores nominais necessários.
 
 Subir a aplicação:
 
 ```bash
-cd /opt/checkups
+cd /opt/checklist
 docker compose up -d --build
 ```
 
@@ -165,7 +165,7 @@ O script `scripts/backup.sh` gera backup do banco PostgreSQL, da pasta `media/`,
 Agendamento sugerido no cron:
 
 ```cron
-0 20 * * * cd /opt/checkups && /bin/bash scripts/backup.sh >> logs/backup.log 2>&1
+0 20 * * * cd /opt/checklist && /bin/bash scripts/backup.sh >> logs/backup.log 2>&1
 ```
 
 ## Restauração
@@ -173,7 +173,7 @@ Agendamento sugerido no cron:
 Exemplo:
 
 ```bash
-cd /opt/checkups
+cd /opt/checklist
 ./scripts/restore.sh /caminho/do/backup/2026-12-31_200000
 ```
 
@@ -186,9 +186,9 @@ Para congelar o ano, validar backup/restauração e iniciar uma nova instância,
 Recomendação para controle anual:
 
 ```text
-/opt/checkups/2026
-/opt/checkups/2027
-/opt/checkups/2028
+/opt/checklist/2026
+/opt/checklist/2027
+/opt/checklist/2028
 ```
 
 Mantenha os backups anuais por pelo menos 5 anos em dois locais: servidor/local e nuvem.
@@ -214,3 +214,4 @@ O banco de dados deve crescer pouco. O consumo real virá principalmente dos ane
 - Fazer teste de restauração trimestral.
 - Não guardar senhas em planilhas.
 - Se houver dados de alunos, responsáveis ou crianças em evidências, tratar como informação sensível operacionalmente e restringir acesso.
+

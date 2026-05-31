@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Backup diário do sistema My Robot Checklist.
 # Faz dump do PostgreSQL + arquivos de evidência + configurações essenciais.
-# Recomendado no cron: 0 20 * * * cd /opt/checkups && /bin/bash scripts/backup.sh >> logs/backup.log 2>&1
+# Recomendado no cron: 0 20 * * * cd /opt/checklist && /bin/bash scripts/backup.sh >> logs/backup.log 2>&1
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$APP_DIR"
@@ -48,3 +48,4 @@ fi
 find "$APP_DIR/backups" -mindepth 1 -maxdepth 1 -type d -mtime +"${BACKUP_RETENTION_DAYS:-30}" -exec rm -rf {} \;
 
 echo "[$(date)] Backup concluído: $BACKUP_ROOT"
+

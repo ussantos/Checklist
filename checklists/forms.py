@@ -110,7 +110,7 @@ class MetricRecordForm(forms.ModelForm):
 class UserCreateForm(forms.Form):
     """Cadastro de usuário feito por administrador.
 
-    O primeiro usuário técnico é `checkupadmin`. Depois disso, administradores
+    O primeiro usuário técnico é `checklistadmin`. Depois disso, administradores
     cadastram usuários nominais com um dos perfis:
     Administrador, Atendente Comercial ou Instrutor de Aula Livre.
     """
@@ -251,3 +251,4 @@ class AdminPasswordResetForm(forms.Form):
 # Aliases mantidos para compatibilidade com as views/URLs antigas.
 EmployeeCreateForm = UserCreateForm
 EmployeeUpdateForm = UserUpdateForm
+

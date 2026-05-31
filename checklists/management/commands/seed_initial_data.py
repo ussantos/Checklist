@@ -98,19 +98,19 @@ class Command(BaseCommand):
             position.save()
             positions[code] = position
 
-        initial_password = os.environ.get('INITIAL_CHECKLISTADMIN_PASSWORD') or os.environ.get('INITIAL_CHECKUPADMIN_PASSWORD')
+        initial_password = os.environ.get('INITIAL_CHECKLISTADMIN_PASSWORD') or os.environ.get('INITIAL_CHECKLISTADMIN_PASSWORD')
         if not initial_password:
             raise CommandError('Defina INITIAL_CHECKLISTADMIN_PASSWORD no ambiente antes de executar o seed inicial.')
         upsert_user('checklistadmin', initial_password, 'Administrador Checklist', True)
 
         # Usuários administrativos pessoais não são criados automaticamente.
         # Usuários operacionais genéricos antigos são desativados para evitar login compartilhado.
-        for old_username in ['atendente.comercial', 'instrutor.aula.livre', 'checkupadmin']:
+        for old_username in ['atendente.comercial', 'instrutor.aula.livre', 'checklistadmin']:
             try:
                 old_user = User.objects.get(username=old_username)
             except User.DoesNotExist:
                 continue
-            if old_username == 'checkupadmin' and not User.objects.filter(username='checklistadmin').exists():
+            if old_username == 'checklistadmin' and not User.objects.filter(username='checklistadmin').exists():
                 continue
             old_user.is_active = False
             old_user.save(update_fields=['is_active'])
@@ -177,3 +177,4 @@ class Command(BaseCommand):
             obj.save()
 
         self.stdout.write(self.style.SUCCESS(f'Seed concluído. Tarefas importadas/atualizadas: {total}.'))
+
