@@ -5,16 +5,22 @@
     <h1>{{ title }}</h1>
     <p class="muted">{{ position.name }} · {{ start_date|date:"d/m/Y" }}{% if start_date != end_date %} a {{ end_date|date:"d/m/Y" }}{% endif %}</p>
   </div>
-  <form method="get" class="filters">
-    <select class="input" name="periodo" onchange="this.form.submit()">
-      {% for value,label in period_options %}
-        <option value="{{ value }}" {% if period == value %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-    <input class="input" type="date" name="data" value="{{ reference_date|date:'Y-m-d' }}" onchange="this.form.submit()">
-    <a class="btn" href="?periodo={{ period }}&data={{ prev_period_date|date:'Y-m-d' }}">Anterior</a>
-    <a class="btn" href="?periodo={{ period }}&data={{ next_period_date|date:'Y-m-d' }}">Próximo</a>
-  </form>
+  <div class="page-actions">
+    <form method="get" class="filters">
+      <select class="input" name="periodo" onchange="this.form.submit()">
+        {% for value,label in period_options %}
+          <option value="{{ value }}" {% if period == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <input class="input" type="date" name="data" value="{{ reference_date|date:'Y-m-d' }}" onchange="this.form.submit()">
+      <a class="btn" href="?periodo={{ period }}&data={{ prev_period_date|date:'Y-m-d' }}">Anterior</a>
+      <a class="btn" href="?periodo={{ period }}&data={{ next_period_date|date:'Y-m-d' }}">Próximo</a>
+    </form>
+    <div class="actions">
+      <a class="btn" href="{% url 'activity_suggestion_deactivate' %}">Sugerir desativação</a>
+      <a class="btn primary" href="{% url 'activity_suggestion_create' %}">Sugerir atividade</a>
+    </div>
+  </div>
 </div>
 
 <section class="panel info-light">

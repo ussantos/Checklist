@@ -4,18 +4,22 @@ from datetime import datetime, timedelta
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, user_passes_test
+from django.db import transaction
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.db.models import F, Q
 from .forms import (
-    AdminPasswordResetForm, DailyNoteForm, EmployeeCreateForm, EmployeeUpdateForm,
-    MetricRecordForm, MetricTypeForm, OccurrenceUpdateForm, TaskTemplateForm,
+    ActivityDeactivationSuggestionForm, ActivitySuggestionCreateForm,
+    ActivitySuggestionReviewForm, AdminPasswordResetForm, DailyNoteForm,
+    EmployeeCreateForm, EmployeeUpdateForm, MetricRecordForm, MetricTypeForm,
+    OccurrenceUpdateForm, TaskTemplateForm,
 )
 from .models import (
-    ActivityLog, ChecklistOccurrence, ChecklistOccurrenceStatusEvent, DailyNote,
-    EvidenceAttachment, MetricRecord, MetricType, Position, TaskTemplate, UserProfile,
+    ActivityLog, ActivitySuggestion, ChecklistOccurrence,
+    ChecklistOccurrenceStatusEvent, DailyNote, EvidenceAttachment, MetricRecord,
+    MetricType, Position, TaskTemplate, UserProfile,
 )
 from .activity_import import (
     build_activity_import_template, import_activity_rows, parse_activity_import,
@@ -383,6 +387,106 @@ def occurrence_edit(request, occurrence_id):
     })
 
 
+@login_required
+def activity_suggestion_create(request):
+    if is_admin_user(request.user):
+        return redirect('templates_list')
+
+    position = get_user_position(request.user)
+    if not position:
+        return HttpResponseForbidden('Usuário sem cargo vinculado. Peça ao administrador para configurar o perfil.')
+
+    if request.method == 'POST':
+        form = ActivitySuggestionCreateForm(request.POST)
+        if form.is_valid():
+            suggestion = form.save(commit=False)
+            suggestion.request_type = ActivitySuggestion.TYPE_CREATE
+            suggestion.status = ActivitySuggestion.STATUS_PENDING
+            suggestion.position = position
+            suggestion.requested_by = request.user
+            suggestion.save()
+            ActivityLog.objects.create(
+                actor=request.user,
+                position=position,
+                action='Sugestão de atividade criada',
+                object_type='ActivitySuggestion',
+                object_id=str(suggestion.id),
+                details=f'Atividade sugerida: {suggestion.title}; cargo: {position.name}',
+            )
+            messages.success(request, 'Sugestão enviada para análise do administrador.')
+            return redirect('activities')
+    else:
+        form = ActivitySuggestionCreateForm()
+
+    return render(request, 'checklists/activity_suggestion_form.html', {
+        'form': form,
+        'position': position,
+        'title': 'Sugerir nova atividade',
+        'submit_label': 'Enviar sugestão',
+        'is_admin': False,
+    })
+
+
+@login_required
+def activity_suggestion_deactivate(request):
+    if is_admin_user(request.user):
+        return redirect('templates_list')
+
+    position = get_user_position(request.user)
+    if not position:
+        return HttpResponseForbidden('Usuário sem cargo vinculado. Peça ao administrador para configurar o perfil.')
+
+    if request.method == 'POST':
+        form = ActivityDeactivationSuggestionForm(request.POST, position=position)
+        if form.is_valid():
+            selected = list(form.cleaned_data['activities'])
+            justification = form.cleaned_data.get('justification', '')
+            created_count = 0
+            skipped_count = 0
+            for template in selected:
+                existing = ActivitySuggestion.objects.filter(
+                    request_type=ActivitySuggestion.TYPE_DEACTIVATE,
+                    status=ActivitySuggestion.STATUS_PENDING,
+                    position=position,
+                    target_template=template,
+                ).first()
+                if existing:
+                    skipped_count += 1
+                    continue
+                suggestion = ActivitySuggestion.objects.create(
+                    request_type=ActivitySuggestion.TYPE_DEACTIVATE,
+                    status=ActivitySuggestion.STATUS_PENDING,
+                    position=position,
+                    target_template=template,
+                    requested_by=request.user,
+                    justification=justification,
+                )
+                created_count += 1
+                ActivityLog.objects.create(
+                    actor=request.user,
+                    position=position,
+                    action='Sugestão de desativação criada',
+                    object_type='ActivitySuggestion',
+                    object_id=str(suggestion.id),
+                    details=f'Atividade indicada: {template.title}; cargo: {position.name}',
+                )
+            if created_count:
+                messages.success(request, f'{created_count} sugestão(ões) enviada(s) para análise.')
+            if skipped_count:
+                messages.info(request, f'{skipped_count} atividade(s) já tinham sugestão pendente.')
+            return redirect('activities')
+    else:
+        form = ActivityDeactivationSuggestionForm(position=position)
+
+    return render(request, 'checklists/activity_deactivation_suggestion_form.html', {
+        'form': form,
+        'position': position,
+        'title': 'Sugerir desativação de atividade',
+        'submit_label': 'Enviar sugestão',
+        'is_admin': False,
+    })
+
+
 def _save_occurrence_update(request, occurrence):
     old_status = occurrence.status
     has_existing = bool(occurrence.evidence_file) or occurrence.attachments.exists()
@@ -476,9 +580,14 @@ def templates_list(request):
     if position_id and position_id.isdigit():
         templates = templates.filter(position_id=position_id)
 
+    pending_suggestions = ActivitySuggestion.objects.filter(
+        status=ActivitySuggestion.STATUS_PENDING,
+    ).select_related('position', 'requested_by', 'target_template').order_by('created_at')
+
     return render(request, 'checklists/templates_list.html', {
         'templates': templates,
         'positions': positions,
+        'pending_suggestions': pending_suggestions,
         'status': status,
         'position_id': position_id or '',
         'is_admin': True,
@@ -582,6 +691,145 @@ def template_import_model(request):
     )
     response['Content-Disposition'] = 'attachment; filename="modelo_importacao_atividades.xlsx"'
     return response
+
+
+@user_passes_test(_admin_check)
+def activity_suggestion_review(request, suggestion_id):
+    suggestion = get_object_or_404(
+        ActivitySuggestion.objects.select_related('position', 'requested_by', 'target_template', 'created_template'),
+        pk=suggestion_id,
+    )
+
+    if suggestion.request_type == ActivitySuggestion.TYPE_CREATE:
+        return _review_activity_creation_suggestion(request, suggestion)
+    return _review_activity_deactivation_suggestion(request, suggestion)
+
+
+def _mark_suggestion_rejected(request, suggestion, review_note=''):
+    with transaction.atomic():
+        suggestion.status = ActivitySuggestion.STATUS_REJECTED
+        suggestion.review_note = review_note.strip()
+        suggestion.reviewed_by = request.user
+        suggestion.reviewed_at = timezone.now()
+        suggestion.save(update_fields=['status', 'review_note', 'reviewed_by', 'reviewed_at', 'updated_at'])
+        ActivityLog.objects.create(
+            actor=request.user,
+            position=suggestion.position,
+            action='Sugestão de atividade rejeitada',
+            object_type='ActivitySuggestion',
+            object_id=str(suggestion.id),
+            details=f'Tipo: {suggestion.get_request_type_display()}; solicitante: {suggestion.requested_by.username}',
+        )
+
+
+def _review_activity_creation_suggestion(request, suggestion):
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if not suggestion.is_pending:
+            messages.error(request, 'Esta sugestão já foi revisada.')
+            return redirect('templates_list')
+        if action == 'reject':
+            _mark_suggestion_rejected(request, suggestion, request.POST.get('review_note', ''))
+            messages.success(request, 'Sugestão rejeitada. Nenhuma atividade foi criada.')
+            return redirect('templates_list')
+
+        form = ActivitySuggestionReviewForm(request.POST, instance=suggestion)
+        if form.is_valid():
+            with transaction.atomic():
+                suggestion = form.save(commit=False)
+                template = TaskTemplate.objects.create(
+                    position=suggestion.position,
+                    day_of_week=suggestion.day_of_week,
+                    start_time=suggestion.start_time,
+                    end_time=suggestion.end_time,
+                    title=suggestion.title,
+                    expected_result=suggestion.expected_result,
+                    frequency=suggestion.frequency,
+                    requires_evidence=suggestion.requires_evidence,
+                    evidence_required=suggestion.evidence_required,
+                    proof_location=suggestion.proof_location,
+                    notes=suggestion.notes,
+                    source='Sugestão operacional',
+                    active=True,
+                )
+                suggestion.status = ActivitySuggestion.STATUS_APPROVED
+                suggestion.created_template = template
+                suggestion.reviewed_by = request.user
+                suggestion.reviewed_at = timezone.now()
+                suggestion.save()
+                ActivityLog.objects.create(
+                    actor=request.user,
+                    position=template.position,
+                    action='Atividade criada por sugestão',
+                    object_type='TaskTemplate',
+                    object_id=str(template.id),
+                    details=f'Atividade: {template.title}; sugestão: {suggestion.id}; solicitante: {suggestion.requested_by.username}',
+                )
+                ActivityLog.objects.create(
+                    actor=request.user,
+                    position=template.position,
+                    action='Sugestão de atividade aprovada',
+                    object_type='ActivitySuggestion',
+                    object_id=str(suggestion.id),
+                    details=f'Atividade criada: {template.id} - {template.title}',
+                )
+            messages.success(request, 'Sugestão aprovada e atividade criada.')
+            return redirect('templates_list')
+    else:
+        form = ActivitySuggestionReviewForm(instance=suggestion)
+
+    return render(request, 'checklists/activity_suggestion_review.html', {
+        'suggestion': suggestion,
+        'form': form,
+        'is_admin': True,
+    })
+
+
+def _review_activity_deactivation_suggestion(request, suggestion):
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if not suggestion.is_pending:
+            messages.error(request, 'Esta sugestão já foi revisada.')
+            return redirect('templates_list')
+        if action == 'reject':
+            _mark_suggestion_rejected(request, suggestion, request.POST.get('review_note', ''))
+            messages.success(request, 'Sugestão rejeitada. Nenhuma atividade foi inativada.')
+            return redirect('templates_list')
+        if action == 'approve':
+            with transaction.atomic():
+                target = suggestion.target_template
+                if target and target.active:
+                    target.active = False
+                    target.save(update_fields=['active'])
+                suggestion.status = ActivitySuggestion.STATUS_APPROVED
+                suggestion.review_note = request.POST.get('review_note', '').strip()
+                suggestion.reviewed_by = request.user
+                suggestion.reviewed_at = timezone.now()
+                suggestion.save(update_fields=['status', 'review_note', 'reviewed_by', 'reviewed_at', 'updated_at'])
+                ActivityLog.objects.create(
+                    actor=request.user,
+                    position=suggestion.position,
+                    action='Atividade inativada por sugestão',
+                    object_type='TaskTemplate',
+                    object_id=str(target.id if target else ''),
+                    details=f'Atividade: {target.title if target else "-"}; sugestão: {suggestion.id}; solicitante: {suggestion.requested_by.username}',
+                )
+                ActivityLog.objects.create(
+                    actor=request.user,
+                    position=suggestion.position,
+                    action='Sugestão de atividade aprovada',
+                    object_type='ActivitySuggestion',
+                    object_id=str(suggestion.id),
+                    details=f'Atividade inativada: {target.id if target else "-"} - {target.title if target else "-"}',
+                )
+            messages.success(request, 'Sugestão aprovada e atividade inativada.')
+            return redirect('templates_list')
+
+    return render(request, 'checklists/activity_suggestion_review.html', {
+        'suggestion': suggestion,
+        'form': None,
+        'is_admin': True,
+    })
 
 
 @login_required

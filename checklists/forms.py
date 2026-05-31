@@ -3,7 +3,10 @@ from django import forms
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.utils.text import slugify
-from .models import ChecklistOccurrence, DailyNote, EmployeeAbsence, MetricRecord, MetricType, Position, TaskTemplate, UserProfile
+from .models import (
+    ActivitySuggestion, ChecklistOccurrence, DailyNote, EmployeeAbsence,
+    MetricRecord, MetricType, Position, TaskTemplate, UserProfile,
+)
 from .security import generate_temporary_password, should_force_password_change_on_first_login
 
 
@@ -409,6 +412,124 @@ class TaskTemplateForm(forms.ModelForm):
         if start_time and end_time and end_time <= start_time:
             raise forms.ValidationError('O horário de fim deve ser posterior ao horário de início.')
         return cleaned
+
+
+class ActivitySuggestionCreateForm(forms.ModelForm):
+    title = forms.CharField(
+        label='Descrição',
+        max_length=300,
+        widget=forms.Textarea(attrs={'class': 'input', 'rows': 3, 'maxlength': 300}),
+    )
+    expected_result = forms.CharField(
+        label='Resultado esperado',
+        max_length=300,
+        widget=forms.Textarea(attrs={'class': 'input', 'rows': 3, 'maxlength': 300}),
+    )
+    evidence_required = forms.CharField(
+        label='Evidência exigida',
+        max_length=300,
+        required=False,
+        widget=forms.Textarea(attrs={'class': 'input', 'rows': 3, 'maxlength': 300}),
+    )
+    proof_location = forms.CharField(
+        label='Onde comprovar',
+        max_length=300,
+        required=False,
+        widget=forms.Textarea(attrs={'class': 'input', 'rows': 3, 'maxlength': 300}),
+    )
+    notes = forms.CharField(
+        label='Observações',
+        max_length=2000,
+        required=False,
+        widget=forms.Textarea(attrs={'class': 'input', 'rows': 5, 'maxlength': 2000}),
+    )
+    justification = forms.CharField(
+        label='Justificativa da sugestão',
+        max_length=500,
+        required=False,
+        widget=forms.Textarea(attrs={'class': 'input', 'rows': 3, 'maxlength': 500}),
+    )
+
+    class Meta:
+        model = ActivitySuggestion
+        fields = [
+            'day_of_week', 'start_time', 'end_time', 'title', 'expected_result',
+            'frequency', 'requires_evidence', 'evidence_required', 'proof_location',
+            'notes', 'justification',
+        ]
+        widgets = {
+            'day_of_week': forms.Select(attrs={'class': 'input'}),
+            'start_time': forms.TimeInput(attrs={'class': 'input', 'type': 'time'}),
+            'end_time': forms.TimeInput(attrs={'class': 'input', 'type': 'time'}),
+            'frequency': forms.Select(attrs={'class': 'input'}),
+            'requires_evidence': forms.CheckboxInput(),
+        }
+        labels = {
+            'day_of_week': 'Dia da semana',
+            'start_time': 'Início',
+            'end_time': 'Fim',
+            'frequency': 'Recorrência',
+            'requires_evidence': 'Exigir evidência do usuário comum',
+        }
+        help_texts = {
+            'requires_evidence': 'Desmarque se a atividade sugerida não precisa de evidência anexada/textual.',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['start_time'].required = True
+        self.fields['end_time'].required = True
+        self.fields['requires_evidence'].initial = True
+
+    def clean(self):
+        cleaned = super().clean()
+        start_time = cleaned.get('start_time')
+        end_time = cleaned.get('end_time')
+        if start_time and end_time and end_time <= start_time:
+            raise forms.ValidationError('O horário de fim deve ser posterior ao horário de início.')
+        return cleaned
+
+
+class ActivitySuggestionReviewForm(ActivitySuggestionCreateForm):
+    review_note = forms.CharField(
+        label='Observação da revisão',
+        max_length=500,
+        required=False,
+        widget=forms.Textarea(attrs={'class': 'input', 'rows': 3, 'maxlength': 500}),
+    )
+
+    class Meta(ActivitySuggestionCreateForm.Meta):
+        fields = ActivitySuggestionCreateForm.Meta.fields + ['review_note']
+
+
+class ActivityDeactivationSuggestionForm(forms.Form):
+    activities = forms.ModelMultipleChoiceField(
+        label='Atividades ativas',
+        queryset=TaskTemplate.objects.none(),
+        widget=forms.CheckboxSelectMultiple,
+        error_messages={'required': 'Selecione pelo menos uma atividade para sugerir desativação.'},
+    )
+    justification = forms.CharField(
+        label='Justificativa',
+        max_length=500,
+        required=False,
+        widget=forms.Textarea(attrs={'class': 'input', 'rows': 3, 'maxlength': 500}),
+    )
+
+    def __init__(self, *args, position=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.position = position
+        if position:
+            self.fields['activities'].queryset = TaskTemplate.objects.filter(
+                position=position,
+                active=True,
+            ).order_by('day_of_week', 'start_time', 'order', 'title')
+            self.fields['activities'].label_from_instance = self._activity_label
+
+    def _activity_label(self, template):
+        start = template.start_time.strftime('%H:%M') if template.start_time else '--:--'
+        end = template.end_time.strftime('%H:%M') if template.end_time else 'sem fim'
+        return f'{template.get_day_of_week_display()} · {start}-{end} · {template.title}'
 
 
 class UserCreateForm(forms.Form):

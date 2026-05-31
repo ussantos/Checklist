@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>{{ title }}</h1>
+    <p class="muted">{{ position.name }} · a atividade será analisada por um administrador antes de entrar na rotina.</p>
+  </div>
+  <a class="btn" href="{% url 'activities' %}">Voltar</a>
+</div>
+
+<section class="panel info-light">
+  <strong>Sugestão operacional</strong>
+  <p class="muted">Preencha os campos da atividade como ela deveria aparecer no checklist. O administrador poderá ajustar os dados antes de aprovar.</p>
+</section>
+
+<section class="panel">
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <div class="form-actions">
+      <button class="btn primary" type="submit">{{ submit_label }}</button>
+      <a class="btn" href="{% url 'activities' %}">Cancelar</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

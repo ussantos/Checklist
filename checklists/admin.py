@@ -3,9 +3,10 @@ from django.contrib.admin.sites import NotRegistered
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from .models import (
-    ActivityLog, ChecklistOccurrence, ChecklistOccurrenceStatusEvent, DailyNote,
-    EmployeeAbsence, EvidenceAttachment, MetricRecord, MetricType, Position,
-    TaskTemplate, UserProfile,
+    ActivityLog, ActivitySuggestion, ChecklistOccurrence,
+    ChecklistOccurrenceStatusEvent, DailyNote, EmployeeAbsence,
+    EvidenceAttachment, MetricRecord, MetricType, Position, TaskTemplate,
+    UserProfile,
 )
 
 
@@ -61,6 +62,17 @@ class TaskTemplateAdmin(admin.ModelAdmin):
     list_filter = ('position', 'frequency', 'day_of_week', 'category', 'requires_evidence', 'active')
     search_fields = ('title', 'description', 'expected_result', 'evidence_required', 'proof_location', 'notes')
     ordering = ('position', 'day_of_week', 'order')
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ActivitySuggestion)
+class ActivitySuggestionAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'request_type', 'status', 'position', 'requested_by', 'target_template', 'created_template')
+    list_filter = ('status', 'request_type', 'position', 'created_at')
+    search_fields = ('title', 'target_template__title', 'requested_by__username', 'position__name', 'justification')
+    readonly_fields = ('created_at', 'updated_at', 'reviewed_at')
 
     def has_delete_permission(self, request, obj=None):
         return False

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Revisar sugestão</h1>
+    <p class="muted">{{ suggestion.get_request_type_display }} · {{ suggestion.position.name }} · {{ suggestion.created_at|date:"d/m/Y H:i" }}</p>
+  </div>
+  <a class="btn" href="{% url 'templates_list' %}">Voltar</a>
+</div>
+
+<section class="panel info-light">
+  <strong>Solicitante</strong>
+  <p class="muted">{{ suggestion.requested_by.get_full_name|default:suggestion.requested_by.username }}{% if suggestion.justification %} · {{ suggestion.justification }}{% endif %}</p>
+  <p class="muted">Status: <strong>{{ suggestion.get_status_display }}</strong></p>
+</section>
+
+{% if suggestion.request_type == "CREATE" %}
+  <section class="panel">
+    <form method="post" class="form-grid">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <div class="form-actions">
+        {% if suggestion.is_pending %}
+          <button class="btn primary" type="submit" name="action" value="approve">Aprovar e criar atividade</button>
+          <button class="btn" type="submit" name="action" value="reject">Rejeitar</button>
+        {% endif %}
+        <a class="btn" href="{% url 'templates_list' %}">Cancelar</a>
+      </div>
+    </form>
+  </section>
+{% else %}
+  <section class="panel">
+    <h2>Atividade indicada</h2>
+    {% if suggestion.target_template %}
+      <dl class="task-details">
+        <div>
+          <dt>Descrição</dt>
+          <dd>{{ suggestion.target_template.title }}</dd>
+        </div>
+        <div>
+          <dt>Dia</dt>
+          <dd>{{ suggestion.target_template.get_day_of_week_display }}</dd>
+        </div>
+        <div>
+          <dt>Horário</dt>
+          <dd>{% if suggestion.target_template.start_time %}{{ suggestion.target_template.start_time|time:"H:i" }}{% else %}-{% endif %}{% if suggestion.target_template.end_time %} - {{ suggestion.target_template.end_time|time:"H:i" }}{% endif %}</dd>
+        </div>
+        <div>
+          <dt>Status atual</dt>
+          <dd>{% if suggestion.target_template.active %}Ativa{% else %}Inativa{% endif %}</dd>
+        </div>
+        <div class="wide">
+          <dt>Resultado esperado</dt>
+          <dd>{{ suggestion.target_template.expected_result|default:"-" }}</dd>
+        </div>
+      </dl>
+    {% else %}
+      <p class="muted">Atividade original não encontrada.</p>
+    {% endif %}
+
+    <form method="post" class="form-grid">
+      {% csrf_token %}
+      <label>Observação da revisão
+        <textarea class="input" name="review_note" rows="3" maxlength="500">{{ suggestion.review_note }}</textarea>
+      </label>
+      <div class="form-actions">
+        {% if suggestion.is_pending %}
+          <button class="btn primary" type="submit" name="action" value="approve">Aprovar e inativar atividade</button>
+          <button class="btn" type="submit" name="action" value="reject">Rejeitar</button>
+        {% endif %}
+        <a class="btn" href="{% url 'templates_list' %}">Cancelar</a>
+      </div>
+    </form>
+  </section>
+{% endif %}
+{% endblock %}

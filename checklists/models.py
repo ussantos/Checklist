@@ -177,6 +177,81 @@ class TaskTemplate(models.Model):
         return False
 
 
+class ActivitySuggestion(models.Model):
+    """Solicitação operacional de criação ou inativação de atividade."""
+
+    TYPE_CREATE = 'CREATE'
+    TYPE_DEACTIVATE = 'DEACTIVATE'
+    TYPE_CHOICES = [
+        (TYPE_CREATE, 'Adicionar atividade'),
+        (TYPE_DEACTIVATE, 'Desativar atividade'),
+    ]
+
+    STATUS_PENDING = 'PENDING'
+    STATUS_APPROVED = 'APPROVED'
+    STATUS_REJECTED = 'REJECTED'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pendente'),
+        (STATUS_APPROVED, 'Aprovada'),
+        (STATUS_REJECTED, 'Rejeitada'),
+    ]
+
+    request_type = models.CharField('Tipo de solicitação', max_length=20, choices=TYPE_CHOICES)
+    status = models.CharField('Status', max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='activity_suggestions')
+    position = models.ForeignKey(Position, on_delete=models.PROTECT, related_name='activity_suggestions')
+    target_template = models.ForeignKey(
+        TaskTemplate,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='deactivation_suggestions',
+        verbose_name='Atividade indicada para inativação',
+    )
+    created_template = models.ForeignKey(
+        TaskTemplate,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='creation_suggestions',
+        verbose_name='Atividade criada',
+    )
+    title = models.CharField('Descrição', max_length=300, blank=True)
+    expected_result = models.CharField('Resultado esperado', max_length=300, blank=True)
+    frequency = models.CharField('Recorrência', max_length=20, choices=TaskTemplate.FREQ_CHOICES, default=TaskTemplate.FREQ_DAILY)
+    day_of_week = models.IntegerField('Dia da semana', choices=TaskTemplate.WEEKDAY_CHOICES, default=0)
+    start_time = models.TimeField('Início', blank=True, null=True)
+    end_time = models.TimeField('Fim', blank=True, null=True)
+    requires_evidence = models.BooleanField('Exige evidência', default=True)
+    evidence_required = models.CharField('Evidência exigida', max_length=300, blank=True)
+    proof_location = models.CharField('Onde comprovar', max_length=300, blank=True)
+    notes = models.TextField('Observações', blank=True)
+    justification = models.CharField('Justificativa', max_length=500, blank=True)
+    review_note = models.CharField('Observação da revisão', max_length=500, blank=True)
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_activity_suggestions')
+    reviewed_at = models.DateTimeField('Revisada em', blank=True, null=True)
+    created_at = models.DateTimeField('Criada em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizada em', auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', 'request_type']),
+            models.Index(fields=['position', 'status']),
+            models.Index(fields=['created_at']),
+        ]
+        verbose_name = 'Sugestão de atividade'
+        verbose_name_plural = 'Sugestões de atividades'
+
+    def __str__(self):
+        subject = self.title or (self.target_template.title if self.target_template_id else 'Atividade')
+        return f'{self.get_request_type_display()} - {subject}'
+
+    @property
+    def is_pending(self):
+        return self.status == self.STATUS_PENDING
+
+
 class ChecklistOccurrence(models.Model):
     """Execução real de uma tarefa em determinado dia."""
 

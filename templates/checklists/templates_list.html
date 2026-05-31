@@ -18,6 +18,45 @@
   <p class="muted">Cadastre atividades manualmente uma a uma ou importe em lote via XLSX usando o modelo padrão.</p>
 </section>
 
+{% if pending_suggestions %}
+<section class="panel">
+  <h2>Sugestões pendentes</h2>
+  <p class="muted">Usuários comuns podem sugerir novas atividades ou a inativação de atividades existentes. A aprovação aplica a mudança no cadastro oficial.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Tipo</th>
+        <th>Tipo/cargo</th>
+        <th>Solicitante</th>
+        <th>Atividade</th>
+        <th>Enviada em</th>
+        <th>Ação</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for suggestion in pending_suggestions %}
+      <tr>
+        <td>{{ suggestion.get_request_type_display }}</td>
+        <td>{{ suggestion.position.name }}</td>
+        <td>{{ suggestion.requested_by.get_full_name|default:suggestion.requested_by.username }}</td>
+        <td>
+          {% if suggestion.request_type == "CREATE" %}
+            {{ suggestion.title }}
+          {% elif suggestion.target_template %}
+            {{ suggestion.target_template.title }}
+          {% else %}
+            -
+          {% endif %}
+        </td>
+        <td>{{ suggestion.created_at|date:"d/m/Y H:i" }}</td>
+        <td><a class="btn small" href="{% url 'activity_suggestion_review' suggestion.id %}">Revisar</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
 <form method="get" class="filters panel">
   <label>Tipo/cargo
     <select class="input" name="cargo">

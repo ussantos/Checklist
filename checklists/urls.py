@@ -7,6 +7,8 @@ from django.contrib.auth import views as auth_views
 urlpatterns = [
     path('', views.dashboard, name='dashboard'),
     path('atividades/', views.activities, name='activities'),
+    path('atividades/sugerir/', views.activity_suggestion_create, name='activity_suggestion_create'),
+    path('atividades/sugerir-desativacao/', views.activity_suggestion_deactivate, name='activity_suggestion_deactivate'),
     path('checklist/', views.checklist_day, name='checklist_day'),
     path('semana/', views.week_view, name='week_view'),
     path('historico/', views.history, name='history'),
@@ -14,6 +16,7 @@ urlpatterns = [
     path('tarefas-modelo/nova/', views.template_create, name='template_create'),
     path('tarefas-modelo/importar/', views.template_import, name='template_import'),
     path('tarefas-modelo/modelo.xlsx', views.template_import_model, name='template_import_model'),
+    path('tarefas-modelo/sugestoes/<int:suggestion_id>/', views.activity_suggestion_review, name='activity_suggestion_review'),
     path('tarefas-modelo/<int:template_id>/editar/', views.template_edit, name='template_edit'),
     path('metricas/', views.metrics, name='metrics'),
     path('metricas/evidencia/<int:record_id>/', views.metric_evidence_download, name='metric_evidence_download'),

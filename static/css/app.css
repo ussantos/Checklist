@@ -162,6 +162,20 @@ img {
   flex-wrap: wrap;
 }
 
+.page-actions,
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.page-actions {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
 .input,
 input,
 select,
@@ -598,6 +612,47 @@ th {
   grid-column: 1 / -1;
 }
 
+.suggestion-list-form {
+  display: grid;
+  gap: 16px;
+}
+
+.checkbox-list {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.checkbox-list legend {
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.checkbox-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px 12px;
+  font-weight: 700;
+}
+
+.checkbox-card input {
+  min-width: auto;
+  margin-top: 3px;
+}
+
+.field-block {
+  display: grid;
+  gap: 6px;
+  font-weight: 700;
+}
+
 .kanban {
   display: grid;
   grid-template-columns: repeat(5, minmax(220px, 1fr));
@@ -866,6 +921,12 @@ th {
 
   .page-title {
     display: block;
+  }
+
+  .page-actions,
+  .actions {
+    align-items: stretch;
+    justify-content: flex-start;
   }
 
   .kanban {
