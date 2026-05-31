@@ -16,7 +16,7 @@ from .models import (
     MetricType, Position, TaskTemplate, UserProfile,
 )
 from .services import (
-    create_due_occurrences, create_occurrences_for_positions, get_user_position,
+    create_due_occurrences, create_occurrences_for_positions,
     is_admin_user, metrics_summary, month_range, monthly_summary,
     overdue_occurrences, visible_positions,
 )
@@ -52,7 +52,7 @@ def _current_employee_name(user):
     """Retorna o nome completo do cadastro do usuário.
 
     Este valor é gravado como snapshot nos lançamentos para manter histórico,
-    mesmo que o nome do funcionário seja alterado posteriormente.
+    mesmo que o nome do usuário seja alterado posteriormente.
     """
     profile = getattr(user, 'userprofile', None)
     if profile and profile.display_name:
@@ -65,13 +65,20 @@ def _admin_check(user):
     return user.is_authenticated and is_admin_user(user)
 
 
+def _role_initial(profile):
+    if profile.system_role == UserProfile.ROLE_ADMIN:
+        return 'ADMIN'
+    if profile.position_id:
+        return f'POSITION:{profile.position_id}'
+    return ''
+
+
 @login_required
 def dashboard(request):
     today = timezone.localdate()
     year, month = _parse_month_year(request)
     positions = visible_positions(request.user)
 
-    # Gera as tarefas do dia para que o dashboard mostre o estado atual.
     create_occurrences_for_positions(positions, today)
 
     summary = monthly_summary(year, month, positions)
@@ -276,16 +283,7 @@ def metrics(request):
 
 @login_required
 def evidence_attachment_download(request, attachment_id):
-    """Entrega anexo de evidência somente para usuário autorizado.
-
-    Como as evidências podem conter dados pessoais, os arquivos não são
-    servidos publicamente pela URL /media/. O usuário precisa estar logado e
-    ter acesso ao cargo da ocorrência.
-    """
-    attachment = get_object_or_404(
-        EvidenceAttachment.objects.select_related('occurrence__position'),
-        pk=attachment_id,
-    )
+    attachment = get_object_or_404(EvidenceAttachment.objects.select_related('occurrence__position'), pk=attachment_id)
     if attachment.occurrence.position not in visible_positions(request.user):
         return HttpResponseForbidden('Você não pode acessar esta evidência.')
     if not attachment.file:
@@ -295,7 +293,6 @@ def evidence_attachment_download(request, attachment_id):
 
 @login_required
 def legacy_evidence_download(request, occurrence_id):
-    """Entrega o arquivo legado de uma ocorrência, se existir."""
     occurrence = get_object_or_404(ChecklistOccurrence.objects.select_related('position'), pk=occurrence_id)
     if occurrence.position not in visible_positions(request.user):
         return HttpResponseForbidden('Você não pode acessar esta evidência.')
@@ -344,7 +341,7 @@ def _occurrences_csv_response(qs, filename):
 
 @user_passes_test(_admin_check)
 def employees_list(request):
-    profiles = UserProfile.objects.filter(system_role=UserProfile.ROLE_OPERATOR).select_related('user', 'position').order_by('display_name')
+    profiles = UserProfile.objects.select_related('user', 'position').order_by('system_role', 'display_name')
     return render(request, 'checklists/employees_list.html', {
         'profiles': profiles,
         'is_admin': True,
@@ -357,14 +354,21 @@ def employee_create(request):
         form = EmployeeCreateForm(request.POST)
         if form.is_valid():
             user = form.save()
-            ActivityLog.objects.create(actor=request.user, position=user.userprofile.position, action='Funcionário cadastrado', object_type='User', object_id=str(user.id), details=f'Funcionário: {user.userprofile.display_name}')
-            messages.success(request, 'Funcionário cadastrado com sucesso.')
+            ActivityLog.objects.create(
+                actor=request.user,
+                position=user.userprofile.position,
+                action='Usuário cadastrado',
+                object_type='User',
+                object_id=str(user.id),
+                details=f'Usuário: {user.userprofile.display_name}; perfil: {user.userprofile.get_system_role_display()}',
+            )
+            messages.success(request, 'Usuário cadastrado com sucesso.')
             return redirect('employees_list')
     else:
         form = EmployeeCreateForm()
     return render(request, 'checklists/employee_form.html', {
         'form': form,
-        'title': 'Cadastrar funcionário',
+        'title': 'Cadastrar usuário',
         'submit_label': 'Cadastrar',
         'is_admin': True,
     })
@@ -372,27 +376,34 @@ def employee_create(request):
 
 @user_passes_test(_admin_check)
 def employee_edit(request, user_id):
-    user_obj = get_object_or_404(User.objects.select_related('userprofile'), pk=user_id, userprofile__system_role=UserProfile.ROLE_OPERATOR)
+    user_obj = get_object_or_404(User.objects.select_related('userprofile'), pk=user_id)
     profile = user_obj.userprofile
     initial = {
         'full_name': profile.display_name,
         'username': user_obj.username,
         'email': user_obj.email,
-        'position': profile.position,
+        'role': _role_initial(profile),
         'active': user_obj.is_active and profile.active,
     }
     if request.method == 'POST':
         form = EmployeeUpdateForm(request.POST, user_obj=user_obj)
         if form.is_valid():
             user_obj = form.save()
-            ActivityLog.objects.create(actor=request.user, position=user_obj.userprofile.position, action='Funcionário atualizado', object_type='User', object_id=str(user_obj.id), details=f'Funcionário: {user_obj.userprofile.display_name}')
-            messages.success(request, 'Funcionário atualizado.')
+            ActivityLog.objects.create(
+                actor=request.user,
+                position=user_obj.userprofile.position,
+                action='Usuário atualizado',
+                object_type='User',
+                object_id=str(user_obj.id),
+                details=f'Usuário: {user_obj.userprofile.display_name}; perfil: {user_obj.userprofile.get_system_role_display()}',
+            )
+            messages.success(request, 'Usuário atualizado.')
             return redirect('employees_list')
     else:
         form = EmployeeUpdateForm(initial=initial, user_obj=user_obj)
     return render(request, 'checklists/employee_form.html', {
         'form': form,
-        'title': f'Editar funcionário — {profile.display_name}',
+        'title': f'Editar usuário — {profile.display_name}',
         'submit_label': 'Salvar alterações',
         'employee_user': user_obj,
         'is_admin': True,
@@ -401,12 +412,19 @@ def employee_edit(request, user_id):
 
 @user_passes_test(_admin_check)
 def employee_reset_password(request, user_id):
-    user_obj = get_object_or_404(User.objects.select_related('userprofile'), pk=user_id, userprofile__system_role=UserProfile.ROLE_OPERATOR)
+    user_obj = get_object_or_404(User.objects.select_related('userprofile'), pk=user_id)
     if request.method == 'POST':
         form = AdminPasswordResetForm(request.POST, user_obj=user_obj)
         if form.is_valid():
             form.save()
-            ActivityLog.objects.create(actor=request.user, position=user_obj.userprofile.position, action='Senha de funcionário redefinida', object_type='User', object_id=str(user_obj.id), details=f'Funcionário: {user_obj.userprofile.display_name}')
+            ActivityLog.objects.create(
+                actor=request.user,
+                position=user_obj.userprofile.position,
+                action='Senha de usuário redefinida',
+                object_type='User',
+                object_id=str(user_obj.id),
+                details=f'Usuário: {user_obj.userprofile.display_name}',
+            )
             messages.success(request, 'Senha redefinida com sucesso.')
             return redirect('employees_list')
     else:
