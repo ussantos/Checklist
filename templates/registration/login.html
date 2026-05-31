@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="login-card">
+  <h1>Entrar</h1>
+  <p class="muted">Use seu usuário individual de funcionário ou administrador. Não compartilhe login.</p>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <label>Usuário</label>
+    {{ form.username }}
+    <label>Senha</label>
+    {{ form.password }}
+    <button type="submit" class="btn primary">Entrar</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Funcionários</h1>
+    <p class="muted">Cadastro nominal dos funcionários que executam os checklists.</p>
+  </div>
+  <a class="btn primary" href="{% url 'employee_create' %}">Cadastrar funcionário</a>
+</div>
+
+<section class="panel info-light">
+  <strong>Regra de uso</strong>
+  <p class="muted">Cada funcionário deve usar seu próprio login. O cargo define o checklist exibido; o nome completo vem do cadastro e fica gravado no histórico de cada atividade.</p>
+</section>
+
+<table class="panel-table">
+  <thead>
+    <tr><th>Nome completo</th><th>Usuário</th><th>Cargo</th><th>Status</th><th>Ações</th></tr>
+  </thead>
+  <tbody>
+    {% for profile in profiles %}
+    <tr>
+      <td>{{ profile.display_name }}</td>
+      <td>{{ profile.user.username }}</td>
+      <td>{{ profile.position.name|default:"Sem cargo" }}</td>
+      <td>{% if profile.user.is_active and profile.active %}Ativo{% else %}Inativo{% endif %}</td>
+      <td>
+        <a class="btn small" href="{% url 'employee_edit' profile.user.id %}">Editar</a>
+        <a class="btn small" href="{% url 'employee_reset_password' profile.user.id %}">Redefinir senha</a>
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5">Nenhum funcionário cadastrado.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>{{ title }}</h1>
+    <p class="muted">Acesso restrito aos administradores.</p>
+  </div>
+  <a class="btn" href="{% url 'employees_list' %}">Voltar</a>
+</div>
+<section class="panel">
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn primary" type="submit">{{ submit_label }}</button>
+  </form>
+</section>
+{% if employee_user %}
+<section class="panel info-light">
+  <strong>Observação</strong>
+  <p class="muted">Alterar o cargo muda o checklist que o usuário verá nos próximos acessos. O histórico já lançado permanece preservado com o cargo e nome gravados no momento da atividade.</p>
+</section>
+{% endif %}
+{% endblock %}
