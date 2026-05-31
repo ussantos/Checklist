@@ -1,6 +1,6 @@
 # Checklist — My Robot Barra da Tijuca
 
-Sistema web interno para controle de checklist/checklists operacionais da My Robot Barra da Tijuca.
+Sistema web interno para controle de checklist operacionais da My Robot Barra da Tijuca.
 
 A aplicação controla a rotina por **cargo**, mas o acesso é feito por **usuário nominal**. Isso evita uso de login genérico e preserva evidência trabalhista/operacional: cada lançamento fica associado ao usuário logado e ao cargo exercido.
 
