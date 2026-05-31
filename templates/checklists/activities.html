@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>{{ title }}</h1>
+    <p class="muted">{{ position.name }} · {{ start_date|date:"d/m/Y" }}{% if start_date != end_date %} a {{ end_date|date:"d/m/Y" }}{% endif %}</p>
+  </div>
+  <form method="get" class="filters">
+    <select class="input" name="periodo">
+      {% for value,label in period_options %}
+        <option value="{{ value }}" {% if period == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input class="input" type="date" name="data" value="{{ reference_date|date:'Y-m-d' }}">
+    <button class="btn">Filtrar</button>
+  </form>
+</div>
+
+<section class="panel info-light">
+  <strong>Suas atividades</strong>
+  <p class="muted">Você está logado como <strong>{{ employee_name }}</strong>. Esta lista mostra apenas as atividades previstas para o seu cargo.</p>
+</section>
+
+<section class="activity-days">
+  {% for day, items, absence in grouped %}
+    <section class="activity-day">
+      <div class="activity-day-title">
+        <h2>{{ day|date:"l" }}</h2>
+        <span>{{ day|date:"d/m/Y" }}</span>
+      </div>
+      {% if absence %}
+        <div class="panel info-light">
+          <strong>Ausência registrada</strong>
+          <p class="muted">{{ absence.get_absence_type_display }}: {{ absence.reason }}. As atividades não executadas nesta data serão ignoradas.</p>
+        </div>
+      {% else %}
+      <div class="board-list">
+        {% for item in items %}
+          {% include "checklists/_occurrence_card.html" %}
+        {% empty %}
+          <div class="panel empty-state"><p class="muted">Nenhuma atividade prevista para esta data.</p></div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </section>
+  {% empty %}
+    <div class="panel empty-state"><p class="muted">Nenhuma atividade prevista para o período selecionado.</p></div>
+  {% endfor %}
+</section>
+{% endblock %}

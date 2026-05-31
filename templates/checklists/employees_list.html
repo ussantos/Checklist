@@ -5,12 +5,16 @@
     <h1>Usuários</h1>
     <p class="muted">Cadastro nominal de administradores e usuários operacionais.</p>
   </div>
-  <a class="btn primary" href="{% url 'employee_create' %}">Cadastrar usuário</a>
+  <div class="filters">
+    <a class="btn" href="{% url 'positions_list' %}">Tipos/cargos</a>
+    <a class="btn" href="{% url 'absences_list' %}">Ausências</a>
+    <a class="btn primary" href="{% url 'employee_create' %}">Cadastrar usuário</a>
+  </div>
 </div>
 
 <section class="panel info-light">
   <strong>Regra de uso</strong>
-  <p class="muted">Cada pessoa deve usar seu próprio login. Administradores acompanham todos os cargos. Usuários operacionais recebem um cargo: Atendente Comercial ou Instrutor de Aula Livre. O nome completo vem do cadastro e fica gravado no histórico de cada atividade.</p>
+  <p class="muted">Cada pessoa deve usar seu próprio login. Colaboradores não são excluídos fisicamente: em desligamento, desative o acesso. O nome completo fica gravado no histórico de cada atividade.</p>
 </section>
 
 <table class="panel-table">
@@ -28,6 +32,9 @@
       <td>
         <a class="btn small" href="{% url 'employee_edit' profile.user.id %}">Editar</a>
         <a class="btn small" href="{% url 'employee_reset_password' profile.user.id %}">Redefinir senha</a>
+        {% if profile.system_role == "OPERATOR" and profile.position %}
+          <a class="btn small" href="{% url 'employee_absence_create' profile.user.id %}">Informar ausência</a>
+        {% endif %}
       </td>
     </tr>
     {% empty %}

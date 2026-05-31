@@ -1,14 +1,70 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-title">
-  <div><h1>Tarefas modelo</h1><p class="muted">A edição completa é feita no menu Admin.</p></div>
+  <div>
+    <h1>Atividades</h1>
+    <p class="muted">Tarefas recorrentes por tipo/cargo de usuário comum.</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="{% url 'template_import_model' %}">Baixar modelo XLSX</a>
+    <a class="btn" href="{% url 'template_import' %}">Importar XLSX</a>
+    <a class="btn primary" href="{% url 'template_create' %}">Cadastrar atividade</a>
+  </div>
 </div>
+
+<section class="panel info-light">
+  <strong>Regra histórica</strong>
+  <p class="muted">Atividades não são excluídas fisicamente. Para encerrar uso, edite o registro e marque como inativo.</p>
+  <p class="muted">Cadastre atividades manualmente uma a uma ou importe em lote via XLSX usando o modelo padrão.</p>
+</section>
+
+<form method="get" class="filters panel">
+  <label>Tipo/cargo
+    <select class="input" name="cargo">
+      <option value="">Todos</option>
+      {% for position in positions %}
+        <option value="{{ position.id }}" {% if position_id == position.id|stringformat:"s" %}selected{% endif %}>{{ position.name }}{% if not position.active %} (inativo){% endif %}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Status
+    <select class="input" name="status">
+      <option value="ativas" {% if status == "ativas" %}selected{% endif %}>Ativas</option>
+      <option value="inativas" {% if status == "inativas" %}selected{% endif %}>Inativas</option>
+      <option value="todas" {% if status == "todas" %}selected{% endif %}>Todas</option>
+    </select>
+  </label>
+  <button class="btn">Filtrar</button>
+</form>
+
 <table class="panel-table">
-<thead><tr><th>Cargo</th><th>Dia</th><th>Horário</th><th>Tarefa</th><th>Frequência</th><th>Evidência</th><th>Ativa</th></tr></thead>
-<tbody>
-{% for t in templates %}
-<tr><td>{{ t.position.name }}</td><td>{{ t.get_day_of_week_display }}</td><td>{% if t.start_time %}{{ t.start_time|time:"H:i" }}{% endif %}</td><td>{{ t.title }}</td><td>{{ t.get_frequency_display }}</td><td>{{ t.evidence_required }}</td><td>{{ t.active|yesno:"Sim,Não" }}</td></tr>
-{% empty %}<tr><td colspan="7">Sem tarefas modelo.</td></tr>{% endfor %}
-</tbody>
+  <thead>
+    <tr>
+      <th>Tipo/cargo</th>
+      <th>Dia</th>
+      <th>Horário</th>
+      <th>Descrição</th>
+      <th>Resultado esperado</th>
+      <th>Recorrência</th>
+      <th>Status</th>
+      <th>Ações</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in templates %}
+    <tr>
+      <td>{{ t.position.name }}</td>
+      <td>{{ t.get_day_of_week_display }}</td>
+      <td>{% if t.start_time %}{{ t.start_time|time:"H:i" }}{% endif %}{% if t.end_time %} - {{ t.end_time|time:"H:i" }}{% endif %}</td>
+      <td>{{ t.title }}</td>
+      <td>{{ t.expected_result|default:t.monthly_goal|default:"-" }}</td>
+      <td>{{ t.get_frequency_display }}</td>
+      <td>{% if t.active %}<span class="badge done">Ativa</span>{% else %}<span class="badge blocked">Inativa</span>{% endif %}</td>
+      <td><a class="btn small" href="{% url 'template_edit' t.id %}">Editar</a></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="8">Nenhuma atividade encontrada.</td></tr>
+    {% endfor %}
+  </tbody>
 </table>
 {% endblock %}

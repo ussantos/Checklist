@@ -39,12 +39,16 @@ O sistema trabalha com três tipos de usuário:
 - O `checklistadmin` é criado automaticamente pelo seed inicial.
 - A partir dele, devem ser cadastrados usuários nominais com uma das funções: **Administrador**, **Atendente Comercial** ou **Instrutor de Aula Livre**.
 - Não há usuários operacionais genéricos para execução diária.
-- No cadastro, o administrador informa nome completo, usuário de login, e-mail opcional, função/perfil e senha forte.
+- No cadastro, o administrador informa nome completo, usuário de login, e-mail opcional e função/perfil. A senha forte é gerada automaticamente pelo sistema e exibida uma única vez.
+- Ao redefinir senha de um usuário, o sistema também gera uma nova senha temporária e exibe uma única vez ao administrador.
+- A obrigatoriedade de trocar a senha no primeiro login é controlada por `FORCE_PASSWORD_CHANGE_ON_FIRST_LOGIN` no `.env`.
 - A tela **Trocar senha** funciona para qualquer tipo de usuário: administrador, atendente ou instrutor.
 
 ## Regras de senha forte
 
 A senha deve ter pelo menos 12 caracteres, uma letra maiúscula, uma letra minúscula, um número e um caractere especial.
+
+Senhas criadas ou redefinidas por administradores seguem essa regra automaticamente. Elas não são enviadas por e-mail, não aparecem em logs e não podem ser exibidas novamente após a tela de confirmação.
 
 ## Recursos principais
 
@@ -117,6 +121,14 @@ Variável obrigatória para o administrador inicial:
 ```env
 INITIAL_CHECKLISTADMIN_PASSWORD=Trocar@Senha2026
 ```
+
+Para controlar a troca obrigatória no primeiro login de usuários criados ou redefinidos por administradores:
+
+```env
+FORCE_PASSWORD_CHANGE_ON_FIRST_LOGIN=False
+```
+
+Use `True` quando quiser obrigar esses usuários a trocar a senha temporária antes de acessar o restante do sistema.
 
 Depois de subir o sistema, acesse com:
 

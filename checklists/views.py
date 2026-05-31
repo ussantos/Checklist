@@ -9,16 +9,21 @@ from django.utils import timezone
 from django.db.models import Q
 from .forms import (
     AdminPasswordResetForm, DailyNoteForm, EmployeeCreateForm, EmployeeUpdateForm,
-    MetricRecordForm, OccurrenceUpdateForm,
+    MetricRecordForm, OccurrenceUpdateForm, TaskTemplateForm,
 )
 from .models import (
     ActivityLog, ChecklistOccurrence, DailyNote, EvidenceAttachment, MetricRecord,
     MetricType, Position, TaskTemplate, UserProfile,
 )
+from .activity_import import (
+    build_activity_import_template, import_activity_rows, parse_activity_import,
+)
 from .services import (
-    create_due_occurrences, create_occurrences_for_positions,
-    is_admin_user, metrics_summary, month_range, monthly_summary,
-    overdue_occurrences, visible_positions,
+    absence_for_user_on_date, create_due_occurrences, create_occurrences_for_positions,
+    filter_absence_ignored_occurrences, get_user_position, is_admin_user, metrics_summary,
+    month_range, monthly_summary, overdue_occurrences, position_absences_on_date,
+    position_is_fully_absent_on_date, user_is_absent_on_date, visible_positions,
+    working_days_between,
 )
 
 User = get_user_model()
@@ -75,6 +80,9 @@ def _role_initial(profile):
 
 @login_required
 def dashboard(request):
+    if not is_admin_user(request.user):
+        return redirect('activities')
+
     today = timezone.localdate()
     year, month = _parse_month_year(request)
     positions = visible_positions(request.user)
@@ -84,7 +92,8 @@ def dashboard(request):
     summary = monthly_summary(year, month, positions)
     overdue = overdue_occurrences(positions, limit=20)
     metric_rows = metrics_summary(year, month, positions)
-    recent = ChecklistOccurrence.objects.filter(position__in=positions).select_related('position', 'template').order_by('-updated_at')[:20]
+    recent_candidates = ChecklistOccurrence.objects.filter(position__in=positions).select_related('position', 'template').order_by('-updated_at')[:80]
+    recent = filter_absence_ignored_occurrences(recent_candidates)[:20]
 
     return render(request, 'checklists/dashboard.html', {
         'today': today,
@@ -100,17 +109,92 @@ def dashboard(request):
 
 
 @login_required
+def activities(request):
+    if is_admin_user(request.user):
+        return redirect('dashboard')
+
+    position = get_user_position(request.user)
+    if not position:
+        return HttpResponseForbidden('Usuário sem cargo vinculado. Peça ao administrador para configurar o perfil.')
+
+    period = request.GET.get('periodo', 'dia')
+    if period not in {'dia', 'semana', 'mes'}:
+        period = 'dia'
+
+    reference_date = _parse_date(request.GET.get('data'))
+    if period == 'semana':
+        start_date = reference_date - timedelta(days=reference_date.weekday())
+        end_date = start_date + timedelta(days=4)
+        title = 'Atividades da semana'
+    elif period == 'mes':
+        start_date, end_date = month_range(reference_date.year, reference_date.month)
+        title = 'Atividades do mês'
+    else:
+        start_date = end_date = reference_date
+        title = 'Atividades do dia'
+
+    if period == 'dia':
+        days = [start_date]
+    else:
+        days = list(working_days_between(start_date, end_date))
+    absences_by_day = {}
+    for day in days:
+        absence = absence_for_user_on_date(request.user, day)
+        absences_by_day[day] = absence
+        if not absence:
+            create_due_occurrences(position, day, user=request.user)
+
+    occurrences = filter_absence_ignored_occurrences(ChecklistOccurrence.objects.filter(
+        position=position,
+        date__range=(start_date, end_date),
+    ).select_related('template', 'position').prefetch_related('attachments').order_by(
+        'date', 'template__order', 'template__start_time', 'template__title'
+    ))
+
+    grouped = []
+    for day in days:
+        absence = absences_by_day.get(day)
+        grouped.append((day, [] if absence else [item for item in occurrences if item.date == day], absence))
+
+    return render(request, 'checklists/activities.html', {
+        'title': title,
+        'period': period,
+        'period_options': [
+            ('dia', 'Atividades do dia'),
+            ('semana', 'Atividades da semana'),
+            ('mes', 'Atividades do mês'),
+        ],
+        'reference_date': reference_date,
+        'start_date': start_date,
+        'end_date': end_date,
+        'position': position,
+        'grouped': grouped,
+        'statuses': ChecklistOccurrence.STATUS_CHOICES,
+        'employee_name': _current_employee_name(request.user),
+        'is_admin': False,
+    })
+
+
+@login_required
 def checklist_day(request):
     target_date = _parse_date(request.GET.get('data'))
     position = _selected_position(request)
     if not position:
         return HttpResponseForbidden('Usuário sem cargo vinculado. Peça ao administrador para configurar o perfil.')
 
-    create_due_occurrences(position, target_date)
-    occurrences = ChecklistOccurrence.objects.filter(position=position, date=target_date).select_related('template').order_by('template__order', 'template__start_time', 'template__title')
+    user_absence = None if is_admin_user(request.user) else absence_for_user_on_date(request.user, target_date)
+    position_fully_absent = position_is_fully_absent_on_date(position, target_date)
+    position_absences = position_absences_on_date(position, target_date) if position_fully_absent else []
+
+    if not user_absence:
+        create_due_occurrences(position, target_date, user=None if is_admin_user(request.user) else request.user)
+    occurrences = ChecklistOccurrence.objects.filter(position=position, date=target_date).select_related('template', 'position').order_by('template__order', 'template__start_time', 'template__title')
+    occurrences = [] if user_absence else filter_absence_ignored_occurrences(occurrences)
     note, _ = DailyNote.objects.get_or_create(position=position, date=target_date)
 
     if request.method == 'POST' and request.POST.get('form_type') == 'daily_note':
+        if user_absence:
+            return HttpResponseForbidden('Você está com ausência registrada para esta data.')
         form = DailyNoteForm(request.POST, instance=note)
         if form.is_valid():
             obj = form.save(commit=False)
@@ -131,6 +215,9 @@ def checklist_day(request):
         'statuses': ChecklistOccurrence.STATUS_CHOICES,
         'employee_name': _current_employee_name(request.user),
         'note_form': form,
+        'user_absence': user_absence,
+        'position_absences': position_absences,
+        'position_fully_absent': position_fully_absent,
         'is_admin': is_admin_user(request.user),
     })
 
@@ -139,18 +226,27 @@ def checklist_day(request):
 def week_view(request):
     selected = _parse_date(request.GET.get('data'))
     monday = selected - timedelta(days=selected.weekday())
-    days = [monday + timedelta(days=i) for i in range(5)]
+    days = [monday + timedelta(days=i) for i in range(6)]
     position = _selected_position(request)
     if not position:
         return HttpResponseForbidden('Usuário sem cargo vinculado.')
 
+    absences_by_day = {}
     for day in days:
-        create_due_occurrences(position, day)
+        absence = None if is_admin_user(request.user) else absence_for_user_on_date(request.user, day)
+        absences_by_day[day] = absence
+        if not absence:
+            create_due_occurrences(position, day, user=None if is_admin_user(request.user) else request.user)
 
     grouped = []
     for day in days:
-        items = ChecklistOccurrence.objects.filter(position=position, date=day).select_related('template').order_by('template__order', 'template__start_time')
-        grouped.append((day, items))
+        items = ChecklistOccurrence.objects.filter(position=position, date=day).select_related('position', 'template').order_by('template__order', 'template__start_time')
+        absence = absences_by_day.get(day)
+        if absence:
+            grouped.append((day, [], absence, []))
+        else:
+            position_absences = position_absences_on_date(position, day) if position_is_fully_absent_on_date(position, day) else []
+            grouped.append((day, filter_absence_ignored_occurrences(items), None, position_absences))
 
     return render(request, 'checklists/week_view.html', {
         'position': position,
@@ -171,6 +267,8 @@ def update_occurrence(request, occurrence_id):
         return HttpResponseForbidden('Você não pode alterar esta tarefa.')
     if request.method != 'POST':
         return redirect('checklist_day')
+    if not is_admin_user(request.user) and user_is_absent_on_date(request.user, occurrence.date):
+        return HttpResponseForbidden('Você está com ausência registrada para esta data.')
 
     old_status = occurrence.status
     has_existing = bool(occurrence.evidence_file) or occurrence.attachments.exists()
@@ -228,7 +326,7 @@ def history(request):
             Q(blocked_reason__icontains=search)
         )
 
-    qs = qs.order_by('-date', 'position__name', 'template__order')[:800]
+    qs = filter_absence_ignored_occurrences(qs.order_by('-date', 'position__name', 'template__order')[:1000])[:800]
     return render(request, 'checklists/history.html', {
         'occurrences': qs,
         'positions': positions,
@@ -237,15 +335,126 @@ def history(request):
     })
 
 
-@login_required
+@user_passes_test(_admin_check)
 def templates_list(request):
-    positions = visible_positions(request.user)
-    templates = TaskTemplate.objects.filter(position__in=positions).select_related('position').order_by('position__name', 'day_of_week', 'order')
+    status = request.GET.get('status', 'ativas')
+    position_id = request.GET.get('cargo')
+    positions = Position.objects.all().order_by('-active', 'name')
+    templates = TaskTemplate.objects.select_related('position').order_by('position__name', 'day_of_week', 'start_time', 'order', 'title')
+    if status == 'inativas':
+        templates = templates.filter(active=False)
+    elif status != 'todas':
+        status = 'ativas'
+        templates = templates.filter(active=True)
+    if position_id and position_id.isdigit():
+        templates = templates.filter(position_id=position_id)
+
     return render(request, 'checklists/templates_list.html', {
         'templates': templates,
         'positions': positions,
-        'is_admin': is_admin_user(request.user),
+        'status': status,
+        'position_id': position_id or '',
+        'is_admin': True,
     })
+
+
+@user_passes_test(_admin_check)
+def template_create(request):
+    if request.method == 'POST':
+        form = TaskTemplateForm(request.POST)
+        if form.is_valid():
+            template = form.save()
+            ActivityLog.objects.create(
+                actor=request.user,
+                position=template.position,
+                action='Atividade criada',
+                object_type='TaskTemplate',
+                object_id=str(template.id),
+                details=f'Atividade: {template.title}; cargo: {template.position.name}; ativa: {template.active}',
+            )
+            messages.success(request, 'Atividade criada.')
+            return redirect('templates_list')
+    else:
+        form = TaskTemplateForm()
+
+    return render(request, 'checklists/template_form.html', {
+        'form': form,
+        'title': 'Cadastrar atividade',
+        'submit_label': 'Cadastrar atividade',
+        'is_admin': True,
+    })
+
+
+@user_passes_test(_admin_check)
+def template_edit(request, template_id):
+    template = get_object_or_404(TaskTemplate.objects.select_related('position'), pk=template_id)
+    previous_active = template.active
+    if request.method == 'POST':
+        form = TaskTemplateForm(request.POST, instance=template)
+        if form.is_valid():
+            template = form.save()
+            if previous_active and not template.active:
+                action = 'Atividade inativada'
+            elif not previous_active and template.active:
+                action = 'Atividade reativada'
+            else:
+                action = 'Atividade atualizada'
+            ActivityLog.objects.create(
+                actor=request.user,
+                position=template.position,
+                action=action,
+                object_type='TaskTemplate',
+                object_id=str(template.id),
+                details=f'Atividade: {template.title}; cargo: {template.position.name}; ativa: {template.active}',
+            )
+            messages.success(request, 'Atividade atualizada.')
+            return redirect('templates_list')
+    else:
+        form = TaskTemplateForm(instance=template)
+
+    return render(request, 'checklists/template_form.html', {
+        'form': form,
+        'title': f'Editar atividade - {template.title}',
+        'submit_label': 'Salvar alterações',
+        'template_obj': template,
+        'is_admin': True,
+    })
+
+
+@user_passes_test(_admin_check)
+def template_import(request):
+    errors_by_row = []
+    if request.method == 'POST':
+        uploaded_file = request.FILES.get('arquivo')
+        if not uploaded_file:
+            errors_by_row = [{'row': 'Arquivo', 'errors': ['Selecione um arquivo XLSX para importar.']}]
+        elif not uploaded_file.name.lower().endswith('.xlsx'):
+            errors_by_row = [{'row': 'Arquivo', 'errors': ['Envie um arquivo no formato .xlsx.']}]
+        else:
+            rows, errors_by_row = parse_activity_import(uploaded_file)
+            if not errors_by_row:
+                result = import_activity_rows(rows, request.user, uploaded_file.name)
+                messages.success(
+                    request,
+                    f'Importação concluída: {result.created} atividade(s) criada(s) e {result.updated} atualizada(s).',
+                )
+                return redirect('templates_list')
+
+    return render(request, 'checklists/template_import.html', {
+        'errors_by_row': errors_by_row,
+        'is_admin': True,
+    })
+
+
+@user_passes_test(_admin_check)
+def template_import_model(request):
+    output = build_activity_import_template()
+    response = HttpResponse(
+        output.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = 'attachment; filename="modelo_importacao_atividades.xlsx"'
+    return response
 
 
 @login_required
@@ -307,6 +516,7 @@ def monthly_csv(request):
     positions = visible_positions(request.user)
     start, end = month_range(year, month)
     qs = ChecklistOccurrence.objects.filter(date__range=(start, end), position__in=positions).select_related('position', 'template').order_by('date', 'position__name', 'template__order')
+    qs = filter_absence_ignored_occurrences(qs)
     return _occurrences_csv_response(qs, f'relatorio_checklist_{year}_{month:02d}.csv')
 
 
@@ -314,6 +524,7 @@ def monthly_csv(request):
 def history_csv(request):
     positions = visible_positions(request.user)
     qs = ChecklistOccurrence.objects.filter(position__in=positions).select_related('position', 'template').order_by('-date', 'position__name')
+    qs = filter_absence_ignored_occurrences(qs)
     return _occurrences_csv_response(qs, 'historico_checklist.csv')
 
 
@@ -357,19 +568,24 @@ def employee_create(request):
             ActivityLog.objects.create(
                 actor=request.user,
                 position=user.userprofile.position,
-                action='Usuário cadastrado',
+                action='Usuário cadastrado com senha temporária',
                 object_type='User',
                 object_id=str(user.id),
                 details=f'Usuário: {user.userprofile.display_name}; perfil: {user.userprofile.get_system_role_display()}',
             )
-            messages.success(request, 'Usuário cadastrado com sucesso.')
-            return redirect('employees_list')
+            return render(request, 'checklists/temporary_password.html', {
+                'title': 'Usuário cadastrado',
+                'user_obj': user,
+                'temporary_password': form.generated_password,
+                'force_password_change': user.userprofile.must_change_password,
+                'is_admin': True,
+            })
     else:
         form = EmployeeCreateForm()
     return render(request, 'checklists/employee_form.html', {
         'form': form,
         'title': 'Cadastrar usuário',
-        'submit_label': 'Cadastrar',
+        'submit_label': 'Cadastrar e gerar senha temporária',
         'is_admin': True,
     })
 
@@ -420,19 +636,24 @@ def employee_reset_password(request, user_id):
             ActivityLog.objects.create(
                 actor=request.user,
                 position=user_obj.userprofile.position,
-                action='Senha de usuário redefinida',
+                action='Senha temporária de usuário gerada',
                 object_type='User',
                 object_id=str(user_obj.id),
                 details=f'Usuário: {user_obj.userprofile.display_name}',
             )
-            messages.success(request, 'Senha redefinida com sucesso.')
-            return redirect('employees_list')
+            return render(request, 'checklists/temporary_password.html', {
+                'title': 'Senha temporária gerada',
+                'user_obj': user_obj,
+                'temporary_password': form.generated_password,
+                'force_password_change': user_obj.userprofile.must_change_password,
+                'is_admin': True,
+            })
     else:
         form = AdminPasswordResetForm(user_obj=user_obj)
     return render(request, 'checklists/employee_form.html', {
         'form': form,
-        'title': f'Redefinir senha — {user_obj.userprofile.display_name}',
-        'submit_label': 'Redefinir senha',
+        'title': f'Gerar nova senha temporária — {user_obj.userprofile.display_name}',
+        'submit_label': 'Gerar senha temporária',
         'employee_user': user_obj,
         'is_admin': True,
     })

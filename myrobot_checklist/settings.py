@@ -3,8 +3,17 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+def _env_bool(name, default=False):
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {'1', 'true', 'yes', 'on', 'sim'}
+
+
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'dev-only-change-me')
-DEBUG = os.environ.get('DJANGO_DEBUG', 'False').lower() == 'true'
+DEBUG = _env_bool('DJANGO_DEBUG', False)
+FORCE_PASSWORD_CHANGE_ON_FIRST_LOGIN = _env_bool('FORCE_PASSWORD_CHANGE_ON_FIRST_LOGIN', False)
 
 _allowed = os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 ALLOWED_HOSTS = [item.strip() for item in _allowed if item.strip()]

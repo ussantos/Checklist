@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Tipos/cargos</h1>
+    <p class="muted">Tipos de usuários comuns vinculados às rotinas operacionais.</p>
+  </div>
+  <a class="btn primary" href="{% url 'position_create' %}">Cadastrar tipo/cargo</a>
+</div>
+
+<section class="panel info-light">
+  <strong>Regra histórica</strong>
+  <p class="muted">Tipos/cargos não são excluídos fisicamente. Para encerrar uso, edite o registro e marque como inativo.</p>
+</section>
+
+<form method="get" class="filters panel">
+  <label>Status
+    <select class="input" name="status">
+      <option value="ativos" {% if status == "ativos" %}selected{% endif %}>Ativos</option>
+      <option value="inativos" {% if status == "inativos" %}selected{% endif %}>Inativos</option>
+      <option value="todos" {% if status == "todos" %}selected{% endif %}>Todos</option>
+    </select>
+  </label>
+  <button class="btn">Filtrar</button>
+</form>
+
+<table class="panel-table">
+  <thead>
+    <tr><th>Nome</th><th>Código</th><th>Descrição</th><th>Status</th><th>Ações</th></tr>
+  </thead>
+  <tbody>
+    {% for position in positions %}
+    <tr>
+      <td>{{ position.name }}</td>
+      <td><code>{{ position.code }}</code></td>
+      <td>{{ position.description|default:"-" }}</td>
+      <td>{% if position.active %}<span class="badge done">Ativo</span>{% else %}<span class="badge blocked">Inativo</span>{% endif %}</td>
+      <td><a class="btn small" href="{% url 'position_edit' position.id %}">Editar</a></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5">Nenhum tipo/cargo encontrado.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

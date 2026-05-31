@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>{{ title }}</h1>
+    <p class="muted">Configure a recorrência da atividade para um tipo/cargo operacional.</p>
+  </div>
+  <a class="btn" href="{% url 'templates_list' %}">Voltar</a>
+</div>
+
+<section class="panel">
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn primary" type="submit">{{ submit_label }}</button>
+  </form>
+</section>
+
+<section class="panel info-light">
+  <strong>Status de execução</strong>
+  <p class="muted">Pendente, executando, atrasada e concluída são estados da execução diária da atividade. Eles não são configurados neste cadastro.</p>
+</section>
+
+{% if template_obj %}
+<section class="panel info-light">
+  <strong>Sem exclusão física</strong>
+  <p class="muted">Para impedir novas ocorrências desta atividade, desmarque Ativa. Ocorrências históricas continuam preservadas.</p>
+</section>
+{% endif %}
+{% endblock %}

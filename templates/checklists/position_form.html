@@ -3,10 +3,11 @@
 <div class="page-title">
   <div>
     <h1>{{ title }}</h1>
-    <p class="muted">Acesso restrito aos administradores.</p>
+    <p class="muted">Use status inativo para remover um tipo/cargo das novas vinculações sem apagar histórico.</p>
   </div>
-  <a class="btn" href="{% url 'employees_list' %}">Voltar</a>
+  <a class="btn" href="{% url 'positions_list' %}">Voltar</a>
 </div>
+
 <section class="panel">
   <form method="post" class="form-grid">
     {% csrf_token %}
@@ -14,10 +15,11 @@
     <button class="btn primary" type="submit">{{ submit_label }}</button>
   </form>
 </section>
-{% if employee_user %}
+
+{% if position_obj %}
 <section class="panel info-light">
-  <strong>Observação</strong>
-  <p class="muted">Desmarque Ativo para retirar o acesso sem excluir o colaborador. Alterar o cargo muda o checklist dos próximos acessos; o histórico já lançado permanece preservado.</p>
+  <strong>Sem exclusão física</strong>
+  <p class="muted">Para impedir novos usuários com este tipo/cargo, desmarque Ativo. Usuários e históricos existentes permanecem vinculados.</p>
 </section>
 {% endif %}
 {% endblock %}

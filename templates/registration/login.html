@@ -1,6 +1,8 @@
 {% extends "base.html" %}
+{% load static %}
 {% block content %}
 <section class="login-card">
+  <img class="login-logo" src="{% static 'img/logo.webp' %}" alt="My Robot Barra da Tijuca">
   <h1>Entrar</h1>
   <p class="muted">Use seu usuário individual de funcionário ou administrador. Não compartilhe login.</p>
   <form method="post">

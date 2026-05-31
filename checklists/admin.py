@@ -1,8 +1,25 @@
 from django.contrib import admin
+from django.contrib.admin.sites import NotRegistered
+from django.contrib.auth import get_user_model
+from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from .models import (
-    ActivityLog, ChecklistOccurrence, DailyNote, EvidenceAttachment, MetricRecord, MetricType,
-    Position, TaskTemplate, UserProfile,
+    ActivityLog, ChecklistOccurrence, DailyNote, EmployeeAbsence, EvidenceAttachment,
+    MetricRecord, MetricType, Position, TaskTemplate, UserProfile,
 )
+
+
+User = get_user_model()
+
+try:
+    admin.site.unregister(User)
+except NotRegistered:
+    pass
+
+
+@admin.register(User)
+class ChecklistUserAdmin(DjangoUserAdmin):
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Position)
@@ -11,6 +28,9 @@ class PositionAdmin(admin.ModelAdmin):
     search_fields = ('name', 'code')
     list_filter = ('active',)
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
@@ -18,13 +38,31 @@ class UserProfileAdmin(admin.ModelAdmin):
     list_filter = ('system_role', 'position', 'active', 'must_change_password')
     search_fields = ('display_name', 'user__username', 'position__name')
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(EmployeeAbsence)
+class EmployeeAbsenceAdmin(admin.ModelAdmin):
+    list_display = ('profile', 'absence_type', 'start_date', 'end_date', 'active', 'created_by')
+    list_filter = ('absence_type', 'active', 'start_date')
+    search_fields = ('profile__display_name', 'profile__user__username', 'reason')
+    readonly_fields = ('created_at', 'updated_at')
+    date_hierarchy = 'start_date'
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(TaskTemplate)
 class TaskTemplateAdmin(admin.ModelAdmin):
-    list_display = ('position', 'day_of_week', 'start_time', 'title', 'frequency', 'category', 'active')
+    list_display = ('position', 'day_of_week', 'start_time', 'end_time', 'title', 'frequency', 'active')
     list_filter = ('position', 'frequency', 'day_of_week', 'category', 'active')
-    search_fields = ('title', 'description', 'evidence_required')
+    search_fields = ('title', 'description', 'expected_result', 'evidence_required', 'proof_location', 'notes')
     ordering = ('position', 'day_of_week', 'order')
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 class EvidenceAttachmentInline(admin.TabularInline):

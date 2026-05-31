@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
-from .models import ChecklistOccurrence, MetricRecord, Position, TaskTemplate
+from .models import ChecklistOccurrence, EmployeeAbsence, MetricRecord, Position, TaskTemplate, UserProfile
 
 User = get_user_model()
 
@@ -33,12 +33,76 @@ def visible_positions(user):
     return Position.objects.none()
 
 
-def create_due_occurrences(position, target_date):
+def active_operator_profiles(position):
+    return UserProfile.objects.filter(
+        system_role=UserProfile.ROLE_OPERATOR,
+        position=position,
+        active=True,
+        user__is_active=True,
+    )
+
+
+def absence_for_user_on_date(user, target_date):
+    profile = get_profile(user)
+    if not profile:
+        return None
+    return EmployeeAbsence.objects.filter(
+        profile=profile,
+        active=True,
+        start_date__lte=target_date,
+        end_date__gte=target_date,
+    ).select_related('profile', 'profile__position').first()
+
+
+def user_is_absent_on_date(user, target_date):
+    return absence_for_user_on_date(user, target_date) is not None
+
+
+def position_absences_on_date(position, target_date):
+    return EmployeeAbsence.objects.filter(
+        profile__position=position,
+        profile__system_role=UserProfile.ROLE_OPERATOR,
+        profile__active=True,
+        profile__user__is_active=True,
+        active=True,
+        start_date__lte=target_date,
+        end_date__gte=target_date,
+    ).select_related('profile', 'profile__position').order_by('profile__display_name')
+
+
+def position_is_fully_absent_on_date(position, target_date):
+    profiles = active_operator_profiles(position)
+    if not profiles.exists():
+        return False
+    available = profiles.exclude(
+        absences__active=True,
+        absences__start_date__lte=target_date,
+        absences__end_date__gte=target_date,
+    ).exists()
+    return not available
+
+
+def is_occurrence_ignored_by_absence(occurrence):
+    if occurrence.status == ChecklistOccurrence.STATUS_DONE:
+        return False
+    return position_is_fully_absent_on_date(occurrence.position, occurrence.date)
+
+
+def filter_absence_ignored_occurrences(occurrences):
+    return [item for item in occurrences if not is_occurrence_ignored_by_absence(item)]
+
+
+def create_due_occurrences(position, target_date, user=None):
     """Cria ocorrências previstas para um cargo/data, sem duplicar.
 
     O método é idempotente: pode ser chamado ao abrir dashboard, checklist ou via
     rotina agendada. A restrição única no banco impede duplicidade.
     """
+    if user and user_is_absent_on_date(user, target_date):
+        return []
+    if position_is_fully_absent_on_date(position, target_date):
+        return []
+
     created = []
     templates = TaskTemplate.objects.filter(position=position, active=True)
     for template in templates:
@@ -62,7 +126,7 @@ def create_occurrences_for_positions(positions, target_date):
 def working_days_between(start_date, end_date):
     current = start_date
     while current <= end_date:
-        if current.weekday() < 5:
+        if current.weekday() < 6:
             yield current
         current += timedelta(days=1)
 
@@ -78,7 +142,13 @@ def month_range(year, month):
 
 def monthly_summary(year, month, positions):
     start, end = month_range(year, month)
-    qs = ChecklistOccurrence.objects.filter(date__range=(start, end), position__in=positions)
+    qs = ChecklistOccurrence.objects.filter(date__range=(start, end), position__in=positions).select_related('position')
+    ignored_ids = [
+        item.id
+        for item in qs
+        if is_occurrence_ignored_by_absence(item)
+    ]
+    qs = qs.exclude(id__in=ignored_ids)
     rows = qs.values('position__id', 'position__name').annotate(
         total=Count('id'),
         previsto=Count('id', filter=Q(status=ChecklistOccurrence.STATUS_PLANNED)),
@@ -98,12 +168,13 @@ def monthly_summary(year, month, positions):
 
 def overdue_occurrences(positions, limit=50):
     today = timezone.localdate()
-    return ChecklistOccurrence.objects.filter(
+    qs = ChecklistOccurrence.objects.filter(
         position__in=positions,
         date__lt=today,
     ).exclude(status__in=[ChecklistOccurrence.STATUS_DONE, ChecklistOccurrence.STATUS_NOT_APPLICABLE]).select_related(
         'position', 'template'
-    ).order_by('-date', 'position__name')[:limit]
+    ).order_by('-date', 'position__name')
+    return filter_absence_ignored_occurrences(qs)[:limit]
 
 
 def metrics_summary(year, month, positions):

@@ -65,6 +65,42 @@ class UserProfile(models.Model):
         return self.system_role == self.ROLE_ADMIN or self.user.is_staff or self.user.is_superuser
 
 
+class EmployeeAbsence(models.Model):
+    """Ausência planejada ou justificada de um colaborador operacional."""
+
+    TYPE_VACATION = 'VACATION'
+    TYPE_JUSTIFIED = 'JUSTIFIED'
+    TYPE_CHOICES = [
+        (TYPE_VACATION, 'Férias'),
+        (TYPE_JUSTIFIED, 'Ausência justificada'),
+    ]
+
+    profile = models.ForeignKey(UserProfile, on_delete=models.PROTECT, related_name='absences')
+    absence_type = models.CharField('Tipo', max_length=20, choices=TYPE_CHOICES)
+    start_date = models.DateField('Início')
+    end_date = models.DateField('Fim')
+    reason = models.CharField('Motivo', max_length=200)
+    active = models.BooleanField('Ativa', default=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_absences')
+    created_at = models.DateTimeField('Criada em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizada em', auto_now=True)
+
+    class Meta:
+        ordering = ['-start_date', 'profile__display_name']
+        indexes = [
+            models.Index(fields=['start_date', 'end_date', 'active']),
+            models.Index(fields=['profile', 'start_date', 'end_date']),
+        ]
+        verbose_name = 'Ausência de colaborador'
+        verbose_name_plural = 'Ausências de colaboradores'
+
+    def __str__(self):
+        return f'{self.profile.display_name} - {self.get_absence_type_display()} ({self.start_date:%d/%m/%Y} a {self.end_date:%d/%m/%Y})'
+
+    def covers(self, target_date):
+        return self.active and self.start_date <= target_date <= self.end_date
+
+
 class TaskTemplate(models.Model):
     """Tarefa recorrente de checklist vinculada a um cargo."""
 
@@ -72,12 +108,14 @@ class TaskTemplate(models.Model):
     FREQ_WEEKLY = 'WEEKLY'
     FREQ_BIWEEKLY = 'BIWEEKLY'
     FREQ_MONTHLY = 'MONTHLY'
+    FREQ_ANNUAL = 'ANNUAL'
     FREQ_CONDITIONAL = 'CONDITIONAL'
     FREQ_CHOICES = [
         (FREQ_DAILY, 'Diária'),
         (FREQ_WEEKLY, 'Semanal'),
-        (FREQ_BIWEEKLY, 'Quinzenal'),
         (FREQ_MONTHLY, 'Mensal'),
+        (FREQ_ANNUAL, 'Anual'),
+        (FREQ_BIWEEKLY, 'Quinzenal'),
         (FREQ_CONDITIONAL, 'Condicional'),
     ]
 
@@ -87,17 +125,21 @@ class TaskTemplate(models.Model):
         (2, 'Quarta-feira'),
         (3, 'Quinta-feira'),
         (4, 'Sexta-feira'),
+        (5, 'Sábado'),
     ]
 
     position = models.ForeignKey(Position, on_delete=models.CASCADE, related_name='task_templates')
-    title = models.CharField('Tarefa', max_length=255)
+    title = models.CharField('Tarefa', max_length=300)
     description = models.TextField('Instruções', blank=True)
     frequency = models.CharField('Frequência', max_length=20, choices=FREQ_CHOICES, default=FREQ_DAILY)
     day_of_week = models.IntegerField('Dia da semana', choices=WEEKDAY_CHOICES, default=0)
     start_time = models.TimeField('Início previsto', blank=True, null=True)
     end_time = models.TimeField('Fim previsto', blank=True, null=True)
     category = models.CharField('Categoria', max_length=120, blank=True)
-    evidence_required = models.CharField('Evidência esperada', max_length=255, blank=True)
+    expected_result = models.CharField('Resultado esperado', max_length=300, blank=True)
+    evidence_required = models.CharField('Evidência exigida', max_length=300, blank=True)
+    proof_location = models.CharField('Onde comprovar', max_length=300, blank=True)
+    notes = models.TextField('Observações', blank=True)
     monthly_goal = models.CharField('Meta mensal relacionada', max_length=255, blank=True)
     source = models.CharField('Origem', max_length=120, default='Checklist REV06')
     order = models.PositiveIntegerField('Ordem', default=0)
@@ -115,7 +157,7 @@ class TaskTemplate(models.Model):
         """Define se a tarefa deve aparecer no checklist da data."""
         if not self.active:
             return False
-        if target_date.weekday() > 4:
+        if target_date.weekday() > 5:
             return False
         if target_date.weekday() != self.day_of_week:
             return False
@@ -125,6 +167,8 @@ class TaskTemplate(models.Model):
             return target_date.isocalendar().week % 2 == 0
         if self.frequency == self.FREQ_MONTHLY:
             return 1 <= target_date.day <= 7
+        if self.frequency == self.FREQ_ANNUAL:
+            return target_date.month == 1 and 1 <= target_date.day <= 7
         return False
 
 

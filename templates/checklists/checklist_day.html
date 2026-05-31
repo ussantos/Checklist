@@ -21,61 +21,32 @@
   <p class="muted">Você está logado como <strong>{{ employee_name }}</strong>. Ao salvar uma tarefa, o sistema registra automaticamente este nome no histórico. Não use login de outra pessoa.</p>
 </section>
 
+{% if user_absence %}
+<section class="panel info-light">
+  <strong>Ausência registrada</strong>
+  <p class="muted">{{ user_absence.get_absence_type_display }}: {{ user_absence.reason }}. As atividades não executadas nesta data serão ignoradas.</p>
+</section>
+{% elif position_fully_absent %}
+<section class="panel info-light">
+  <strong>Cargo sem colaborador disponível</strong>
+  <p class="muted">Todos os colaboradores ativos deste cargo estão com ausência registrada nesta data. As atividades não executadas serão ignoradas.</p>
+  <ul class="muted">
+    {% for absence in position_absences %}
+      <li>{{ absence.profile.display_name }} - {{ absence.get_absence_type_display }}: {{ absence.reason }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
 <section class="board-list">
 {% for item in occurrences %}
-  <article class="task-card">
-    <div class="task-header">
-      <div>
-        <h2>{{ item.template.title }}</h2>
-        <p class="muted">{{ item.template.get_frequency_display }} · {{ item.template.category }} · Evidência: {{ item.template.evidence_required|default:"registrar observação objetiva" }}</p>
-        {% if item.executor_full_name %}<p class="muted"><strong>Último registro por:</strong> {{ item.executor_full_name }}</p>{% endif %}
-      </div>
-      <span class="badge {{ item.status|lower }}">{{ item.get_status_display }}</span>
-    </div>
-    <details>
-      <summary>Ver instruções</summary>
-      <pre>{{ item.template.description }}</pre>
-    </details>
-    <form method="post" enctype="multipart/form-data" action="{% url 'update_occurrence' item.id %}" class="task-form">
-      {% csrf_token %}
-      <div class="form-grid">
-        <label>Status
-          <select name="status" class="input">
-            {% for value,label in statuses %}<option value="{{ value }}" {% if item.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
-          </select>
-        </label>
-        <label>Evidência textual
-          <textarea class="input" name="evidence_text" rows="3" placeholder="Descreva objetivamente o que foi feito. Para concluir, registre texto ou anexe evidência.">{{ item.evidence_text }}</textarea>
-        </label>
-        <label>Arquivos de evidência — PDF ou imagem
-          <input class="input" type="file" name="evidence_files" multiple accept=".pdf,image/*,.heic">
-          <span class="help">Você pode anexar PDF, print, foto ou imagem. Limite definido no .env.</span>
-        </label>
-        <label>Motivo se pendente/bloqueado
-          <textarea class="input" name="blocked_reason" rows="2" placeholder="Obrigatório se o status for Bloqueado/Pendente.">{{ item.blocked_reason }}</textarea>
-        </label>
-      </div>
-
-      {% if item.evidence_file or item.attachments.all %}
-      <div class="attachments">
-        <strong>Evidências anexadas:</strong>
-        <ul>
-          {% if item.evidence_file %}<li><a href="{% url 'legacy_evidence_download' item.id %}" target="_blank">Arquivo legado</a></li>{% endif %}
-          {% for attachment in item.attachments.all %}
-            <li><a href="{% url 'evidence_attachment_download' attachment.id %}" target="_blank">{{ attachment.original_name|default:attachment.file.name }}</a> — {{ attachment.uploaded_at|date:"d/m/Y H:i" }}</li>
-          {% endfor %}
-        </ul>
-      </div>
-      {% endif %}
-
-      <button class="btn primary" type="submit">Salvar tarefa</button>
-    </form>
-  </article>
+  {% include "checklists/_occurrence_card.html" %}
 {% empty %}
   <div class="panel"><p>Nenhuma tarefa prevista para esta data.</p></div>
 {% endfor %}
 </section>
 
+{% if not user_absence and not position_fully_absent %}
 <section class="panel">
   <h2>Resumo geral do dia</h2>
   <form method="post" class="form-grid">
@@ -85,4 +56,5 @@
     <button class="btn primary" type="submit">Salvar resumo</button>
   </form>
 </section>
+{% endif %}
 {% endblock %}

@@ -5,23 +5,34 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Checklist</title>
+  <meta name="theme-color" content="#ff8400">
+  <link rel="icon" href="{% static 'img/favicon.png' %}" type="image/png">
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
 </head>
 <body>
 <header class="topbar">
-  <div>
-    <strong>Checklist</strong>
-    <span class="muted">Checklist Operacional Interno</span>
-  </div>
+  <a class="brand" href="{% if is_admin or user.is_staff %}{% url 'dashboard' %}{% else %}{% url 'activities' %}{% endif %}">
+    <img class="brand-logo" src="{% static 'img/logo.webp' %}" alt="My Robot Barra da Tijuca">
+    <span class="brand-text">
+      <strong>Checklist</strong>
+      <span>Operacional Interno</span>
+    </span>
+  </a>
   {% if user.is_authenticated %}
   <nav>
-    <a href="{% url 'dashboard' %}">Dashboard</a>
-    <a href="{% url 'checklist_day' %}">Checklist do dia</a>
-    <a href="{% url 'week_view' %}">Semana</a>
-    <a href="{% url 'metrics' %}">Indicadores</a>
-    <a href="{% url 'history' %}">Histórico</a>
-    <a href="{% url 'templates_list' %}">Tarefas modelo</a>
-    {% if is_admin or user.is_staff %}<a href="{% url 'employees_list' %}">Usuários</a>{% endif %}
+    {% if is_admin or user.is_staff %}
+      <a href="{% url 'dashboard' %}">Dashboard</a>
+      <a href="{% url 'checklist_day' %}">Checklist do dia</a>
+      <a href="{% url 'week_view' %}">Semana</a>
+      <a href="{% url 'metrics' %}">Indicadores</a>
+      <a href="{% url 'history' %}">Histórico</a>
+      <a href="{% url 'templates_list' %}">Tarefas modelo</a>
+      <a href="{% url 'positions_list' %}">Tipos/cargos</a>
+      <a href="{% url 'absences_list' %}">Ausências</a>
+      <a href="{% url 'employees_list' %}">Usuários</a>
+    {% else %}
+      <a href="{% url 'activities' %}">Atividades</a>
+    {% endif %}
     <a href="{% url 'password_change' %}">Trocar senha</a>
     {% if user.is_staff %}<a href="/admin/">Admin Django</a>{% endif %}
     <form method="post" action="{% url 'logout' %}" class="inline-form">{% csrf_token %}<button class="linkbutton" type="submit">Sair</button></form>

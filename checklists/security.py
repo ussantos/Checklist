@@ -1,6 +1,12 @@
 import secrets
 import string
 
+from django.conf import settings
+
+
+def should_force_password_change_on_first_login():
+    return bool(getattr(settings, 'FORCE_PASSWORD_CHANGE_ON_FIRST_LOGIN', False))
+
 
 def generate_temporary_password(length=16):
     """Gera uma senha temporária forte para criação/redefinição de usuário.

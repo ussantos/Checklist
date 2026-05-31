@@ -15,6 +15,7 @@ DAY_MAP = {
     'Quarta-feira': 2,
     'Quinta-feira': 3,
     'Sexta-feira': 4,
+    'Sábado': 5,
 }
 
 ROLE_FILES = [
@@ -35,6 +36,8 @@ def parse_frequency(text):
         return TaskTemplate.FREQ_BIWEEKLY
     if 'mensal' in raw:
         return TaskTemplate.FREQ_MONTHLY
+    if 'anual' in raw:
+        return TaskTemplate.FREQ_ANNUAL
     if 'semanal' in raw:
         return TaskTemplate.FREQ_WEEKLY
     if 'quando houver' in text.lower() or 'se houver' in text.lower():
@@ -57,18 +60,46 @@ def parse_time_range(text):
     return start, end
 
 
+def find_position_by_seed_tasks(filename):
+    path = BASE_DIR / 'seed' / filename
+    if not path.exists():
+        return None
+    with path.open(newline='', encoding='utf-8-sig') as fp:
+        reader = csv.DictReader(fp)
+        for row in reader:
+            day_label = row.get('List', '').strip()
+            title = row.get('Card Name', '').strip()
+            if not title:
+                continue
+            qs = Position.objects.filter(
+                task_templates__title=title,
+                task_templates__day_of_week=DAY_MAP.get(day_label, 0),
+            ).distinct()
+            if qs.count() == 1:
+                return qs.first()
+            return None
+    return None
+
+
 class Command(BaseCommand):
     help = 'Cria/atualiza cargos, tarefas modelo e indicadores, sem alterar usuários.'
 
     @transaction.atomic
     def handle(self, *args, **options):
         positions = {}
-        for code, name, _filename in ROLE_FILES:
-            position, _ = Position.objects.get_or_create(code=code, defaults={'name': name})
-            position.name = name
-            position.description = 'Checklist operacional controlado por cargo, com execução registrada por usuário nominal.'
-            position.active = True
-            position.save()
+        for code, name, filename in ROLE_FILES:
+            position = Position.objects.filter(code=code).first()
+            if not position:
+                position = Position.objects.filter(name=name).first()
+            if not position:
+                position = find_position_by_seed_tasks(filename)
+            if not position:
+                position = Position.objects.create(
+                    code=code,
+                    name=name,
+                    description='Checklist operacional controlado por cargo, com execução registrada por usuário nominal.',
+                    active=True,
+                )
             positions[code] = position
 
         total = 0
@@ -88,9 +119,10 @@ class Command(BaseCommand):
                         continue
                     start_time, end_time = parse_time_range(description or title)
                     evidence = extract_line(description, 'Evidência esperada')
+                    expected_result = extract_line(description, 'Meta/resultado')
+                    proof_location = extract_line(description, 'Onde comprovar')
                     category = extract_line(description, 'Categoria original') or extract_line(description, 'Etiquetas sugeridas')
-                    goal = extract_line(description, 'Meta/resultado')
-                    TaskTemplate.objects.update_or_create(
+                    template, created = TaskTemplate.objects.get_or_create(
                         position=position,
                         title=title,
                         day_of_week=DAY_MAP.get(day_label, 0),
@@ -100,12 +132,26 @@ class Command(BaseCommand):
                             'start_time': start_time,
                             'end_time': end_time,
                             'category': category[:120],
-                            'evidence_required': evidence[:255],
-                            'monthly_goal': goal[:255],
+                            'expected_result': expected_result[:300],
+                            'evidence_required': evidence[:300],
+                            'proof_location': proof_location[:300],
+                            'monthly_goal': expected_result[:255],
                             'order': idx,
                             'active': True,
                         },
                     )
+                    if not created:
+                        template.description = description
+                        template.frequency = parse_frequency(description)
+                        template.start_time = start_time
+                        template.end_time = end_time
+                        template.category = category[:120]
+                        template.expected_result = expected_result[:300]
+                        template.evidence_required = evidence[:300]
+                        template.proof_location = proof_location[:300]
+                        template.monthly_goal = expected_result[:255]
+                        template.order = idx
+                        template.save()
                     total += 1
 
         atendente = positions['atendente-comercial']

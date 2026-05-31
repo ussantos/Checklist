@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>{{ title }}</h1>
+    <p class="muted">Use esta tela para informar férias ou ausência justificada de um colaborador operacional.</p>
+  </div>
+  <a class="btn" href="{% url 'absences_list' %}">Voltar</a>
+</div>
+
+<section class="panel">
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn primary" type="submit">{{ submit_label }}</button>
+  </form>
+</section>
+
+<section class="panel info-light">
+  <strong>Sem exclusão física</strong>
+  <p class="muted">Para cancelar uma ausência registrada, desmarque Ativa. O registro permanece disponível para auditoria.</p>
+</section>
+{% endblock %}

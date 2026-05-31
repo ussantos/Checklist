@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Importar atividades</h1>
+    <p class="muted">Cadastre ou atualize atividades recorrentes em lote por XLSX.</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="{% url 'template_import_model' %}">Baixar modelo XLSX</a>
+    <a class="btn" href="{% url 'templates_list' %}">Voltar</a>
+  </div>
+</div>
+
+<section class="panel info-light">
+  <strong>Como funciona</strong>
+  <p class="muted">O XLSX cria ou atualiza atividades pelo conjunto tipo/cargo, dia da semana, início, fim e descrição. Linhas ausentes do arquivo não excluem atividades existentes.</p>
+</section>
+
+{% if errors_by_row %}
+<section class="panel">
+  <h2>Erros encontrados</h2>
+  <p class="muted">Nenhuma atividade foi importada. Corrija as linhas abaixo e envie o arquivo novamente.</p>
+  <table class="panel-table">
+    <thead>
+      <tr>
+        <th>Linha</th>
+        <th>Erro</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in errors_by_row %}
+        {% for error in item.errors %}
+        <tr>
+          <td>{{ item.row }}</td>
+          <td>{{ error }}</td>
+        </tr>
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" class="panel form-grid">
+  {% csrf_token %}
+  <label>Arquivo XLSX
+    <input class="input" type="file" name="arquivo" accept=".xlsx" required>
+  </label>
+  <div class="form-actions">
+    <button class="btn primary" type="submit">Importar XLSX</button>
+  </div>
+</form>
+{% endblock %}

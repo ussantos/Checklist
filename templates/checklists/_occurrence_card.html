@@ -1,0 +1,51 @@
+<article class="task-card">
+  <div class="task-header">
+    <div>
+      <h2>{{ item.template.title }}</h2>
+      <p class="muted">{{ item.template.get_frequency_display }} · {{ item.template.category }} · Evidência: {{ item.template.evidence_required|default:"registrar observação objetiva" }}</p>
+      {% if item.template.expected_result %}<p class="muted"><strong>Resultado esperado:</strong> {{ item.template.expected_result }}</p>{% endif %}
+      {% if item.template.proof_location %}<p class="muted"><strong>Onde comprovar:</strong> {{ item.template.proof_location }}</p>{% endif %}
+      {% if item.executor_full_name %}<p class="muted"><strong>Último registro por:</strong> {{ item.executor_full_name }}</p>{% endif %}
+    </div>
+    <span class="badge {{ item.status|lower }}">{{ item.get_status_display }}</span>
+  </div>
+  <details>
+    <summary>Ver instruções</summary>
+    <pre>{{ item.template.description }}</pre>
+    {% if item.template.notes %}<pre>{{ item.template.notes }}</pre>{% endif %}
+  </details>
+  <form method="post" enctype="multipart/form-data" action="{% url 'update_occurrence' item.id %}" class="task-form">
+    {% csrf_token %}
+    <div class="form-grid">
+      <label>Status
+        <select name="status" class="input">
+          {% for value,label in statuses %}<option value="{{ value }}" {% if item.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Evidência textual
+        <textarea class="input" name="evidence_text" rows="3" placeholder="Descreva objetivamente o que foi feito. Para concluir, registre texto ou anexe evidência.">{{ item.evidence_text }}</textarea>
+      </label>
+      <label>Arquivos de evidência - PDF ou imagem
+        <input class="input" type="file" name="evidence_files" multiple accept=".pdf,image/*,.heic">
+        <span class="help">Você pode anexar PDF, print, foto ou imagem. Limite definido no .env.</span>
+      </label>
+      <label>Motivo se pendente/bloqueado
+        <textarea class="input" name="blocked_reason" rows="2" placeholder="Obrigatório se o status for Bloqueado/Pendente.">{{ item.blocked_reason }}</textarea>
+      </label>
+    </div>
+
+    {% if item.evidence_file or item.attachments.all %}
+    <div class="attachments">
+      <strong>Evidências anexadas:</strong>
+      <ul>
+        {% if item.evidence_file %}<li><a href="{% url 'legacy_evidence_download' item.id %}" target="_blank">Arquivo legado</a></li>{% endif %}
+        {% for attachment in item.attachments.all %}
+          <li><a href="{% url 'evidence_attachment_download' attachment.id %}" target="_blank">{{ attachment.original_name|default:attachment.file.name }}</a> - {{ attachment.uploaded_at|date:"d/m/Y H:i" }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <button class="btn primary" type="submit">Salvar tarefa</button>
+  </form>
+</article>

@@ -17,6 +17,7 @@ DAY_MAP = {
     'Quarta-feira': 2,
     'Quinta-feira': 3,
     'Sexta-feira': 4,
+    'Sábado': 5,
 }
 
 ROLE_FILES = [
@@ -37,6 +38,8 @@ def parse_frequency(text):
         return TaskTemplate.FREQ_BIWEEKLY
     if 'mensal' in raw:
         return TaskTemplate.FREQ_MONTHLY
+    if 'anual' in raw:
+        return TaskTemplate.FREQ_ANNUAL
     if 'semanal' in raw:
         return TaskTemplate.FREQ_WEEKLY
     if 'quando houver' in text.lower() or 'se houver' in text.lower():
@@ -105,7 +108,7 @@ class Command(BaseCommand):
 
         # Usuários administrativos pessoais não são criados automaticamente.
         # Usuários operacionais genéricos antigos são desativados para evitar login compartilhado.
-        for old_username in ['atendente.comercial', 'instrutor.aula.livre', 'checklistadmin']:
+        for old_username in ['atendente.comercial', 'instrutor.aula.livre']:
             try:
                 old_user = User.objects.get(username=old_username)
             except User.DoesNotExist:
@@ -136,9 +139,10 @@ class Command(BaseCommand):
                         continue
                     start_time, end_time = parse_time_range(description or title)
                     evidence = extract_line(description, 'Evidência esperada')
+                    expected_result = extract_line(description, 'Meta/resultado')
+                    proof_location = extract_line(description, 'Onde comprovar')
                     category = extract_line(description, 'Categoria original') or extract_line(description, 'Etiquetas sugeridas')
-                    goal = extract_line(description, 'Meta/resultado')
-                    TaskTemplate.objects.update_or_create(
+                    template, created = TaskTemplate.objects.get_or_create(
                         position=position,
                         title=title,
                         day_of_week=DAY_MAP.get(day_label, 0),
@@ -148,12 +152,26 @@ class Command(BaseCommand):
                             'start_time': start_time,
                             'end_time': end_time,
                             'category': category[:120],
-                            'evidence_required': evidence[:255],
-                            'monthly_goal': goal[:255],
+                            'expected_result': expected_result[:300],
+                            'evidence_required': evidence[:300],
+                            'proof_location': proof_location[:300],
+                            'monthly_goal': expected_result[:255],
                             'order': idx,
                             'active': True,
                         }
                     )
+                    if not created:
+                        template.description = description
+                        template.frequency = parse_frequency(description)
+                        template.start_time = start_time
+                        template.end_time = end_time
+                        template.category = category[:120]
+                        template.expected_result = expected_result[:300]
+                        template.evidence_required = evidence[:300]
+                        template.proof_location = proof_location[:300]
+                        template.monthly_goal = expected_result[:255]
+                        template.order = idx
+                        template.save()
                     total += 1
 
         atendente = positions['atendente-comercial']
