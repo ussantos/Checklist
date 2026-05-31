@@ -262,3 +262,26 @@ class MetricRecord(models.Model):
         ordering = ['-date', 'metric__name']
         verbose_name = 'Registro de indicador'
         verbose_name_plural = 'Registros de indicadores'
+
+    def __str__(self):
+        return f'{self.date} - {self.metric.name}: {self.value}'
+
+
+class ActivityLog(models.Model):
+    """Trilha de auditoria simples."""
+
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    position = models.ForeignKey(Position, on_delete=models.SET_NULL, null=True, blank=True)
+    action = models.CharField('Ação', max_length=120)
+    object_type = models.CharField('Tipo de objeto', max_length=80, blank=True)
+    object_id = models.CharField('ID do objeto', max_length=80, blank=True)
+    details = models.TextField('Detalhes', blank=True)
+    created_at = models.DateTimeField('Criado em', auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Log de atividade'
+        verbose_name_plural = 'Logs de atividade'
+
+    def __str__(self):
+        return f'{self.created_at:%d/%m/%Y %H:%M} - {self.action}'
