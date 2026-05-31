@@ -59,25 +59,30 @@ def parse_time_range(text):
     return start, end
 
 
-def upsert_user(username, password, first_name, last_name, is_admin=False, position=None):
+def upsert_user(username, password, display_name, is_admin=False, position=None):
+    """Cria/atualiza usuário inicial.
+
+    Em instalações novas, somente o usuário técnico `checkupadmin` é criado
+    automaticamente. Demais administradores e usuários operacionais devem ser
+    cadastrados pela tela Usuários, com login nominal.
+    """
     user, created = User.objects.get_or_create(username=username, defaults={
-        'first_name': first_name,
-        'last_name': last_name,
+        'first_name': display_name,
         'is_staff': is_admin,
         'is_superuser': is_admin,
         'is_active': True,
     })
     if created or os.environ.get('RESET_INITIAL_PASSWORDS', 'False').lower() == 'true':
         user.set_password(password)
-    user.first_name = first_name
-    user.last_name = last_name
+    user.first_name = display_name
+    user.last_name = ''
     user.is_staff = is_admin
     user.is_superuser = is_admin
     user.is_active = True
     user.save()
 
     profile, _ = UserProfile.objects.get_or_create(user=user)
-    profile.display_name = f'{first_name} {last_name}'.strip() or username
+    profile.display_name = display_name.strip() or username
     profile.system_role = UserProfile.ROLE_ADMIN if is_admin else UserProfile.ROLE_OPERATOR
     profile.position = position
     profile.active = True
@@ -86,7 +91,7 @@ def upsert_user(username, password, first_name, last_name, is_admin=False, posit
 
 
 class Command(BaseCommand):
-    help = 'Cria cargos, usuários locais, tarefas modelo e indicadores iniciais.'
+    help = 'Cria cargos, usuário administrador inicial, tarefas modelo e indicadores iniciais.'
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -99,12 +104,17 @@ class Command(BaseCommand):
             position.save()
             positions[code] = position
 
-        upsert_user('uellington', os.environ.get('INITIAL_UELLINGTON_PASSWORD', 'Trocar@Senha2026'), 'Uellington', 'Santos', True)
-        upsert_user('liliane', os.environ.get('INITIAL_LILIANE_PASSWORD', 'Trocar@Senha2026'), 'Liliane', 'Brum', True)
+        upsert_user(
+            'checkupadmin',
+            os.environ.get('INITIAL_CHECKUPADMIN_PASSWORD', 'Trocar@Senha2026'),
+            'Administrador Checkups',
+            True,
+        )
 
-        # A partir desta versão, usuários operacionais são nominais e devem ser
-        # cadastrados pela tela Funcionários. Contas genéricas antigas são
-        # desativadas automaticamente para evitar uso compartilhado de login.
+        # Usuários administrativos pessoais não são mais criados automaticamente.
+        # Se já existirem de versões anteriores, permanecem ativos para evitar
+        # bloqueio inesperado. O checkupadmin pode editar/desativar pela tela Usuários.
+        # Usuários operacionais genéricos antigos são desativados para evitar login compartilhado.
         for old_username in ['atendente.comercial', 'instrutor.aula.livre']:
             try:
                 old_user = User.objects.get(username=old_username)
@@ -136,7 +146,7 @@ class Command(BaseCommand):
                     evidence = extract_line(description, 'Evidência esperada')
                     category = extract_line(description, 'Categoria original') or extract_line(description, 'Etiquetas sugeridas')
                     goal = extract_line(description, 'Meta/resultado')
-                    template, _ = TaskTemplate.objects.update_or_create(
+                    TaskTemplate.objects.update_or_create(
                         position=position,
                         title=title,
                         day_of_week=DAY_MAP.get(day_label, 0),
