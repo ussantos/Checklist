@@ -1,4 +1,5 @@
 import csv
+from calendar import monthrange as calendar_monthrange
 from datetime import datetime, timedelta
 from django.contrib import messages
 from django.contrib.auth import get_user_model
@@ -61,6 +62,14 @@ def _parse_metric_period(request):
     if period not in dict(METRIC_PERIOD_CHOICES):
         period = METRIC_PERIOD_MONTHLY
     return period, _parse_date(request.GET.get('data'))
+
+
+def _add_months(value, offset):
+    month_index = value.month - 1 + offset
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, calendar_monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
 
 
 def _selected_position(request):
@@ -150,7 +159,7 @@ def activities(request):
     reference_date = _parse_date(request.GET.get('data'))
     if period == 'semana':
         start_date = reference_date - timedelta(days=reference_date.weekday())
-        end_date = start_date + timedelta(days=4)
+        end_date = start_date + timedelta(days=5)
         title = 'Atividades da semana'
     elif period == 'mes':
         start_date, end_date = month_range(reference_date.year, reference_date.month)
@@ -178,9 +187,41 @@ def activities(request):
     ))
 
     grouped = []
+    grouped_by_day = {}
     for day in days:
         absence = absences_by_day.get(day)
-        grouped.append((day, [] if absence else [item for item in occurrences if item.date == day], absence))
+        items = [] if absence else [item for item in occurrences if item.date == day]
+        grouped.append((day, items, absence))
+        grouped_by_day[day] = {'date': day, 'items': items, 'absence': absence, 'in_period': True}
+
+    if period == 'dia':
+        calendar_rows = [[grouped_by_day[start_date]]]
+        prev_period_date = reference_date - timedelta(days=1)
+        next_period_date = reference_date + timedelta(days=1)
+    elif period == 'semana':
+        calendar_rows = [[grouped_by_day[day] for day in days]]
+        prev_period_date = start_date - timedelta(days=7)
+        next_period_date = start_date + timedelta(days=7)
+    else:
+        calendar_start = start_date + timedelta(days=1) if start_date.weekday() == 6 else start_date - timedelta(days=start_date.weekday())
+        calendar_end = end_date - timedelta(days=1) if end_date.weekday() == 6 else end_date + timedelta(days=5 - end_date.weekday())
+        calendar_rows = []
+        current = calendar_start
+        while current <= calendar_end:
+            week = []
+            for _ in range(6):
+                cell = grouped_by_day.get(current, {
+                    'date': current,
+                    'items': [],
+                    'absence': None,
+                    'in_period': start_date <= current <= end_date,
+                })
+                cell['in_period'] = start_date <= current <= end_date
+                week.append(cell)
+                current += timedelta(days=1)
+            calendar_rows.append(week)
+        prev_period_date = _add_months(reference_date, -1)
+        next_period_date = _add_months(reference_date, 1)
 
     return render(request, 'checklists/activities.html', {
         'title': title,
@@ -193,8 +234,11 @@ def activities(request):
         'reference_date': reference_date,
         'start_date': start_date,
         'end_date': end_date,
+        'prev_period_date': prev_period_date,
+        'next_period_date': next_period_date,
         'position': position,
         'grouped': grouped,
+        'calendar_rows': calendar_rows,
         'statuses': ChecklistOccurrence.OPERATIONAL_STATUS_CHOICES,
         'employee_name': _current_employee_name(request.user),
         'is_admin': False,
