@@ -465,11 +465,19 @@ class ActivityLog(models.Model):
     action = models.CharField('Ação', max_length=120)
     object_type = models.CharField('Tipo de objeto', max_length=80, blank=True)
     object_id = models.CharField('ID do objeto', max_length=80, blank=True)
+    object_label = models.CharField('Nome/descrição do item', max_length=300, blank=True)
+    previous_values = models.JSONField('Valores anteriores', default=dict, blank=True)
+    new_values = models.JSONField('Valores novos', default=dict, blank=True)
     details = models.TextField('Detalhes', blank=True)
     created_at = models.DateTimeField('Criado em', auto_now_add=True)
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['created_at']),
+            models.Index(fields=['object_type', 'action']),
+            models.Index(fields=['actor', 'created_at']),
+        ]
         verbose_name = 'Log de atividade'
         verbose_name_plural = 'Logs de atividade'
 

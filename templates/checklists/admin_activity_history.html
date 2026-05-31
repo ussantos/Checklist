@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Auditoria administrativa</h1>
+    <p class="muted">Histórico de alterações em cargos, usuários, atividades, indicadores, metas, importações e ativações/inativações.</p>
+  </div>
+  <a class="btn" href="{% url 'admin_activity_history_csv' %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}">Exportar CSV</a>
+</div>
+
+<form method="get" class="filters panel">
+  <label>Data inicial
+    <input class="input" type="date" name="inicio" value="{{ filters.inicio }}">
+  </label>
+  <label>Data final
+    <input class="input" type="date" name="fim" value="{{ filters.fim }}">
+  </label>
+  <label>Administrador
+    <select class="input" name="usuario">
+      <option value="">Todos</option>
+      {% for admin_user in admin_users %}
+        <option value="{{ admin_user.id }}" {% if filters.usuario == admin_user.id|stringformat:"s" %}selected{% endif %}>{{ admin_user.username }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Tipo de objeto
+    <select class="input" name="tipo_objeto">
+      <option value="">Todos</option>
+      {% for object_type in object_types %}
+        <option value="{{ object_type }}" {% if filters.tipo_objeto == object_type %}selected{% endif %}>{{ object_type }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Ação
+    <select class="input" name="acao">
+      <option value="">Todas</option>
+      {% for action in actions %}
+        <option value="{{ action }}" {% if filters.acao == action %}selected{% endif %}>{{ action }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Busca
+    <input class="input" name="busca" value="{{ filters.busca }}" placeholder="Texto livre">
+  </label>
+  <button class="btn">Filtrar</button>
+  <a class="btn" href="{% url 'admin_activity_history' %}">Limpar</a>
+</form>
+
+<table class="panel-table">
+  <thead>
+    <tr>
+      <th>Data/hora</th>
+      <th>Administrador</th>
+      <th>Tipo</th>
+      <th>ID</th>
+      <th>Item</th>
+      <th>Ação</th>
+      <th>Antes/depois</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>{{ row.log.created_at|date:"d/m/Y H:i:s" }}</td>
+      <td>{% if row.log.actor %}{{ row.log.actor.username }}{% else %}-{% endif %}</td>
+      <td>{{ row.log.object_type|default:"-" }}</td>
+      <td>{{ row.log.object_id|default:"-" }}</td>
+      <td>{{ row.log.object_label|default:row.log.details|truncatechars:90 }}</td>
+      <td>{{ row.log.action }}</td>
+      <td>
+        {% if row.log.previous_values or row.log.new_values %}
+          <details>
+            <summary>Ver valores</summary>
+            <strong>Antes</strong>
+            <pre>{{ row.previous_values_json }}</pre>
+            <strong>Depois</strong>
+            <pre>{{ row.new_values_json }}</pre>
+          </details>
+        {% else %}
+          <span class="muted">{{ row.log.details|truncatechars:120 }}</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="7">Nenhum registro encontrado.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

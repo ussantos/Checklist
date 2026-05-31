@@ -146,9 +146,9 @@ class MetricRecordAdmin(admin.ModelAdmin):
 
 @admin.register(ActivityLog)
 class ActivityLogAdmin(admin.ModelAdmin):
-    list_display = ('created_at', 'actor', 'position', 'action', 'object_type', 'object_id')
-    list_filter = ('action', 'position', 'created_at')
-    search_fields = ('details', 'action', 'actor__username')
+    list_display = ('created_at', 'actor', 'position', 'action', 'object_type', 'object_id', 'object_label')
+    list_filter = ('action', 'object_type', 'position', 'created_at')
+    search_fields = ('details', 'object_label', 'action', 'actor__username', 'object_type', 'object_id')
     readonly_fields = ('created_at',)
 
 

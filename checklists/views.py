@@ -1,4 +1,5 @@
 import csv
+import json
 from calendar import monthrange as calendar_monthrange
 from datetime import datetime, timedelta
 from django.contrib import messages
@@ -10,6 +11,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.db.models import F, Q
+from .audit import changed_values, log_activity, snapshot_instance
 from .forms import (
     ActivityDeactivationSuggestionForm, ActivitySuggestionCreateForm,
     ActivitySuggestionReviewForm, AdminPasswordResetForm, DailyNoteForm,
@@ -36,6 +38,24 @@ from .services import (
 User = get_user_model()
 
 
+TASK_TEMPLATE_AUDIT_FIELDS = [
+    'position', 'day_of_week', 'start_time', 'end_time', 'title',
+    'expected_result', 'frequency', 'requires_evidence', 'evidence_required',
+    'proof_location', 'notes', 'active',
+]
+METRIC_TYPE_AUDIT_FIELDS = [
+    'name', 'code', 'area', 'frequency', 'position', 'activity',
+    'monthly_target', 'unit', 'active',
+]
+METRIC_RECORD_AUDIT_FIELDS = ['metric', 'position', 'date', 'executor_full_name', 'value', 'notes']
+ACTIVITY_SUGGESTION_AUDIT_FIELDS = [
+    'request_type', 'status', 'position', 'target_template', 'created_template',
+    'title', 'expected_result', 'frequency', 'day_of_week', 'start_time',
+    'end_time', 'requires_evidence', 'evidence_required', 'proof_location',
+    'notes', 'justification', 'review_note', 'reviewed_by', 'reviewed_at',
+]
+
+
 def _activity_return_url(request, occurrence):
     next_url = request.POST.get('next') or request.GET.get('next')
     if next_url and next_url.startswith('/'):
@@ -52,6 +72,15 @@ def _parse_date(value):
         return datetime.strptime(value, '%Y-%m-%d').date()
     except ValueError:
         return timezone.localdate()
+
+
+def _parse_filter_date(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, '%Y-%m-%d').date()
+    except ValueError:
+        return None
 
 
 def _parse_month_year(request):
@@ -405,13 +434,14 @@ def activity_suggestion_create(request):
             suggestion.position = position
             suggestion.requested_by = request.user
             suggestion.save()
-            ActivityLog.objects.create(
+            log_activity(
                 actor=request.user,
+                obj=suggestion,
                 position=position,
                 action='Sugestão de atividade criada',
-                object_type='ActivitySuggestion',
-                object_id=str(suggestion.id),
+                object_label=suggestion.title,
                 details=f'Atividade sugerida: {suggestion.title}; cargo: {position.name}',
+                new_values=snapshot_instance(suggestion, ACTIVITY_SUGGESTION_AUDIT_FIELDS),
             )
             messages.success(request, 'Sugestão enviada para análise do administrador.')
             return redirect('activities')
@@ -462,13 +492,17 @@ def activity_suggestion_deactivate(request):
                     justification=justification,
                 )
                 created_count += 1
-                ActivityLog.objects.create(
+                log_activity(
                     actor=request.user,
+                    obj=suggestion,
                     position=position,
                     action='Sugestão de desativação criada',
-                    object_type='ActivitySuggestion',
-                    object_id=str(suggestion.id),
+                    object_label=template.title,
                     details=f'Atividade indicada: {template.title}; cargo: {position.name}',
+                    new_values={
+                        'target_template': {'id': template.id, 'label': template.title},
+                        'justification': justification,
+                    },
                 )
             if created_count:
                 messages.success(request, f'{created_count} sugestão(ões) enviada(s) para análise.')
@@ -566,6 +600,110 @@ def history(request):
     })
 
 
+def _admin_activity_log_queryset(request):
+    qs = ActivityLog.objects.select_related('actor', 'position').filter(
+        Q(actor__is_staff=True) |
+        Q(actor__is_superuser=True) |
+        Q(actor__userprofile__system_role=UserProfile.ROLE_ADMIN)
+    ).order_by('-created_at')
+
+    start = _parse_filter_date(request.GET.get('inicio'))
+    end = _parse_filter_date(request.GET.get('fim'))
+    actor_id = request.GET.get('usuario')
+    object_type = request.GET.get('tipo_objeto')
+    action = request.GET.get('acao')
+    search = request.GET.get('busca')
+
+    if start:
+        qs = qs.filter(created_at__date__gte=start)
+    if end:
+        qs = qs.filter(created_at__date__lte=end)
+    if actor_id and actor_id.isdigit():
+        qs = qs.filter(actor_id=actor_id)
+    if object_type:
+        qs = qs.filter(object_type=object_type)
+    if action:
+        qs = qs.filter(action=action)
+    if search:
+        qs = qs.filter(
+            Q(action__icontains=search) |
+            Q(object_type__icontains=search) |
+            Q(object_id__icontains=search) |
+            Q(object_label__icontains=search) |
+            Q(details__icontains=search) |
+            Q(actor__username__icontains=search) |
+            Q(actor__first_name__icontains=search)
+        )
+
+    return qs
+
+
+def _json_display(value, pretty=False):
+    return json.dumps(value or {}, ensure_ascii=False, sort_keys=True, indent=2 if pretty else None)
+
+
+@user_passes_test(_admin_check)
+def admin_activity_history(request):
+    logs = list(_admin_activity_log_queryset(request)[:800])
+    rows = [
+        {
+            'log': log,
+            'previous_values_json': _json_display(log.previous_values, pretty=True),
+            'new_values_json': _json_display(log.new_values, pretty=True),
+        }
+        for log in logs
+    ]
+    admin_users = User.objects.filter(
+        Q(is_staff=True) | Q(is_superuser=True) | Q(userprofile__system_role=UserProfile.ROLE_ADMIN),
+        activitylog__isnull=False,
+    ).order_by('username').distinct()
+    object_types = ActivityLog.objects.exclude(object_type='').order_by('object_type').values_list('object_type', flat=True).distinct()
+    actions = ActivityLog.objects.exclude(action='').order_by('action').values_list('action', flat=True).distinct()
+
+    return render(request, 'checklists/admin_activity_history.html', {
+        'rows': rows,
+        'admin_users': admin_users,
+        'object_types': object_types,
+        'actions': actions,
+        'filters': {
+            'inicio': request.GET.get('inicio', ''),
+            'fim': request.GET.get('fim', ''),
+            'usuario': request.GET.get('usuario', ''),
+            'tipo_objeto': request.GET.get('tipo_objeto', ''),
+            'acao': request.GET.get('acao', ''),
+            'busca': request.GET.get('busca', ''),
+        },
+        'is_admin': True,
+    })
+
+
+@user_passes_test(_admin_check)
+def admin_activity_history_csv(request):
+    logs = _admin_activity_log_queryset(request)[:5000]
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="historico_administrativo.csv"'
+    response.write('\ufeff')
+    writer = csv.writer(response)
+    writer.writerow([
+        'Data/hora', 'Administrador', 'Cargo', 'Tipo de objeto', 'ID',
+        'Nome/descrição', 'Ação', 'Valores anteriores', 'Valores novos', 'Detalhes',
+    ])
+    for log in logs:
+        writer.writerow([
+            timezone.localtime(log.created_at).strftime('%d/%m/%Y %H:%M:%S'),
+            log.actor.username if log.actor else '',
+            log.position.name if log.position else '',
+            log.object_type,
+            log.object_id,
+            log.object_label,
+            log.action,
+            _json_display(log.previous_values),
+            _json_display(log.new_values),
+            log.details,
+        ])
+    return response
+
+
 @user_passes_test(_admin_check)
 def templates_list(request):
     status = request.GET.get('status', 'ativas')
@@ -600,13 +738,13 @@ def template_create(request):
         form = TaskTemplateForm(request.POST)
         if form.is_valid():
             template = form.save()
-            ActivityLog.objects.create(
+            log_activity(
                 actor=request.user,
-                position=template.position,
+                obj=template,
                 action='Atividade criada',
-                object_type='TaskTemplate',
-                object_id=str(template.id),
+                object_label=template.title,
                 details=f'Atividade: {template.title}; cargo: {template.position.name}; ativa: {template.active}',
+                new_values=snapshot_instance(template, TASK_TEMPLATE_AUDIT_FIELDS),
             )
             messages.success(request, 'Atividade criada.')
             return redirect('templates_list')
@@ -625,23 +763,29 @@ def template_create(request):
 def template_edit(request, template_id):
     template = get_object_or_404(TaskTemplate.objects.select_related('position'), pk=template_id)
     previous_active = template.active
+    previous_values_full = snapshot_instance(template, TASK_TEMPLATE_AUDIT_FIELDS)
     if request.method == 'POST':
         form = TaskTemplateForm(request.POST, instance=template)
         if form.is_valid():
             template = form.save()
+            previous_values, new_values = changed_values(
+                previous_values_full,
+                snapshot_instance(template, TASK_TEMPLATE_AUDIT_FIELDS),
+            )
             if previous_active and not template.active:
                 action = 'Atividade inativada'
             elif not previous_active and template.active:
                 action = 'Atividade reativada'
             else:
                 action = 'Atividade atualizada'
-            ActivityLog.objects.create(
+            log_activity(
                 actor=request.user,
-                position=template.position,
+                obj=template,
                 action=action,
-                object_type='TaskTemplate',
-                object_id=str(template.id),
+                object_label=template.title,
                 details=f'Atividade: {template.title}; cargo: {template.position.name}; ativa: {template.active}',
+                previous_values=previous_values,
+                new_values=new_values,
             )
             messages.success(request, 'Atividade atualizada.')
             return redirect('templates_list')
@@ -707,18 +851,25 @@ def activity_suggestion_review(request, suggestion_id):
 
 def _mark_suggestion_rejected(request, suggestion, review_note=''):
     with transaction.atomic():
+        previous_values_full = snapshot_instance(suggestion, ACTIVITY_SUGGESTION_AUDIT_FIELDS)
         suggestion.status = ActivitySuggestion.STATUS_REJECTED
         suggestion.review_note = review_note.strip()
         suggestion.reviewed_by = request.user
         suggestion.reviewed_at = timezone.now()
         suggestion.save(update_fields=['status', 'review_note', 'reviewed_by', 'reviewed_at', 'updated_at'])
-        ActivityLog.objects.create(
+        previous_values, new_values = changed_values(
+            previous_values_full,
+            snapshot_instance(suggestion, ACTIVITY_SUGGESTION_AUDIT_FIELDS),
+        )
+        log_activity(
             actor=request.user,
+            obj=suggestion,
             position=suggestion.position,
             action='Sugestão de atividade rejeitada',
-            object_type='ActivitySuggestion',
-            object_id=str(suggestion.id),
+            object_label=suggestion.title or (suggestion.target_template.title if suggestion.target_template_id else ''),
             details=f'Tipo: {suggestion.get_request_type_display()}; solicitante: {suggestion.requested_by.username}',
+            previous_values=previous_values,
+            new_values=new_values,
         )
 
 
@@ -736,6 +887,7 @@ def _review_activity_creation_suggestion(request, suggestion):
         form = ActivitySuggestionReviewForm(request.POST, instance=suggestion)
         if form.is_valid():
             with transaction.atomic():
+                suggestion_before = snapshot_instance(suggestion, ACTIVITY_SUGGESTION_AUDIT_FIELDS)
                 suggestion = form.save(commit=False)
                 template = TaskTemplate.objects.create(
                     position=suggestion.position,
@@ -757,21 +909,27 @@ def _review_activity_creation_suggestion(request, suggestion):
                 suggestion.reviewed_by = request.user
                 suggestion.reviewed_at = timezone.now()
                 suggestion.save()
-                ActivityLog.objects.create(
+                log_activity(
                     actor=request.user,
-                    position=template.position,
+                    obj=template,
                     action='Atividade criada por sugestão',
-                    object_type='TaskTemplate',
-                    object_id=str(template.id),
+                    object_label=template.title,
                     details=f'Atividade: {template.title}; sugestão: {suggestion.id}; solicitante: {suggestion.requested_by.username}',
+                    new_values=snapshot_instance(template, TASK_TEMPLATE_AUDIT_FIELDS),
                 )
-                ActivityLog.objects.create(
+                suggestion_previous_values, suggestion_new_values = changed_values(
+                    suggestion_before,
+                    snapshot_instance(suggestion, ACTIVITY_SUGGESTION_AUDIT_FIELDS),
+                )
+                log_activity(
                     actor=request.user,
+                    obj=suggestion,
                     position=template.position,
                     action='Sugestão de atividade aprovada',
-                    object_type='ActivitySuggestion',
-                    object_id=str(suggestion.id),
+                    object_label=suggestion.title,
                     details=f'Atividade criada: {template.id} - {template.title}',
+                    previous_values=suggestion_previous_values,
+                    new_values=suggestion_new_values,
                 )
             messages.success(request, 'Sugestão aprovada e atividade criada.')
             return redirect('templates_list')
@@ -798,6 +956,8 @@ def _review_activity_deactivation_suggestion(request, suggestion):
         if action == 'approve':
             with transaction.atomic():
                 target = suggestion.target_template
+                target_before = snapshot_instance(target, TASK_TEMPLATE_AUDIT_FIELDS) if target else {}
+                suggestion_before = snapshot_instance(suggestion, ACTIVITY_SUGGESTION_AUDIT_FIELDS)
                 if target and target.active:
                     target.active = False
                     target.save(update_fields=['active'])
@@ -806,21 +966,35 @@ def _review_activity_deactivation_suggestion(request, suggestion):
                 suggestion.reviewed_by = request.user
                 suggestion.reviewed_at = timezone.now()
                 suggestion.save(update_fields=['status', 'review_note', 'reviewed_by', 'reviewed_at', 'updated_at'])
-                ActivityLog.objects.create(
+                target_previous_values, target_new_values = changed_values(
+                    target_before,
+                    snapshot_instance(target, TASK_TEMPLATE_AUDIT_FIELDS) if target else {},
+                )
+                log_activity(
                     actor=request.user,
+                    obj=target,
                     position=suggestion.position,
                     action='Atividade inativada por sugestão',
                     object_type='TaskTemplate',
                     object_id=str(target.id if target else ''),
+                    object_label=target.title if target else '',
                     details=f'Atividade: {target.title if target else "-"}; sugestão: {suggestion.id}; solicitante: {suggestion.requested_by.username}',
+                    previous_values=target_previous_values,
+                    new_values=target_new_values,
                 )
-                ActivityLog.objects.create(
+                suggestion_previous_values, suggestion_new_values = changed_values(
+                    suggestion_before,
+                    snapshot_instance(suggestion, ACTIVITY_SUGGESTION_AUDIT_FIELDS),
+                )
+                log_activity(
                     actor=request.user,
+                    obj=suggestion,
                     position=suggestion.position,
                     action='Sugestão de atividade aprovada',
-                    object_type='ActivitySuggestion',
-                    object_id=str(suggestion.id),
+                    object_label=target.title if target else '',
                     details=f'Atividade inativada: {target.id if target else "-"} - {target.title if target else "-"}',
+                    previous_values=suggestion_previous_values,
+                    new_values=suggestion_new_values,
                 )
             messages.success(request, 'Sugestão aprovada e atividade inativada.')
             return redirect('templates_list')
@@ -858,7 +1032,15 @@ def metrics(request):
             obj.executor_full_name = _current_employee_name(request.user)
             obj.created_by = request.user
             obj.save()
-            ActivityLog.objects.create(actor=request.user, position=position, action='Indicador registrado', object_type='MetricRecord', object_id=str(obj.id), details=f'Responsável: {obj.executor_full_name}')
+            log_activity(
+                actor=request.user,
+                obj=obj,
+                position=position,
+                action='Indicador registrado',
+                object_label=f'{obj.metric.name} - {obj.date}',
+                details=f'Responsável: {obj.executor_full_name}',
+                new_values=snapshot_instance(obj, METRIC_RECORD_AUDIT_FIELDS),
+            )
             messages.success(request, 'Indicador registrado.')
             return redirect(f'{request.path}?cargo={position.id}&periodo={metric_period}&data={reference_date.isoformat()}')
     else:
@@ -916,13 +1098,13 @@ def metric_type_create(request):
         form = MetricTypeForm(request.POST)
         if form.is_valid():
             metric = form.save()
-            ActivityLog.objects.create(
+            log_activity(
                 actor=request.user,
-                position=metric.position,
+                obj=metric,
                 action='Indicador criado',
-                object_type='MetricType',
-                object_id=str(metric.id),
+                object_label=metric.name,
                 details=f'Indicador: {metric.name}; área: {metric.area}; ativo: {metric.active}',
+                new_values=snapshot_instance(metric, METRIC_TYPE_AUDIT_FIELDS),
             )
             messages.success(request, 'Indicador criado.')
             return redirect('metric_types_list')
@@ -945,23 +1127,29 @@ def metric_type_create(request):
 def metric_type_edit(request, metric_id):
     metric = get_object_or_404(MetricType.objects.select_related('position', 'activity'), pk=metric_id)
     previous_active = metric.active
+    previous_values_full = snapshot_instance(metric, METRIC_TYPE_AUDIT_FIELDS)
     if request.method == 'POST':
         form = MetricTypeForm(request.POST, instance=metric)
         if form.is_valid():
             metric = form.save()
+            previous_values, new_values = changed_values(
+                previous_values_full,
+                snapshot_instance(metric, METRIC_TYPE_AUDIT_FIELDS),
+            )
             if previous_active and not metric.active:
                 action = 'Indicador inativado'
             elif not previous_active and metric.active:
                 action = 'Indicador reativado'
             else:
                 action = 'Indicador atualizado'
-            ActivityLog.objects.create(
+            log_activity(
                 actor=request.user,
-                position=metric.position,
+                obj=metric,
                 action=action,
-                object_type='MetricType',
-                object_id=str(metric.id),
+                object_label=metric.name,
                 details=f'Indicador: {metric.name}; área: {metric.area}; ativo: {metric.active}',
+                previous_values=previous_values,
+                new_values=new_values,
             )
             messages.success(request, 'Indicador atualizado.')
             return redirect('metric_types_list')

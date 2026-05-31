@@ -11,7 +11,8 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 
-from .models import ActivityLog, Position, TaskTemplate
+from .audit import log_activity
+from .models import Position, TaskTemplate
 
 
 ACTIVITY_IMPORT_HEADERS = [
@@ -373,14 +374,21 @@ def import_activity_rows(rows, actor, filename=''):
                 )
                 created += 1
 
-        ActivityLog.objects.create(
+        log_activity(
             actor=actor,
             action='Importação XLSX de atividades',
             object_type='TaskTemplate',
+            object_label=filename or 'Importação XLSX',
             details=(
                 f'Arquivo: {filename or "sem nome"}; linhas processadas: {len(rows)}; '
                 f'criadas: {created}; atualizadas: {updated}'
             ),
+            new_values={
+                'arquivo': filename or 'sem nome',
+                'linhas_processadas': len(rows),
+                'criadas': created,
+                'atualizadas': updated,
+            },
         )
 
     return ActivityImportResult(created=created, updated=updated, processed=len(rows))

@@ -321,6 +321,16 @@ th {
   box-shadow: var(--shadow);
 }
 
+.panel-table details pre {
+  max-width: 520px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+}
+
 .messages {
   margin-bottom: 16px;
 }

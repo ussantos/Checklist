@@ -2,7 +2,7 @@
 
 Este documento deve ser usado antes de colocar o sistema Checklist em uso oficial na My Robot Barra da Tijuca.
 
-O objetivo é validar instalação, autenticação, cadastro de funcionários, checklists, evidências, relatórios, backup e restauração.
+O objetivo é validar instalação, autenticação, cadastro de usuários, atividades, indicadores, metas, evidências, auditoria, backup e restauração.
 
 ## 1. Pré-requisitos do servidor
 
@@ -56,90 +56,114 @@ Acessar:
 http://IP_DO_SERVIDOR:8000
 ```
 
-Validar com o usuário `uellington`:
+Validar com o usuário técnico `checklistadmin` ou com um administrador nominal criado para homologação:
 
 - [ ] Login funciona.
 - [ ] Dashboard abre.
 - [ ] Menu administrativo aparece.
-- [ ] Menu **Funcionários** aparece.
+- [ ] Menu **Usuários** aparece.
 - [ ] Menu **Histórico** aparece.
-- [ ] Menu **Métricas** aparece.
+- [ ] Menu **Indicadores** aparece.
+- [ ] Menu **Auditoria** aparece.
 - [ ] Link para `/admin/` funciona.
 
-Repetir com o usuário `liliane`:
+Repetir com outro administrador nominal, se existir:
 
 - [ ] Login funciona.
 - [ ] Permissões administrativas estão corretas.
 
-## 4. Cadastro de funcionário nominal
+## 4. Cadastro de usuário nominal
 
-Como administrador, acessar **Funcionários > Cadastrar funcionário**.
+Como administrador, acessar **Usuários > Cadastrar usuário**.
 
-Criar um funcionário de teste:
+Criar um usuário comum de teste:
 
 ```text
 Nome completo: Funcionário Teste Comercial
 Usuário: teste.comercial
-Cargo: Atendente Comercial
-Senha: Teste@Senha2026
+Perfil/cargo: Atendente Comercial ou outro cargo operacional ativo
 ```
 
 Validar:
 
-- [ ] O cadastro exige senha forte.
-- [ ] Senha fraca é rejeitada.
+- [ ] O administrador não digita senha manualmente.
+- [ ] O sistema gera senha temporária forte automaticamente.
+- [ ] A senha temporária é exibida uma única vez.
+- [ ] A senha não aparece no histórico/auditoria.
 - [ ] Usuário duplicado é rejeitado.
-- [ ] Funcionário aparece na lista.
+- [ ] Usuário aparece na lista.
 - [ ] Cargo aparece corretamente.
-- [ ] Funcionário pode ser editado.
+- [ ] Usuário pode ser editado.
 - [ ] Senha pode ser redefinida pelo administrador.
+- [ ] Usuário pode ser desativado sem exclusão física.
 
-Criar outro funcionário de teste:
+Criar outro usuário comum de teste:
 
 ```text
 Nome completo: Funcionário Teste Instrutor
 Usuário: teste.instrutor
-Cargo: Instrutor de Aula Livre
-Senha: Teste@Senha2026
+Perfil/cargo: Instrutor de Cursos Livres ou outro cargo operacional ativo
 ```
 
 Validar os mesmos itens.
 
-## 5. Teste de troca de senha pelo funcionário
+## 5. Teste de troca de senha pelo usuário comum
 
 Entrar com `teste.comercial`.
 
 Validar:
 
 - [ ] Login funciona.
-- [ ] O funcionário visualiza somente tarefas do cargo dele.
+- [ ] O usuário visualiza somente atividades do cargo dele.
 - [ ] O menu **Trocar senha** aparece.
 - [ ] Senha fraca é rejeitada.
 - [ ] Senha forte é aceita.
 - [ ] Após trocar senha, login novo funciona.
+- [ ] Se `FORCE_PASSWORD_CHANGE_ON_FIRST_LOGIN=True`, o usuário é redirecionado para troca de senha no primeiro login.
 
 Repetir com `teste.instrutor`.
 
-## 6. Checklist diário
+## 6. Atividades do usuário comum
 
-Com `teste.comercial`, abrir **Checklist do dia**.
+Com `teste.comercial`, abrir **Atividades**.
 
 Validar:
 
-- [ ] Tarefas do cargo **Atendente Comercial** aparecem.
-- [ ] Não aparecem tarefas do cargo **Instrutor de Aula Livre**.
-- [ ] É possível alterar status para **Em andamento**.
+- [ ] A tela inicial do usuário comum abre em **Atividades da semana**.
+- [ ] O filtro muda automaticamente entre dia, semana e mês.
+- [ ] As atividades aparecem em lógica de calendário.
+- [ ] Atividades do cargo **Atendente Comercial** aparecem.
+- [ ] Não aparecem atividades do cargo **Instrutor de Cursos Livres**.
+- [ ] Cards ficam ordenados por horário de início.
+- [ ] É possível abrir uma atividade e alterar status para **Executando**.
 - [ ] É possível salvar evidência textual.
-- [ ] Ao concluir sem evidência textual e sem anexo, o sistema bloqueia.
+- [ ] Se a atividade exigir evidência, concluir sem evidência textual e sem anexo é bloqueado.
+- [ ] Se a atividade não exigir evidência, os campos de evidência não aparecem.
 - [ ] Ao concluir com evidência textual, o sistema salva.
 - [ ] Ao concluir com anexo PDF, o sistema salva.
 - [ ] Ao concluir com imagem, o sistema salva.
-- [ ] Ao marcar como **Bloqueado/Pendente**, o sistema exige motivo.
-- [ ] O nome do funcionário logado aparece no histórico da atividade.
+- [ ] Ao marcar como **Atrasada**, o sistema exige observação operacional.
+- [ ] O nome do usuário logado aparece no histórico da atividade.
 
-Com `teste.instrutor`, repetir a validação para o cargo **Instrutor de Aula Livre**.
+Com `teste.instrutor`, repetir a validação para o cargo **Instrutor de Cursos Livres** ou cargo equivalente.
 
-## 7. Teste de uploads de evidência
+## 7. Sugestões de atividades
+
+Com usuário comum:
+
+- [ ] Sugerir nova atividade abre formulário com campos de atividade.
+- [ ] Sugerir desativação mostra apenas atividades ativas do cargo do usuário.
+- [ ] A solicitação enviada não altera atividade imediatamente.
+
+Com administrador:
+
+- [ ] Sugestões aparecem na tela **Atividades**.
+- [ ] Administrador consegue aprovar criação, ajustando campos antes.
+- [ ] Administrador consegue rejeitar criação sem criar atividade.
+- [ ] Administrador consegue aprovar desativação sem excluir histórico.
+- [ ] ActivityLog registra aprovação/rejeição.
+
+## 8. Teste de uploads de evidência
 
 Testar anexos:
 
@@ -157,7 +181,7 @@ Testar segurança:
 - [ ] Funcionário de outro cargo não acessa anexo sem permissão.
 - [ ] Administrador acessa anexos de todos os cargos.
 
-## 8. Visão semanal
+## 9. Visões de calendário
 
 Validar:
 
@@ -166,23 +190,25 @@ Validar:
 - [ ] Tarefas quinzenais aparecem apenas na quinzena configurada.
 - [ ] Tarefas mensais aparecem conforme regra definida.
 - [ ] Administrador consegue alternar cargo.
-- [ ] Funcionário operacional enxerga apenas seu cargo.
+- [ ] Usuário operacional enxerga apenas seu cargo.
 
-## 9. Dashboard mensal
+## 10. Dashboard administrativo e indicadores/metas
 
 Como administrador:
 
-- [ ] Dashboard mensal carrega.
-- [ ] Indicadores de concluídas, pendentes e bloqueadas aparecem.
-- [ ] Filtro de mês/ano funciona.
-- [ ] Filtro por cargo funciona.
-- [ ] Tarefas vencidas aparecem corretamente.
+- [ ] Dashboard administrativo carrega.
+- [ ] Filtros diário, semanal, mensal e anual funcionam.
+- [ ] Indicadores, metas, realizado e percentual aparecem.
+- [ ] Visão por usuário aparece quando houver mais de um usuário no mesmo cargo.
+- [ ] Totalizador por tipo/cargo aparece.
 
-Como funcionário:
+Como usuário comum:
 
-- [ ] Dashboard mostra apenas o cargo vinculado.
+- [ ] Tela **Indicadores** mostra apenas indicadores/metas do próprio escopo.
+- [ ] Botão de adicionar indicador não aparece.
+- [ ] Filtro de período atualiza a tela automaticamente.
 
-## 10. Histórico e exportações
+## 11. Histórico, auditoria e exportações
 
 Validar:
 
@@ -193,21 +219,51 @@ Validar:
 - [ ] Busca por texto funciona.
 - [ ] Exportação CSV mensal funciona.
 - [ ] Exportação CSV de histórico funciona.
+- [ ] Auditoria administrativa carrega.
+- [ ] Filtros de auditoria por data, administrador, tipo de objeto, ação e texto livre funcionam.
+- [ ] Exportação CSV da auditoria funciona.
+- [ ] Alterações de cargo, usuário, atividade, indicador/meta e importação XLSX aparecem na auditoria.
+- [ ] Redefinição de senha aparece na auditoria sem exibir senha.
 - [ ] CSV abre corretamente no Excel/LibreOffice.
-- [ ] CSV contém funcionário executor, cargo, status, evidência textual e anexos.
+- [ ] CSV de histórico contém usuário executor, cargo, status, evidência textual e anexos.
 
-## 11. Métricas operacionais
+## 12. Indicadores operacionais
 
 Validar:
 
-- [ ] Métrica pode ser registrada por cargo.
-- [ ] Métrica aceita valor numérico.
-- [ ] Métrica aceita observação.
-- [ ] Métrica aceita anexo, se aplicável.
-- [ ] Métricas aparecem no dashboard.
-- [ ] Funcionário só vê métricas do próprio cargo.
+- [ ] Administrador cria indicador.
+- [ ] Administrador vincula indicador a tipo/cargo.
+- [ ] Administrador vincula indicador a atividade do tipo escolhido.
+- [ ] Administrador edita meta (`monthly_target`).
+- [ ] Administrador inativa indicador sem exclusão física.
+- [ ] Indicador aceita evidência TXT, planilha, PDF, imagem ou arquivo similar quando registrado pelo administrador.
+- [ ] Indicadores aparecem no dashboard.
+- [ ] Usuário comum só vê indicadores do próprio escopo.
 
-## 12. Painel administrativo Django
+## 13. CRUDs administrativos sem delete físico
+
+Validar:
+
+- [ ] Tipo/cargo pode ser criado, editado, ativado e inativado.
+- [ ] Atividade pode ser criada, editada, ativada e inativada.
+- [ ] Indicador pode ser criado, editado, ativado e inativado.
+- [ ] Usuário pode ser criado, editado, ativado e desativado.
+- [ ] Interface interna não oferece exclusão física desses cadastros históricos.
+- [ ] Cargos inativos não aparecem para novos usuários comuns.
+- [ ] Atividades inativas não aparecem para usuários comuns.
+
+## 14. Importação XLSX de atividades
+
+Validar:
+
+- [ ] Admin baixa modelo XLSX.
+- [ ] Admin importa XLSX válido.
+- [ ] XLSX inválido mostra erros por linha.
+- [ ] Atividades importadas aparecem no CRUD.
+- [ ] Atividades importadas aparecem para usuário comum conforme cargo e recorrência.
+- [ ] Importação registra ActivityLog.
+
+## 15. Painel administrativo Django
 
 Acessar `/admin/`.
 
@@ -222,7 +278,7 @@ Validar:
 - [ ] É possível visualizar anexos de evidência.
 - [ ] Usuários operacionais não acessam `/admin/`.
 
-## 13. Backup manual
+## 16. Backup manual
 
 Executar:
 
@@ -241,7 +297,7 @@ Validar:
 - [ ] Log não tem erro.
 - [ ] Arquivo foi enviado para o remoto `rclone`, se configurado.
 
-## 14. Cron de backup
+## 17. Cron de backup
 
 Configurar:
 
@@ -262,7 +318,7 @@ Validar no dia seguinte:
 - [ ] Arquivos apareceram na pasta de backup.
 - [ ] Arquivos apareceram no Google Drive/OneDrive, se configurado.
 
-## 15. Teste de restauração
+## 18. Teste de restauração
 
 Nunca validar produção sem teste de restauração.
 
@@ -289,13 +345,15 @@ Validar:
 - [ ] CSV exporta dados restaurados.
 - [ ] Dashboard bate com dados esperados.
 
-## 16. Validação final antes de liberar uso
+## 19. Validação final antes de liberar uso
 
 Liberar uso somente se todos estes itens estiverem OK:
 
 - [ ] Administradores testados.
-- [ ] Funcionários nominais testados.
+- [ ] Usuários nominais testados.
 - [ ] Senha forte validada.
+- [ ] Senha temporária gerada automaticamente testada.
+- [ ] Auditoria administrativa testada.
 - [ ] Upload de PDF testado.
 - [ ] Upload de imagem testado.
 - [ ] Acesso a evidências protegido.
@@ -307,7 +365,7 @@ Liberar uso somente se todos estes itens estiverem OK:
 - [ ] `.env` não foi enviado ao GitHub.
 - [ ] Credenciais iniciais foram trocadas.
 
-## 17. Registro da homologação
+## 20. Registro da homologação
 
 Preencher após teste:
 

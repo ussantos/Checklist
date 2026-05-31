@@ -3,8 +3,9 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import user_passes_test
 from django.shortcuts import get_object_or_404, redirect, render
 
+from .audit import changed_values, log_activity, safe_value, snapshot_instance
 from .forms import AdminPasswordResetForm, EmployeeAbsenceForm, EmployeeCreateForm, EmployeeUpdateForm, PositionForm
-from .models import ActivityLog, EmployeeAbsence, Position, UserProfile
+from .models import EmployeeAbsence, Position, UserProfile
 from .services import is_admin_user
 
 User = get_user_model()
@@ -20,6 +21,23 @@ def _role_initial(profile):
     if profile.position_id:
         return f'POSITION:{profile.position_id}'
     return ''
+
+
+POSITION_AUDIT_FIELDS = ['name', 'code', 'description', 'active']
+ABSENCE_AUDIT_FIELDS = ['profile', 'absence_type', 'start_date', 'end_date', 'reason', 'active']
+
+
+def _user_audit_snapshot(user):
+    profile = user.userprofile
+    data = snapshot_instance(user, ['username', 'email', 'first_name', 'is_active', 'is_staff', 'is_superuser'])
+    data.update({
+        'profile.display_name': profile.display_name,
+        'profile.system_role': profile.system_role,
+        'profile.position': safe_value(profile.position),
+        'profile.active': profile.active,
+        'profile.must_change_password': profile.must_change_password,
+    })
+    return data
 
 
 @user_passes_test(_admin_check)
@@ -91,13 +109,14 @@ def absence_create(request, user_id=None):
             absence = form.save(commit=False)
             absence.created_by = request.user
             absence.save()
-            ActivityLog.objects.create(
+            log_activity(
                 actor=request.user,
+                obj=absence,
                 position=absence.profile.position,
                 action='Ausência de colaborador registrada',
-                object_type='EmployeeAbsence',
-                object_id=str(absence.id),
+                object_label=f'{absence.profile.display_name} - {absence.start_date} a {absence.end_date}',
                 details=f'Colaborador: {absence.profile.display_name}; período: {absence.start_date} a {absence.end_date}; tipo: {absence.get_absence_type_display()}',
+                new_values=snapshot_instance(absence, ABSENCE_AUDIT_FIELDS),
             )
             messages.success(request, 'Ausência registrada.')
             return redirect('absences_list')
@@ -116,23 +135,27 @@ def absence_create(request, user_id=None):
 def absence_edit(request, absence_id):
     absence = get_object_or_404(EmployeeAbsence.objects.select_related('profile', 'profile__position'), pk=absence_id)
     was_active = absence.active
+    previous_values_full = snapshot_instance(absence, ABSENCE_AUDIT_FIELDS)
     if request.method == 'POST':
         form = EmployeeAbsenceForm(request.POST, instance=absence)
         if form.is_valid():
             absence = form.save()
+            previous_values, new_values = changed_values(previous_values_full, snapshot_instance(absence, ABSENCE_AUDIT_FIELDS))
             if was_active and not absence.active:
                 action = 'Ausência de colaborador cancelada'
             elif not was_active and absence.active:
                 action = 'Ausência de colaborador reativada'
             else:
                 action = 'Ausência de colaborador atualizada'
-            ActivityLog.objects.create(
+            log_activity(
                 actor=request.user,
+                obj=absence,
                 position=absence.profile.position,
                 action=action,
-                object_type='EmployeeAbsence',
-                object_id=str(absence.id),
+                object_label=f'{absence.profile.display_name} - {absence.start_date} a {absence.end_date}',
                 details=f'Colaborador: {absence.profile.display_name}; período: {absence.start_date} a {absence.end_date}; tipo: {absence.get_absence_type_display()}',
+                previous_values=previous_values,
+                new_values=new_values,
             )
             messages.success(request, 'Ausência atualizada.')
             return redirect('absences_list')
@@ -154,13 +177,13 @@ def position_create(request):
         form = PositionForm(request.POST)
         if form.is_valid():
             position = form.save()
-            ActivityLog.objects.create(
+            log_activity(
                 actor=request.user,
-                position=position,
+                obj=position,
                 action='Tipo de usuário comum criado',
-                object_type='Position',
-                object_id=str(position.id),
+                object_label=position.name,
                 details=f'Cargo: {position.name}; código: {position.code}; ativo: {position.active}',
+                new_values=snapshot_instance(position, POSITION_AUDIT_FIELDS),
             )
             messages.success(request, 'Tipo/cargo criado.')
             return redirect('positions_list')
@@ -179,23 +202,26 @@ def position_create(request):
 def position_edit(request, position_id):
     position = get_object_or_404(Position, pk=position_id)
     previous_active = position.active
+    previous_values_full = snapshot_instance(position, POSITION_AUDIT_FIELDS)
     if request.method == 'POST':
         form = PositionForm(request.POST, instance=position)
         if form.is_valid():
             position = form.save()
+            previous_values, new_values = changed_values(previous_values_full, snapshot_instance(position, POSITION_AUDIT_FIELDS))
             if previous_active and not position.active:
                 action = 'Tipo de usuário comum inativado'
             elif not previous_active and position.active:
                 action = 'Tipo de usuário comum reativado'
             else:
                 action = 'Tipo de usuário comum atualizado'
-            ActivityLog.objects.create(
+            log_activity(
                 actor=request.user,
-                position=position,
+                obj=position,
                 action=action,
-                object_type='Position',
-                object_id=str(position.id),
+                object_label=position.name,
                 details=f'Cargo: {position.name}; código: {position.code}; ativo: {position.active}',
+                previous_values=previous_values,
+                new_values=new_values,
             )
             messages.success(request, 'Tipo/cargo atualizado.')
             return redirect('positions_list')
@@ -217,13 +243,14 @@ def user_create(request):
         form = EmployeeCreateForm(request.POST)
         if form.is_valid():
             user = form.save()
-            ActivityLog.objects.create(
+            log_activity(
                 actor=request.user,
+                obj=user,
                 position=user.userprofile.position,
                 action='Usuário cadastrado com senha temporária',
-                object_type='User',
-                object_id=str(user.id),
+                object_label=user.userprofile.display_name,
                 details=f'Usuário: {user.userprofile.display_name}; perfil: {user.userprofile.get_system_role_display()}',
+                new_values=_user_audit_snapshot(user),
             )
             return render(request, 'checklists/temporary_password.html', {
                 'title': 'Usuário cadastrado',
@@ -246,6 +273,7 @@ def user_create(request):
 def user_edit(request, user_id):
     user_obj = get_object_or_404(User.objects.select_related('userprofile'), pk=user_id)
     profile = user_obj.userprofile
+    previous_values_full = _user_audit_snapshot(user_obj)
     initial = {
         'full_name': profile.display_name,
         'username': user_obj.username,
@@ -257,13 +285,16 @@ def user_edit(request, user_id):
         form = EmployeeUpdateForm(request.POST, user_obj=user_obj)
         if form.is_valid():
             user_obj = form.save()
-            ActivityLog.objects.create(
+            previous_values, new_values = changed_values(previous_values_full, _user_audit_snapshot(user_obj))
+            log_activity(
                 actor=request.user,
+                obj=user_obj,
                 position=user_obj.userprofile.position,
                 action='Usuário atualizado',
-                object_type='User',
-                object_id=str(user_obj.id),
+                object_label=user_obj.userprofile.display_name,
                 details=f'Usuário: {user_obj.userprofile.display_name}; perfil: {user_obj.userprofile.get_system_role_display()}',
+                previous_values=previous_values,
+                new_values=new_values,
             )
             messages.success(request, 'Usuário atualizado.')
             return redirect('employees_list')
@@ -284,14 +315,17 @@ def user_reset_password(request, user_id):
     if request.method == 'POST':
         form = AdminPasswordResetForm(request.POST, user_obj=user_obj)
         if form.is_valid():
+            previous_values = {'profile.must_change_password': user_obj.userprofile.must_change_password}
             form.save()
-            ActivityLog.objects.create(
+            log_activity(
                 actor=request.user,
+                obj=user_obj,
                 position=user_obj.userprofile.position,
                 action='Senha temporária de usuário gerada',
-                object_type='User',
-                object_id=str(user_obj.id),
+                object_label=user_obj.userprofile.display_name,
                 details=f'Usuário: {user_obj.userprofile.display_name}',
+                previous_values=previous_values,
+                new_values={'profile.must_change_password': user_obj.userprofile.must_change_password},
             )
             return render(request, 'checklists/temporary_password.html', {
                 'title': 'Senha temporária gerada',

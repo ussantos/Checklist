@@ -155,11 +155,12 @@ Validar:
 
 - [ ] Sistema sobe.
 - [ ] Login administrativo funciona.
-- [ ] Funcionários aparecem.
+- [ ] Usuários e tipos/cargos aparecem.
 - [ ] Histórico do ano aparece.
+- [ ] Auditoria administrativa aparece.
 - [ ] Evidências abrem.
 - [ ] CSV exporta dados.
-- [ ] Dashboard mensal abre.
+- [ ] Dashboard administrativo e indicadores/metas abrem.
 
 Registrar resultado:
 
@@ -197,6 +198,7 @@ Recomendações:
 - manter apenas administradores;
 - colocar aviso no README/local: “Instância congelada — somente consulta”; 
 - não usar para registros novos;
+- não aprovar sugestões de novas atividades na instância congelada;
 - manter porta diferente da instância atual.
 
 Exemplo de `.env` para consulta:
