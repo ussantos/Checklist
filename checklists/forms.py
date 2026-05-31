@@ -4,6 +4,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from .models import ChecklistOccurrence, DailyNote, MetricRecord, Position, UserProfile
+from .security import generate_temporary_password
 
 
 User = get_user_model()
@@ -45,11 +46,7 @@ class MultipleFileField(forms.FileField):
 
 
 class OccurrenceUpdateForm(forms.ModelForm):
-    """Formulário para registrar a execução de uma atividade.
-
-    O nome completo do funcionário não é digitado: ele é preenchido
-    automaticamente pela view a partir do cadastro do usuário autenticado.
-    """
+    """Formulário para registrar a execução de uma atividade."""
 
     evidence_files = MultipleFileField(
         required=False,
@@ -110,17 +107,14 @@ class MetricRecordForm(forms.ModelForm):
 class UserCreateForm(forms.Form):
     """Cadastro de usuário feito por administrador.
 
-    O primeiro usuário técnico é `checklistadmin`. Depois disso, administradores
-    cadastram usuários nominais com um dos perfis:
-    Administrador, Atendente Comercial ou Instrutor de Aula Livre.
+    A senha é gerada automaticamente e marcada como temporária. No primeiro login,
+    o usuário deve trocar a senha antes de acessar qualquer tela do sistema.
     """
 
     full_name = forms.CharField(label='Nome completo', max_length=120, widget=forms.TextInput(attrs={'class': 'input'}))
     username = forms.CharField(label='Usuário de login', max_length=150, widget=forms.TextInput(attrs={'class': 'input'}))
     email = forms.EmailField(label='E-mail', required=False, widget=forms.EmailInput(attrs={'class': 'input'}))
     role = forms.ChoiceField(label='Função/perfil no sistema', choices=[], widget=forms.Select(attrs={'class': 'input'}))
-    password1 = forms.CharField(label='Senha forte', widget=forms.PasswordInput(attrs={'class': 'input'}), help_text='Mínimo de 12 caracteres, maiúscula, minúscula, número e caractere especial.')
-    password2 = forms.CharField(label='Confirmar senha', widget=forms.PasswordInput(attrs={'class': 'input'}))
     active = forms.BooleanField(label='Ativo', required=False, initial=True)
 
     def __init__(self, *args, **kwargs):
@@ -128,22 +122,13 @@ class UserCreateForm(forms.Form):
         choices = [('ADMIN', 'Administrador')]
         choices += [(f'POSITION:{p.id}', p.name) for p in Position.objects.filter(active=True).order_by('name')]
         self.fields['role'].choices = choices
+        self.generated_password = None
 
     def clean_username(self):
         username = self.cleaned_data['username'].strip().lower()
         if User.objects.filter(username=username).exists():
             raise forms.ValidationError('Já existe usuário com este login.')
         return username
-
-    def clean(self):
-        cleaned = super().clean()
-        p1 = cleaned.get('password1')
-        p2 = cleaned.get('password2')
-        if p1 and p2 and p1 != p2:
-            raise forms.ValidationError('As senhas não conferem.')
-        if p1:
-            validate_password(p1)
-        return cleaned
 
     def save(self):
         full_name = self.cleaned_data['full_name'].strip()
@@ -154,10 +139,11 @@ class UserCreateForm(forms.Form):
             position_id = role.split(':', 1)[1]
             position = Position.objects.get(pk=position_id, active=True)
 
+        self.generated_password = generate_temporary_password()
         user = User.objects.create_user(
             username=self.cleaned_data['username'],
             email=self.cleaned_data.get('email') or '',
-            password=self.cleaned_data['password1'],
+            password=self.generated_password,
             first_name=full_name,
             is_active=self.cleaned_data.get('active', True),
         )
@@ -170,6 +156,7 @@ class UserCreateForm(forms.Form):
         profile.system_role = UserProfile.ROLE_ADMIN if is_admin else UserProfile.ROLE_OPERATOR
         profile.position = None if is_admin else position
         profile.active = self.cleaned_data.get('active', True)
+        profile.must_change_password = True
         profile.save()
         return user
 
@@ -225,30 +212,32 @@ class UserUpdateForm(forms.Form):
 
 
 class AdminPasswordResetForm(forms.Form):
-    password1 = forms.CharField(label='Nova senha forte', widget=forms.PasswordInput(attrs={'class': 'input'}), help_text='Mínimo de 12 caracteres, maiúscula, minúscula, número e caractere especial.')
-    password2 = forms.CharField(label='Confirmar senha', widget=forms.PasswordInput(attrs={'class': 'input'}))
+    """Redefinição administrativa de senha.
+
+    A nova senha é gerada automaticamente, exibida uma única vez ao administrador
+    e marcada como temporária para troca obrigatória no próximo login.
+    """
+
+    confirm = forms.BooleanField(
+        label='Confirmo que desejo gerar uma nova senha temporária para este usuário',
+        required=True,
+    )
 
     def __init__(self, *args, user_obj=None, **kwargs):
         self.user_obj = user_obj
+        self.generated_password = None
         super().__init__(*args, **kwargs)
 
-    def clean(self):
-        cleaned = super().clean()
-        p1 = cleaned.get('password1')
-        p2 = cleaned.get('password2')
-        if p1 and p2 and p1 != p2:
-            raise forms.ValidationError('As senhas não conferem.')
-        if p1:
-            validate_password(p1, user=self.user_obj)
-        return cleaned
-
     def save(self):
-        self.user_obj.set_password(self.cleaned_data['password1'])
+        self.generated_password = generate_temporary_password()
+        self.user_obj.set_password(self.generated_password)
         self.user_obj.save(update_fields=['password'])
+        profile, _ = UserProfile.objects.get_or_create(user=self.user_obj)
+        profile.must_change_password = True
+        profile.save(update_fields=['must_change_password'])
         return self.user_obj
 
 
 # Aliases mantidos para compatibilidade com as views/URLs antigas.
 EmployeeCreateForm = UserCreateForm
 EmployeeUpdateForm = UserUpdateForm
-
