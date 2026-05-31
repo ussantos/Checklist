@@ -14,6 +14,7 @@ urlpatterns = [
     path('historico/', views.history, name='history'),
     path('auditoria/', views.admin_activity_history, name='admin_activity_history'),
     path('auditoria.csv', views.admin_activity_history_csv, name='admin_activity_history_csv'),
+    path('backups/', views.backups, name='backups'),
     path('tarefas-modelo/', views.templates_list, name='templates_list'),
     path('tarefas-modelo/nova/', views.template_create, name='template_create'),
     path('tarefas-modelo/importar/', views.template_import, name='template_import'),

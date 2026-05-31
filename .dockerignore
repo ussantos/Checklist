@@ -4,6 +4,7 @@
 media/
 logs/
 backups/
+rclone/
 staticfiles/
 __pycache__/
 *.pyc

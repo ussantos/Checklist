@@ -2,6 +2,7 @@
 *.env
 media/
 backups/
+rclone/
 logs/
 __pycache__/
 *.pyc

@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Backups</h1>
+    <p class="muted">Backup local com envio opcional para Google Drive ou OneDrive via rclone.</p>
+  </div>
+  <form method="post">
+    {% csrf_token %}
+    <button class="btn primary" type="submit" name="action" value="run">Executar backup agora</button>
+  </form>
+</div>
+
+<section class="grid cards">
+  <div class="card">
+    <span class="muted">pg_dump</span>
+    <div class="metric-big">{% if runtime.pg_dump_available %}OK{% else %}Ausente{% endif %}</div>
+    <p class="muted">Necessário para gerar o dump PostgreSQL.</p>
+  </div>
+  <div class="card">
+    <span class="muted">rclone</span>
+    <div class="metric-big">{% if runtime.rclone_available %}OK{% else %}Ausente{% endif %}</div>
+    <p class="muted">Necessário para enviar ao Google Drive ou OneDrive.</p>
+  </div>
+  <div class="card">
+    <span class="muted">Destino ativo</span>
+    <div class="metric-big">{% if config.active %}Nuvem{% else %}Local{% endif %}</div>
+    <p class="muted">{{ config.get_cloud_provider_display }}{% if remote_name %} · {{ remote_name }}{% endif %}</p>
+  </div>
+</section>
+
+<form method="post" class="panel">
+  {% csrf_token %}
+  <h2>Configuração</h2>
+  {% if form.non_field_errors %}<div class="message error">{{ form.non_field_errors }}</div>{% endif %}
+  <div class="form-grid">
+    <label>{{ form.cloud_provider.label }} {{ form.cloud_provider }} <span class="muted">{{ form.cloud_provider.help_text }}</span></label>
+    <label>{{ form.remote_name.label }} {{ form.remote_name }} <span class="muted">{{ form.remote_name.help_text }}</span></label>
+    <label>{{ form.remote_folder.label }} {{ form.remote_folder }} <span class="muted">{{ form.remote_folder.help_text }}</span></label>
+    <label>{{ form.retention_days.label }} {{ form.retention_days }} <span class="muted">{{ form.retention_days.help_text }}</span></label>
+    <p>{{ form.active }} {{ form.active.label_tag }}<br><span class="muted">{{ form.active.help_text }}</span></p>
+  </div>
+  <datalist id="rclone-remotes">
+    {% for remote in runtime.rclone_remotes %}
+      <option value="{{ remote }}"></option>
+    {% endfor %}
+  </datalist>
+  {% if remote_name %}
+    <p class="muted">Destino completo atual: <code>{{ config.remote_path }}</code></p>
+  {% endif %}
+  <div class="actions">
+    <button class="btn primary" type="submit" name="action" value="save">Salvar configuração</button>
+  </div>
+</form>
+
+<section class="panel">
+  <h2>Contas/remotos rclone</h2>
+  <p class="muted">No rclone, cada remoto é uma conta configurada. O backup usa a conta do remoto escolhido acima. Para adicionar ou trocar contas, execute <code>docker compose exec web rclone config</code>.</p>
+  <table>
+    <thead><tr><th>Remoto detectado</th><th>Uso</th></tr></thead>
+    <tbody>
+      {% for remote in runtime.rclone_remotes %}
+      <tr>
+        <td><code>{{ remote }}</code></td>
+        <td>{% if remote == remote_name %}Conta selecionada para backup{% else %}Disponível para seleção{% endif %}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="2">Nenhum remoto rclone configurado neste container.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <h3>Exemplos de destino</h3>
+  <table>
+    <thead><tr><th>Destino</th><th>Exemplo</th></tr></thead>
+    <tbody>
+      {% for label, example in remote_examples %}
+      <tr>
+        <td>{{ label }}</td>
+        <td><code>{{ example }}</code></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if runtime.env_remote %}
+    <p class="muted"><code>RCLONE_REMOTE</code> detectado no ambiente: <code>{{ runtime.env_remote }}</code>. Salve essa configuração aqui para usá-la nos backups executados pela aplicação.</p>
+  {% endif %}
+</section>
+
+<section class="panel danger-light">
+  <h2>Restaurar backup local</h2>
+  <p class="muted">A restauração substitui o banco atual pelo backup selecionado. Antes de restaurar, o sistema gera automaticamente um novo backup local de segurança.</p>
+  <p class="muted">Use preferencialmente backups da mesma versão do sistema. Após restaurar, valide login, usuários, atividades, indicadores e anexos.</p>
+</section>
+
+<section class="panel">
+  <h2>Backups locais</h2>
+  <p class="muted">{{ runtime.backups_dir }}</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Pasta</th>
+        <th>Data</th>
+        <th>Tamanho</th>
+        <th>Banco</th>
+        <th>Mídia</th>
+        <th>Configuração</th>
+        <th>Manifesto</th>
+        <th>Restore</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for backup in backup_rows %}
+      <tr>
+        <td><code>{{ backup.name }}</code></td>
+        <td>{{ backup.created_at|date:"d/m/Y H:i:s" }}</td>
+        <td>{{ backup.size }}</td>
+        <td>{% if backup.has_db %}OK{% else %}-{% endif %}</td>
+        <td>{% if backup.has_media %}OK{% else %}-{% endif %}</td>
+        <td>{% if backup.has_config %}OK{% else %}-{% endif %}</td>
+        <td>{% if backup.has_manifest %}OK{% else %}-{% endif %}</td>
+        <td>
+          {% if backup.has_db %}
+          <form method="post" class="inline-form restore-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="restore">
+            <input type="hidden" name="backup_name" value="{{ backup.name }}">
+            <label class="restore-check"><input type="checkbox" name="restore_media" checked> mídia</label>
+            <input class="input restore-confirm" name="confirm_restore" placeholder="RESTAURAR">
+            <button class="btn danger small" type="submit">Restaurar</button>
+          </form>
+          {% else %}
+            <span class="muted">Sem db.dump</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8">Nenhum backup local encontrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <h2>Backups na nuvem</h2>
+  <p class="muted">Lista os backups encontrados em <code>{{ config.remote_path|default:"remoto não configurado" }}</code>. Baixe um backup para a lista local antes de restaurar.</p>
+  <table>
+    <thead><tr><th>Pasta remota</th><th>Ação</th></tr></thead>
+    <tbody>
+      {% for backup in remote_backup_rows %}
+      <tr>
+        <td><code>{{ backup.name }}</code></td>
+        <td>
+          <form method="post" class="inline-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="download_remote">
+            <input type="hidden" name="backup_name" value="{{ backup.name }}">
+            <button class="btn small" type="submit">Baixar para local</button>
+          </form>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="2">Nenhum backup remoto listado. Configure o remoto rclone e salve um destino em nuvem.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

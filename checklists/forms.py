@@ -3,9 +3,11 @@ from django import forms
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.utils.text import slugify
+from .backup import build_remote_path, split_remote_path
 from .models import (
-    ActivitySuggestion, ChecklistOccurrence, DailyNote, EmployeeAbsence,
-    MetricRecord, MetricType, Position, TaskTemplate, UserProfile,
+    ActivitySuggestion, BackupConfiguration, ChecklistOccurrence, DailyNote,
+    EmployeeAbsence, MetricRecord, MetricType, Position, TaskTemplate,
+    UserProfile,
 )
 from .security import generate_temporary_password, should_force_password_change_on_first_login
 
@@ -667,6 +669,86 @@ class AdminPasswordResetForm(forms.Form):
         profile.must_change_password = should_force_password_change_on_first_login()
         profile.save(update_fields=['must_change_password'])
         return self.user_obj
+
+
+class BackupConfigurationForm(forms.ModelForm):
+    remote_name = forms.CharField(
+        label='Conta/remoto rclone',
+        required=False,
+        max_length=80,
+        widget=forms.TextInput(attrs={'class': 'input', 'list': 'rclone-remotes', 'placeholder': 'gdrive'}),
+        help_text='Este remoto define qual conta Google Drive ou OneDrive sera usada.',
+    )
+    remote_folder = forms.CharField(
+        label='Pasta no Drive/OneDrive',
+        required=False,
+        max_length=220,
+        widget=forms.TextInput(attrs={'class': 'input', 'placeholder': 'MyRobotBackups/checklist'}),
+        help_text='Pasta onde os backups serao gravados dentro da conta escolhida.',
+    )
+
+    class Meta:
+        model = BackupConfiguration
+        fields = ['cloud_provider', 'retention_days', 'active']
+        widgets = {
+            'cloud_provider': forms.Select(attrs={'class': 'input'}),
+            'retention_days': forms.NumberInput(attrs={'class': 'input', 'min': 1, 'max': 3650}),
+            'active': forms.CheckboxInput(),
+        }
+        help_texts = {
+            'cloud_provider': 'Escolha somente backup local, Google Drive ou OneDrive.',
+            'retention_days': 'Backups locais mais antigos que este prazo sao removidos apos um backup bem-sucedido.',
+            'active': 'Quando marcado, o backup local tambem sera copiado para o caminho remoto configurado.',
+        }
+
+    def __init__(self, *args, rclone_remotes=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        remote_name, remote_folder = split_remote_path(self.instance.remote_path if self.instance else '')
+        self.fields['remote_name'].initial = remote_name
+        self.fields['remote_folder'].initial = remote_folder
+        self.rclone_remotes = set(rclone_remotes or [])
+
+    def clean_retention_days(self):
+        value = self.cleaned_data['retention_days']
+        if value < 1:
+            raise forms.ValidationError('Informe pelo menos 1 dia de retencao.')
+        if value > 3650:
+            raise forms.ValidationError('Use no maximo 3650 dias de retencao local.')
+        return value
+
+    def clean(self):
+        cleaned = super().clean()
+        active = cleaned.get('active')
+        provider = cleaned.get('cloud_provider')
+        remote_name = (cleaned.get('remote_name') or '').strip().rstrip(':')
+        remote_folder = (cleaned.get('remote_folder') or '').strip().strip('/')
+        cleaned['remote_name'] = remote_name
+        cleaned['remote_folder'] = remote_folder
+        remote_path = build_remote_path(remote_name, remote_folder)
+
+        if provider == BackupConfiguration.PROVIDER_NONE:
+            if active:
+                raise forms.ValidationError('Escolha Google Drive ou OneDrive para ativar envio em nuvem.')
+            cleaned['remote_path'] = ''
+            return cleaned
+
+        if active and not remote_name:
+            raise forms.ValidationError('Informe qual conta/remoto rclone deve ser usado.')
+        if active and not remote_folder:
+            raise forms.ValidationError('Informe a pasta de destino para o backup em nuvem.')
+        if ':' in remote_name:
+            raise forms.ValidationError('Informe apenas o nome do remoto, sem dois-pontos.')
+        if self.rclone_remotes and remote_name and remote_name not in self.rclone_remotes:
+            raise forms.ValidationError('O remoto informado não aparece no rclone deste container.')
+        cleaned['remote_path'] = remote_path
+        return cleaned
+
+    def save(self, commit=True):
+        config = super().save(commit=False)
+        config.remote_path = self.cleaned_data.get('remote_path', '')
+        if commit:
+            config.save()
+        return config
 
 
 # Aliases mantidos para compatibilidade com as views/URLs antigas.

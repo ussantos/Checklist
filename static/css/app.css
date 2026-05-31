@@ -236,6 +236,18 @@ textarea:focus {
   color: #fff;
 }
 
+.btn.danger {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: #fff;
+}
+
+.btn.danger:hover {
+  background: #8f1b13;
+  border-color: #8f1b13;
+  color: #fff;
+}
+
 .btn.small {
   min-height: 34px;
   padding: 7px 10px;
@@ -329,6 +341,25 @@ th {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px;
+}
+
+.restore-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.restore-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.restore-confirm {
+  min-width: 120px;
+  width: 130px;
 }
 
 .messages {

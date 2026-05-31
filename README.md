@@ -153,6 +153,12 @@ cd /opt/checklist
 docker compose up -d --build
 ```
 
+Por padrão, o container não recria automaticamente as atividades e indicadores operacionais. Para carregar a base operacional padrão, defina `AUTO_SEED_OPERATIONAL_DATA=True` no `.env` ou rode manualmente:
+
+```bash
+docker compose exec web python manage.py seed_operational_data
+```
+
 Ver logs:
 
 ```bash
@@ -183,16 +189,7 @@ Acesse localmente:
 http://127.0.0.1:3000
 ```
 
-O datasource PostgreSQL é provisionado automaticamente com o nome `Checklist PostgreSQL`, usando o banco da aplicação (`db:5432`).
-
-Dashboards provisionados automaticamente na pasta `Checklist`:
-
-- `Checklist - Indicadores e Metas - Diário`
-- `Checklist - Indicadores e Metas - Semanal`
-- `Checklist - Indicadores e Metas - Mensal`
-- `Checklist - Indicadores e Metas - Anual`
-
-Os dashboards possuem filtros por tipo/cargo e usuário, tabelas de metas/realizado/% e totalizadores.
+O datasource PostgreSQL é provisionado automaticamente com o nome `Checklist PostgreSQL`, usando o banco da aplicação (`db:5432`). Nenhum dashboard é provisionado por padrão.
 
 Estratégia de permissão: o Grafana não herda as permissões do Django. Por isso, nesta fase ele deve ser tratado como ferramenta administrativa, acessível apenas localmente, por VPN ou rede interna restrita. Usuários comuns devem acompanhar seus próprios indicadores pelo dashboard interno do Checklist, que aplica as permissões do sistema e impede acesso a outros cargos/usuários.
 
@@ -218,7 +215,13 @@ Usuários operacionais acessam o sistema com usuário individual. O sistema most
 
 ## Backup diário às 20h
 
-O script `scripts/backup.sh` gera backup do banco PostgreSQL, da pasta `media/`, do `.env`, configurações, seeds e scripts. O envio para Google Drive ou OneDrive pode ser feito via `rclone`.
+A tela administrativa **Backups** permite configurar backup local, envio opcional para Google Drive ou OneDrive via `rclone` e restauração de backups locais. A aplicação não armazena credenciais OAuth: configure a autenticação do `rclone` no container com `docker compose exec web rclone config`.
+
+No `rclone`, cada **remoto** é uma conta configurada. Se você criar o remoto `gdrive` autenticado com uma conta Google e o remoto `onedrive` autenticado com uma conta Microsoft, a tela Backups usará a conta do remoto selecionado. Na tela, informe o remoto e a pasta, por exemplo remoto `gdrive` e pasta `MyRobotBackups/checklist`, que formam o destino `gdrive:MyRobotBackups/checklist`.
+
+O script `scripts/backup.sh` executa o comando Django `run_configured_backup`, gerando dump PostgreSQL, pasta `media/`, `.env`, configurações, seeds e scripts. Os diretórios `backups/` e `rclone/` ficam montados no container `web` e devem continuar ignorados pelo Git.
+
+Para restaurar, acesse **Backups**, baixe o backup da nuvem para a lista local se necessário, digite `RESTAURAR` na linha do backup local e confirme. Antes de substituir o banco, o sistema gera automaticamente um backup local de segurança do estado atual.
 
 Agendamento sugerido no cron:
 
@@ -430,6 +433,12 @@ cd /opt/checklist
 docker compose up -d --build
 ```
 
+By default, the container does not automatically recreate operational activities and indicators. To load the default operational dataset, set `AUTO_SEED_OPERATIONAL_DATA=True` in `.env` or run it manually:
+
+```bash
+docker compose exec web python manage.py seed_operational_data
+```
+
 View logs:
 
 ```bash
@@ -460,16 +469,7 @@ Access locally:
 http://127.0.0.1:3000
 ```
 
-The PostgreSQL datasource is provisioned automatically with the name `Checklist PostgreSQL`, using the application database (`db:5432`).
-
-Dashboards automatically provisioned in the `Checklist` folder:
-
-- `Checklist - Indicadores e Metas - Diário`
-- `Checklist - Indicadores e Metas - Semanal`
-- `Checklist - Indicadores e Metas - Mensal`
-- `Checklist - Indicadores e Metas - Anual`
-
-The dashboards include filters by user type/position and user, goal/actual/% tables, and totals.
+The PostgreSQL datasource is provisioned automatically with the name `Checklist PostgreSQL`, using the application database (`db:5432`). No dashboards are provisioned by default.
 
 Permission strategy: Grafana does not inherit Django permissions. Therefore, at this stage it must be treated as an administrative tool, accessible only locally, through VPN, or via a restricted internal network. Common users must track their own indicators through the internal Checklist dashboard, which applies application permissions and prevents access to other positions/users.
 
@@ -495,7 +495,13 @@ Operational users access the system with individual user accounts. The system sh
 
 ## Daily Backup at 8 PM
 
-The `scripts/backup.sh` script backs up the PostgreSQL database, the `media/` folder, `.env`, settings, seeds, and scripts. Upload to Google Drive or OneDrive can be done through `rclone`.
+The admin **Backups** screen lets administrators configure local backup, optional upload to Google Drive or OneDrive through `rclone`, and local backup restore. The application does not store OAuth credentials: configure `rclone` authentication in the container with `docker compose exec web rclone config`.
+
+In `rclone`, each **remote** is a configured account. If you create a `gdrive` remote authenticated with one Google account and an `onedrive` remote authenticated with one Microsoft account, the Backups screen will use the account behind the selected remote. In the screen, enter the remote and folder, for example remote `gdrive` and folder `MyRobotBackups/checklist`, which form the destination `gdrive:MyRobotBackups/checklist`.
+
+The `scripts/backup.sh` script runs the Django `run_configured_backup` command, backing up the PostgreSQL database, the `media/` folder, `.env`, settings, seeds, and scripts. The `backups/` and `rclone/` directories are mounted into the `web` container and must remain ignored by Git.
+
+To restore, open **Backups**, download the cloud backup into the local list if needed, type `RESTAURAR` on the local backup row, and confirm. Before replacing the database, the system automatically creates a local safety backup of the current state.
 
 Suggested cron schedule:
 

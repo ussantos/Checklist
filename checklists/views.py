@@ -12,14 +12,19 @@ from django.urls import reverse
 from django.utils import timezone
 from django.db.models import F, Q
 from .audit import changed_values, log_activity, snapshot_instance
+from .backup import (
+    backup_runtime_status, download_remote_backup, get_backup_configuration,
+    list_local_backups, list_remote_backups, restore_local_backup, run_backup,
+    split_remote_path,
+)
 from .forms import (
     ActivityDeactivationSuggestionForm, ActivitySuggestionCreateForm,
-    ActivitySuggestionReviewForm, AdminPasswordResetForm, DailyNoteForm,
-    EmployeeCreateForm, EmployeeUpdateForm, MetricRecordForm, MetricTypeForm,
-    OccurrenceUpdateForm, TaskTemplateForm,
+    ActivitySuggestionReviewForm, AdminPasswordResetForm, BackupConfigurationForm,
+    DailyNoteForm, EmployeeCreateForm, EmployeeUpdateForm, MetricRecordForm,
+    MetricTypeForm, OccurrenceUpdateForm, TaskTemplateForm,
 )
 from .models import (
-    ActivityLog, ActivitySuggestion, ChecklistOccurrence,
+    ActivityLog, ActivitySuggestion, BackupConfiguration, ChecklistOccurrence,
     ChecklistOccurrenceStatusEvent, DailyNote, EvidenceAttachment, MetricRecord,
     MetricType, Position, TaskTemplate, UserProfile,
 )
@@ -54,6 +59,7 @@ ACTIVITY_SUGGESTION_AUDIT_FIELDS = [
     'end_time', 'requires_evidence', 'evidence_required', 'proof_location',
     'notes', 'justification', 'review_note', 'reviewed_by', 'reviewed_at',
 ]
+BACKUP_CONFIG_AUDIT_FIELDS = ['cloud_provider', 'remote_path', 'retention_days', 'active']
 
 
 def _activity_return_url(request, occurrence):
@@ -702,6 +708,135 @@ def admin_activity_history_csv(request):
             log.details,
         ])
     return response
+
+
+@user_passes_test(_admin_check)
+def backups(request):
+    config = get_backup_configuration()
+    runtime = backup_runtime_status()
+    rclone_remotes = runtime['rclone_remotes']
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'save':
+            previous_values_full = snapshot_instance(config, BACKUP_CONFIG_AUDIT_FIELDS)
+            form = BackupConfigurationForm(request.POST, instance=config, rclone_remotes=rclone_remotes)
+            if form.is_valid():
+                config = form.save(commit=False)
+                config.updated_by = request.user
+                config.save()
+                previous_values, new_values = changed_values(
+                    previous_values_full,
+                    snapshot_instance(config, BACKUP_CONFIG_AUDIT_FIELDS),
+                )
+                log_activity(
+                    actor=request.user,
+                    action='Configuracao de backup atualizada',
+                    obj=config,
+                    previous_values=previous_values,
+                    new_values=new_values,
+                )
+                messages.success(request, 'Configuração de backup salva.')
+                return redirect('backups')
+        elif action == 'run':
+            try:
+                result = run_backup(config)
+            except Exception as exc:
+                log_activity(
+                    actor=request.user,
+                    action='Falha ao executar backup manual',
+                    obj=config,
+                    details=str(exc)[:1000],
+                )
+                messages.error(request, f'Backup não concluído: {exc}')
+                return redirect('backups')
+
+            log_activity(
+                actor=request.user,
+                action='Backup manual executado',
+                obj=config,
+                new_values={
+                    'local_path': str(result.local_path),
+                    'cloud_status': result.cloud_status,
+                    'cloud_message': result.cloud_message,
+                },
+            )
+            if result.cloud_status == 'uploaded':
+                messages.success(request, f'Backup gerado e enviado para {result.cloud_message}.')
+            elif result.cloud_status in {'skipped', 'failed'}:
+                messages.warning(request, f'Backup local gerado, mas envio para nuvem não ocorreu: {result.cloud_message}')
+            else:
+                messages.success(request, 'Backup local gerado. Envio para nuvem está desativado.')
+            return redirect('backups')
+        elif action == 'download_remote':
+            backup_name = request.POST.get('backup_name', '')
+            try:
+                local_path = download_remote_backup(config, backup_name)
+            except Exception as exc:
+                messages.error(request, f'Backup não baixado da nuvem: {exc}')
+                return redirect('backups')
+            log_activity(
+                actor=request.user,
+                action='Backup baixado da nuvem',
+                obj=config,
+                new_values={'backup_name': backup_name, 'local_path': str(local_path)},
+            )
+            messages.success(request, f'Backup {backup_name} baixado para a lista local.')
+            return redirect('backups')
+        elif action == 'restore':
+            backup_name = request.POST.get('backup_name', '')
+            confirmation = request.POST.get('confirm_restore', '').strip().upper()
+            restore_media = request.POST.get('restore_media') == 'on'
+            if confirmation != 'RESTAURAR':
+                messages.error(request, 'Digite RESTAURAR para confirmar a restauração.')
+                return redirect('backups')
+            try:
+                result = restore_local_backup(backup_name, restore_media=restore_media)
+            except Exception as exc:
+                messages.error(request, f'Restauração não concluída: {exc}')
+                return redirect('backups')
+            try:
+                log_activity(
+                    actor=None,
+                    action='Backup restaurado pela tela administrativa',
+                    object_type='BackupRestore',
+                    object_id=result.backup_name,
+                    object_label=result.backup_name,
+                    new_values={
+                        'restored_path': str(result.restored_path),
+                        'safety_backup_path': str(result.safety_backup_path) if result.safety_backup_path else '',
+                        'restored_media': result.restored_media,
+                    },
+                )
+            except Exception:
+                pass
+            messages.success(
+                request,
+                f'Backup {result.backup_name} restaurado. Backup de segurança antes da restauração: {result.safety_backup_path}.',
+            )
+            return redirect('backups')
+        else:
+            form = BackupConfigurationForm(instance=config, rclone_remotes=rclone_remotes)
+            messages.error(request, 'Ação de backup inválida.')
+    else:
+        form = BackupConfigurationForm(instance=config, rclone_remotes=rclone_remotes)
+
+    remote_name, remote_folder = split_remote_path(config.remote_path)
+
+    return render(request, 'checklists/backups.html', {
+        'form': form,
+        'config': config,
+        'runtime': runtime,
+        'remote_name': remote_name,
+        'remote_folder': remote_folder,
+        'backup_rows': list_local_backups(),
+        'remote_backup_rows': list_remote_backups(config),
+        'remote_examples': [
+            ('Google Drive', 'gdrive:MyRobotBackups/checklist'),
+            ('OneDrive', 'onedrive:MyRobotBackups/checklist'),
+        ],
+        'is_admin': True,
+    })
 
 
 @user_passes_test(_admin_check)

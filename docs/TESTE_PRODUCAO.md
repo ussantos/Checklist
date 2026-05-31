@@ -280,6 +280,14 @@ Validar:
 
 ## 16. Backup manual
 
+Antes de testar envio para Google Drive ou OneDrive, configurar o `rclone` no container:
+
+```bash
+docker compose exec web rclone config
+```
+
+Cada remoto do `rclone` representa uma conta Google Drive ou OneDrive. Depois, acessar **Backups** no sistema como administrador, escolher o destino, informar o remoto/conta e a pasta de destino.
+
 Executar:
 
 ```bash
@@ -296,6 +304,17 @@ Validar:
 - [ ] Backup de scripts/seed/configurações foi gerado.
 - [ ] Log não tem erro.
 - [ ] Arquivo foi enviado para o remoto `rclone`, se configurado.
+
+## 16.1. Restore pela tela Backups
+
+Na tela **Backups**, validar:
+
+- [ ] Backups locais aparecem na tabela.
+- [ ] A tela exige digitar `RESTAURAR` antes de restaurar.
+- [ ] Antes do restore, um novo backup local de segurança é gerado automaticamente.
+- [ ] Restore de banco conclui sem erro.
+- [ ] Restore de mídia pode ser marcado/desmarcado.
+- [ ] Após restore, login, usuários, atividades, indicadores e anexos são validados.
 
 ## 17. Cron de backup
 

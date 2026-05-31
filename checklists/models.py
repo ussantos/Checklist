@@ -457,6 +457,44 @@ class MetricRecord(models.Model):
         return f'{self.date} - {self.metric.name}: {self.value}'
 
 
+class BackupConfiguration(models.Model):
+    """Configuracao operacional de backup em nuvem via rclone."""
+
+    PROVIDER_NONE = 'NONE'
+    PROVIDER_GOOGLE_DRIVE = 'GOOGLE_DRIVE'
+    PROVIDER_ONEDRIVE = 'ONEDRIVE'
+    PROVIDER_CHOICES = [
+        (PROVIDER_NONE, 'Somente backup local'),
+        (PROVIDER_GOOGLE_DRIVE, 'Google Drive'),
+        (PROVIDER_ONEDRIVE, 'OneDrive'),
+    ]
+
+    cloud_provider = models.CharField('Destino em nuvem', max_length=20, choices=PROVIDER_CHOICES, default=PROVIDER_NONE)
+    remote_path = models.CharField(
+        'Caminho remoto rclone',
+        max_length=255,
+        blank=True,
+        help_text='Exemplo: gdrive:MyRobotBackups/checklist ou onedrive:MyRobotBackups/checklist.',
+    )
+    retention_days = models.PositiveIntegerField('Retencao local em dias', default=30)
+    active = models.BooleanField('Enviar backup para nuvem', default=False)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField('Criado em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizado em', auto_now=True)
+
+    class Meta:
+        verbose_name = 'Configuracao de backup'
+        verbose_name_plural = 'Configuracoes de backup'
+
+    def __str__(self):
+        return self.get_cloud_provider_display()
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 class ActivityLog(models.Model):
     """Trilha de auditoria simples."""
 

@@ -31,6 +31,8 @@ services:
       - ./media:/app/media
       - ./staticfiles:/app/staticfiles
       - ./logs:/app/logs
+      - ./backups:/app/backups
+      - ./rclone:/root/.config/rclone
     ports:
       - "${APP_BIND:-127.0.0.1:8000}:8000"
 
