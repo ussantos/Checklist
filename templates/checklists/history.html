@@ -10,20 +10,21 @@
   <button class="btn">Filtrar</button>
 </form>
 <table class="panel-table">
-<thead><tr><th>Data</th><th>Cargo</th><th>Tarefa</th><th>Status</th><th>Funcionário</th><th>Evidência</th><th>Anexos</th><th>Atualizado</th></tr></thead>
+<thead><tr><th>Data</th><th>Cargo</th><th>Tarefa</th><th>Status</th><th>Funcionário</th><th>Evidência</th><th>Anexos</th><th>Atualizado</th>{% if is_admin %}<th>Ações</th>{% endif %}</tr></thead>
 <tbody>
 {% for item in occurrences %}
 <tr>
   <td>{{ item.date|date:"d/m/Y" }}</td>
   <td>{{ item.position.name }}</td>
   <td>{{ item.template.title }}</td>
-  <td>{{ item.get_status_display }}</td>
+  <td>{{ item.operational_status_label }}</td>
   <td>{{ item.executor_full_name|default:"-" }}</td>
   <td>{{ item.evidence_text|truncatechars:80 }}</td>
   <td>{% for a in item.attachments.all %}<a href="{% url 'evidence_attachment_download' a.id %}" target="_blank">{{ a.original_name|default:"anexo" }}</a>{% if not forloop.last %}<br>{% endif %}{% empty %}-{% endfor %}</td>
   <td>{{ item.updated_at|date:"d/m/Y H:i" }}</td>
+  {% if is_admin %}<td><a class="btn small" href="{% url 'occurrence_edit' item.id %}?next={{ request.get_full_path|urlencode }}">Detalhe</a></td>{% endif %}
 </tr>
-{% empty %}<tr><td colspan="8">Sem registros.</td></tr>{% endfor %}
+{% empty %}<tr><td colspan="{% if is_admin %}9{% else %}8{% endif %}">Sem registros.</td></tr>{% endfor %}
 </tbody>
 </table>
 {% endblock %}

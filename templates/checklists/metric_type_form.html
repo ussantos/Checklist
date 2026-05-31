@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>{{ title }}</h1>
+    <p class="muted">Vincule o indicador ao tipo/cargo operacional e, se fizer sentido, a uma atividade do mesmo tipo.</p>
+  </div>
+  <a class="btn" href="{% url 'metric_types_list' %}">Voltar</a>
+</div>
+
+<section class="panel">
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+
+    <label>{{ form.area.label }}
+      {{ form.area }}
+      {{ form.area.errors }}
+    </label>
+
+    <label>{{ form.name.label }}
+      {{ form.name }}
+      {{ form.name.errors }}
+    </label>
+
+    <label>{{ form.frequency.label }}
+      {{ form.frequency }}
+      {{ form.frequency.errors }}
+    </label>
+
+    <label>{{ form.position.label }}
+      {{ form.position }}
+      {{ form.position.errors }}
+    </label>
+
+    <label>{{ form.activity.label }}
+      <select class="input" name="activity" id="id_activity">
+        <option value="">Sem atividade específica</option>
+        {% for activity in activities %}
+          <option value="{{ activity.id }}" data-position="{{ activity.position_id }}" {% if selected_activity_id == activity.id|stringformat:"s" %}selected{% endif %}>
+            {{ activity.position.name }} - {{ activity.get_day_of_week_display }}{% if activity.start_time %} {{ activity.start_time|time:"H:i" }}{% endif %} - {{ activity.title }}
+          </option>
+        {% endfor %}
+      </select>
+      <span class="help">{{ form.activity.help_text }}</span>
+      {{ form.activity.errors }}
+    </label>
+
+    <label>{{ form.monthly_target.label }}
+      {{ form.monthly_target }}
+      {{ form.monthly_target.errors }}
+    </label>
+
+    <label>{{ form.unit.label }}
+      {{ form.unit }}
+      {{ form.unit.errors }}
+    </label>
+
+    <label class="checkline">
+      {{ form.active }}
+      <span>{{ form.active.label }}</span>
+      <span class="help">{{ form.active.help_text }}</span>
+      {{ form.active.errors }}
+    </label>
+
+    <div class="form-actions">
+      <button class="btn primary" type="submit">{{ submit_label }}</button>
+    </div>
+  </form>
+</section>
+
+{% if metric_obj %}
+<section class="panel info-light">
+  <strong>Sem exclusão física</strong>
+  <p class="muted">Para impedir novos registros deste indicador, desmarque Ativo. Registros históricos permanecem preservados.</p>
+</section>
+{% endif %}
+
+<script>
+  (function () {
+    const positionSelect = document.getElementById('id_position');
+    const activitySelect = document.getElementById('id_activity');
+    if (!positionSelect || !activitySelect) {
+      return;
+    }
+
+    function filterActivities() {
+      const positionId = positionSelect.value;
+      let selectedStillVisible = activitySelect.value === '';
+      for (const option of activitySelect.options) {
+        if (!option.value) {
+          option.hidden = false;
+          option.disabled = false;
+          continue;
+        }
+        const visible = option.dataset.position === positionId;
+        option.hidden = !visible;
+        option.disabled = !visible;
+        if (visible && option.selected) {
+          selectedStillVisible = true;
+        }
+      }
+      if (!selectedStillVisible) {
+        activitySelect.value = '';
+      }
+    }
+
+    positionSelect.addEventListener('change', filterActivities);
+    filterActivities();
+  })();
+</script>
+{% endblock %}

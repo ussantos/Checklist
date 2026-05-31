@@ -1,9 +1,12 @@
 from collections import defaultdict
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
-from .models import ChecklistOccurrence, EmployeeAbsence, MetricRecord, Position, TaskTemplate, UserProfile
+from .models import (
+    ChecklistOccurrence, ChecklistOccurrenceStatusEvent, EmployeeAbsence,
+    MetricRecord, Position, TaskTemplate, UserProfile,
+)
 
 User = get_user_model()
 
@@ -114,8 +117,73 @@ def create_due_occurrences(position, target_date, user=None):
                 defaults={'status': ChecklistOccurrence.STATUS_PLANNED},
             )
             if was_created:
+                ChecklistOccurrenceStatusEvent.objects.create(
+                    occurrence=occurrence,
+                    previous_status='',
+                    new_status=occurrence.status,
+                    changed_by=user,
+                )
                 created.append(occurrence)
     return created
+
+
+def format_duration(duration):
+    total_seconds = max(0, int(duration.total_seconds()))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f'{hours}h {minutes:02d}min'
+    if minutes:
+        return f'{minutes}min'
+    return f'{seconds}s'
+
+
+def status_duration_summary(occurrence, as_of=None):
+    """Calcula o tempo da ocorrência em cada status no dia da atividade."""
+    tz = timezone.get_current_timezone()
+    day_start = timezone.make_aware(datetime.combine(occurrence.date, time.min), tz)
+    day_end = timezone.make_aware(datetime.combine(occurrence.date + timedelta(days=1), time.min), tz)
+    if as_of is None:
+        as_of = timezone.now()
+    if as_of < day_end:
+        day_end = as_of
+    if day_end <= day_start:
+        day_end = day_start
+
+    tracked_statuses = [status for status, _label in ChecklistOccurrence.OPERATIONAL_STATUS_CHOICES]
+    durations = {status: timedelta() for status in tracked_statuses}
+    events = list(occurrence.status_events.order_by('changed_at', 'id'))
+
+    if not events:
+        start = max(occurrence.created_at, day_start)
+        if occurrence.status in durations and start < day_end:
+            durations[occurrence.status] += day_end - start
+    else:
+        current_status = None
+        current_start = None
+        for event in events:
+            if event.changed_at <= day_start:
+                current_status = event.new_status
+                current_start = day_start
+                continue
+            if event.changed_at > day_end:
+                break
+            if current_status in durations and current_start is not None and event.changed_at > current_start:
+                durations[current_status] += event.changed_at - current_start
+            current_status = event.new_status
+            current_start = event.changed_at
+        if current_status in durations and current_start is not None and day_end > current_start:
+            durations[current_status] += day_end - current_start
+
+    return [
+        {
+            'status': status,
+            'label': ChecklistOccurrence.OPERATIONAL_STATUS_LABELS[status],
+            'duration': durations[status],
+            'formatted': format_duration(durations[status]),
+        }
+        for status in tracked_statuses
+    ]
 
 
 def create_occurrences_for_positions(positions, target_date):

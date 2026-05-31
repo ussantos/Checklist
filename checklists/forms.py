@@ -3,12 +3,16 @@ from django import forms
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.utils.text import slugify
-from .models import ChecklistOccurrence, DailyNote, EmployeeAbsence, MetricRecord, Position, TaskTemplate, UserProfile
+from .models import ChecklistOccurrence, DailyNote, EmployeeAbsence, MetricRecord, MetricType, Position, TaskTemplate, UserProfile
 from .security import generate_temporary_password, should_force_password_change_on_first_login
 
 
 User = get_user_model()
 ALLOWED_EVIDENCE_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic'}
+ALLOWED_METRIC_EVIDENCE_EXTENSIONS = ALLOWED_EVIDENCE_EXTENSIONS | {
+    '.txt', '.csv', '.tsv', '.xls', '.xlsx', '.ods', '.doc', '.docx',
+    '.ppt', '.pptx', '.zip',
+}
 
 
 class MultipleFileInput(forms.ClearableFileInput):
@@ -30,7 +34,7 @@ class MultipleFileField(forms.FileField):
         if not data:
             return []
         files = data if isinstance(data, (list, tuple)) else [data]
-        max_mb = int(getattr(settings, 'MAX_EVIDENCE_FILE_SIZE_MB', 15))
+        max_mb = min(int(getattr(settings, 'MAX_EVIDENCE_FILE_SIZE_MB', 5)), 5)
         max_bytes = max_mb * 1024 * 1024
         cleaned = []
         for uploaded in files:
@@ -45,13 +49,31 @@ class MultipleFileField(forms.FileField):
         return cleaned
 
 
+class MetricEvidenceFileField(forms.FileField):
+    """Arquivo único para comprovação de indicador operacional."""
+
+    def clean(self, data, initial=None):
+        uploaded = super().clean(data, initial)
+        if not uploaded:
+            return uploaded
+        ext = Path(uploaded.name).suffix.lower()
+        if ext not in ALLOWED_METRIC_EVIDENCE_EXTENSIONS:
+            raise forms.ValidationError(
+                f'Arquivo "{uploaded.name}" não permitido. Use TXT, planilha, PDF, imagem, documento Office ou ZIP.'
+            )
+        max_mb = min(int(getattr(settings, 'MAX_EVIDENCE_FILE_SIZE_MB', 5)), 5)
+        if uploaded.size > max_mb * 1024 * 1024:
+            raise forms.ValidationError(f'Arquivo "{uploaded.name}" excede {max_mb} MB.')
+        return uploaded
+
+
 class OccurrenceUpdateForm(forms.ModelForm):
     """Formulário para registrar a execução de uma atividade."""
 
     evidence_files = MultipleFileField(
         required=False,
         label='Arquivos de evidência',
-        help_text='Anexe PDF, imagens ou prints. Você pode selecionar mais de um arquivo.',
+        help_text='Anexe PDF ou imagem de até 5 MB. Você pode selecionar mais de um arquivo.',
         widget=MultipleFileInput(attrs={'class': 'input', 'multiple': True, 'accept': '.pdf,image/*,.heic'}),
     )
 
@@ -66,7 +88,14 @@ class OccurrenceUpdateForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         self.has_existing_file = kwargs.pop('has_existing_file', False)
+        self.requires_evidence = kwargs.pop('requires_evidence', True)
         super().__init__(*args, **kwargs)
+        self.fields['status'].choices = ChecklistOccurrence.OPERATIONAL_STATUS_CHOICES
+        self.fields['blocked_reason'].label = 'Observação operacional'
+        self.fields['blocked_reason'].widget.attrs['placeholder'] = 'Obrigatório quando a atividade estiver atrasada.'
+        if not self.requires_evidence:
+            self.fields.pop('evidence_text', None)
+            self.fields.pop('evidence_files', None)
 
     def clean(self):
         cleaned = super().clean()
@@ -75,10 +104,10 @@ class OccurrenceUpdateForm(forms.ModelForm):
         blocked_reason = (cleaned.get('blocked_reason') or '').strip()
         new_files = cleaned.get('evidence_files') or []
 
-        if status == ChecklistOccurrence.STATUS_DONE and not evidence_text and not new_files and not self.has_existing_file:
+        if self.requires_evidence and status == ChecklistOccurrence.STATUS_DONE and not evidence_text and not new_files and not self.has_existing_file:
             raise forms.ValidationError('Para concluir uma atividade, registre evidência textual ou anexe pelo menos um arquivo.')
         if status == ChecklistOccurrence.STATUS_BLOCKED and not blocked_reason:
-            raise forms.ValidationError('Informe o motivo quando a atividade ficar bloqueada ou pendente.')
+            raise forms.ValidationError('Informe a observação operacional quando a atividade estiver atrasada.')
         return cleaned
 
 
@@ -92,6 +121,16 @@ class DailyNoteForm(forms.ModelForm):
 
 
 class MetricRecordForm(forms.ModelForm):
+    evidence_file = MetricEvidenceFileField(
+        label='Evidência',
+        required=False,
+        help_text='Aceita TXT, planilha, PDF, imagem, documento Office ou ZIP de até 5 MB.',
+        widget=forms.ClearableFileInput(attrs={
+            'class': 'input',
+            'accept': '.txt,.csv,.tsv,.xls,.xlsx,.ods,.pdf,image/*,.heic,.doc,.docx,.ppt,.pptx,.zip',
+        }),
+    )
+
     class Meta:
         model = MetricRecord
         fields = ['metric', 'date', 'value', 'notes', 'evidence_file']
@@ -100,8 +139,97 @@ class MetricRecordForm(forms.ModelForm):
             'date': forms.DateInput(attrs={'class': 'input', 'type': 'date'}),
             'value': forms.NumberInput(attrs={'class': 'input', 'step': '0.01'}),
             'notes': forms.Textarea(attrs={'class': 'input', 'rows': 3}),
-            'evidence_file': forms.ClearableFileInput(attrs={'class': 'input', 'accept': '.pdf,image/*,.heic'}),
         }
+        labels = {
+            'metric': 'Indicador',
+            'date': 'Data',
+            'value': 'Valor',
+            'notes': 'Observações',
+        }
+
+
+class MetricTypeForm(forms.ModelForm):
+    name = forms.CharField(
+        label='Nome do indicador',
+        max_length=140,
+        widget=forms.TextInput(attrs={'class': 'input'}),
+    )
+    area = forms.CharField(
+        label='Área',
+        max_length=70,
+        widget=forms.TextInput(attrs={'class': 'input', 'maxlength': 70}),
+    )
+
+    class Meta:
+        model = MetricType
+        fields = ['name', 'area', 'frequency', 'position', 'activity', 'monthly_target', 'unit', 'active']
+        widgets = {
+            'frequency': forms.Select(attrs={'class': 'input'}),
+            'position': forms.Select(attrs={'class': 'input'}),
+            'activity': forms.Select(attrs={'class': 'input'}),
+            'monthly_target': forms.NumberInput(attrs={'class': 'input', 'step': '0.01'}),
+            'unit': forms.TextInput(attrs={'class': 'input'}),
+            'active': forms.CheckboxInput(),
+        }
+        labels = {
+            'frequency': 'Frequência',
+            'position': 'Aplica-se ao',
+            'activity': 'Atividade',
+            'monthly_target': 'Meta',
+            'unit': 'Unidade',
+            'active': 'Ativo',
+        }
+        help_texts = {
+            'activity': 'Opcional. Selecione uma atividade do tipo/cargo escolhido.',
+            'active': 'Desmarque para inativar sem apagar histórico.',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        positions = Position.objects.filter(active=True).order_by('name')
+        if self.instance and self.instance.pk and self.instance.position_id:
+            positions = Position.objects.filter(
+                pk__in=list(positions.values_list('pk', flat=True)) + [self.instance.position_id]
+            ).order_by('name')
+        self.fields['position'].queryset = positions
+        self.fields['position'].required = True
+
+        activities = TaskTemplate.objects.select_related('position').order_by('position__name', 'day_of_week', 'start_time', 'title')
+        if not self.instance.pk:
+            activities = activities.filter(active=True)
+        self.fields['activity'].queryset = activities
+        self.fields['activity'].required = False
+        self.fields['active'].initial = True
+
+    def clean(self):
+        cleaned = super().clean()
+        position = cleaned.get('position')
+        activity = cleaned.get('activity')
+        if activity and position and activity.position_id != position.id:
+            raise forms.ValidationError('A atividade selecionada deve pertencer ao tipo/cargo do indicador.')
+        return cleaned
+
+    def _unique_code(self, metric):
+        position_code = metric.position.code if metric.position_id else 'geral'
+        base = slugify(f'{position_code}-{metric.area}-{metric.name}')[:70] or 'indicador'
+        code = base
+        suffix = 2
+        qs = MetricType.objects.all()
+        if metric.pk:
+            qs = qs.exclude(pk=metric.pk)
+        while qs.filter(code=code).exists():
+            suffix_text = f'-{suffix}'
+            code = f'{base[:80 - len(suffix_text)]}{suffix_text}'
+            suffix += 1
+        return code
+
+    def save(self, commit=True):
+        metric = super().save(commit=False)
+        if not metric.code:
+            metric.code = self._unique_code(metric)
+        if commit:
+            metric.save()
+        return metric
 
 
 class PositionForm(forms.ModelForm):
@@ -237,7 +365,7 @@ class TaskTemplateForm(forms.ModelForm):
         model = TaskTemplate
         fields = [
             'position', 'day_of_week', 'start_time', 'end_time', 'title',
-            'expected_result', 'frequency', 'evidence_required', 'proof_location',
+            'expected_result', 'frequency', 'requires_evidence', 'evidence_required', 'proof_location',
             'notes', 'active',
         ]
         widgets = {
@@ -246,6 +374,7 @@ class TaskTemplateForm(forms.ModelForm):
             'start_time': forms.TimeInput(attrs={'class': 'input', 'type': 'time'}),
             'end_time': forms.TimeInput(attrs={'class': 'input', 'type': 'time'}),
             'frequency': forms.Select(attrs={'class': 'input'}),
+            'requires_evidence': forms.CheckboxInput(),
             'active': forms.CheckboxInput(),
         }
         labels = {
@@ -254,9 +383,11 @@ class TaskTemplateForm(forms.ModelForm):
             'start_time': 'Início',
             'end_time': 'Fim',
             'frequency': 'Recorrência',
+            'requires_evidence': 'Exigir evidência do usuário comum',
             'active': 'Ativa',
         }
         help_texts = {
+            'requires_evidence': 'Desmarque quando o usuário comum só precisar atualizar status/observação, sem evidência.',
             'active': 'Desmarque para inativar sem apagar histórico.',
         }
 
@@ -268,6 +399,7 @@ class TaskTemplateForm(forms.ModelForm):
                 pk__in=list(positions.values_list('pk', flat=True)) + [self.instance.position_id]
             ).order_by('name')
         self.fields['position'].queryset = positions
+        self.fields['requires_evidence'].initial = True
         self.fields['active'].initial = True
 
     def clean(self):

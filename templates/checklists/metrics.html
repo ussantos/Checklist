@@ -4,19 +4,63 @@
   <div><h1>Indicadores</h1><p class="muted">Registre números operacionais do cargo. O funcionário será identificado pelo login atual.</p></div>
   <form method="get" class="filters">{% if is_admin %}<select class="input" name="cargo">{% for p in positions %}<option value="{{ p.id }}" {% if p.id == position.id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select>{% endif %}<button class="btn">Abrir</button></form>
 </div>
+
+<section class="panel">
+  <h2>Indicadores aplicáveis — {{ position.name }}</h2>
+  <table>
+    <thead><tr><th>Área</th><th>Indicador</th><th>Frequência</th><th>Atividade</th><th>Evidência</th></tr></thead>
+    <tbody>
+      {% for metric in applicable_metrics %}
+      <tr>
+        <td>{{ metric.area }}</td>
+        <td>{{ metric.name }}</td>
+        <td>{{ metric.get_frequency_display }}</td>
+        <td>{% if metric.activity %}{{ metric.activity.title }}{% else %}<span class="muted">Geral do cargo</span>{% endif %}</td>
+        <td>TXT, planilha, PDF, imagem ou arquivo similar até 5 MB</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5">Nenhum indicador ativo para este cargo.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
 <section class="panel">
   <h2>Novo registro — {{ position.name }}</h2>
   <form method="post" enctype="multipart/form-data" class="form-grid">
     {% csrf_token %}
-    {{ form.as_p }}
-    <button class="btn primary" type="submit">Salvar indicador</button>
+    {{ form.non_field_errors }}
+    <label>{{ form.metric.label }}
+      {{ form.metric }}
+      {{ form.metric.errors }}
+    </label>
+    <label>{{ form.date.label }}
+      {{ form.date }}
+      {{ form.date.errors }}
+    </label>
+    <label>{{ form.value.label }}
+      {{ form.value }}
+      {{ form.value.errors }}
+    </label>
+    <label>{{ form.evidence_file.label }}
+      {{ form.evidence_file }}
+      <span class="help">{{ form.evidence_file.help_text }}</span>
+      {{ form.evidence_file.errors }}
+    </label>
+    <label>{{ form.notes.label }}
+      {{ form.notes }}
+      {{ form.notes.errors }}
+    </label>
+    <div class="form-actions">
+      <button class="btn primary" type="submit">Salvar indicador</button>
+    </div>
   </form>
 </section>
 <section class="panel">
   <h2>Últimos registros</h2>
-  <table><thead><tr><th>Data</th><th>Indicador</th><th>Funcionário</th><th>Valor</th><th>Observação</th></tr></thead><tbody>
-  {% for r in records %}<tr><td>{{ r.date|date:"d/m/Y" }}</td><td>{{ r.metric.name }}</td><td>{{ r.executor_full_name|default:"-" }}</td><td>{{ r.value }} {{ r.metric.unit }}</td><td>{{ r.notes|truncatechars:100 }}</td></tr>
-  {% empty %}<tr><td colspan="5">Sem registros.</td></tr>{% endfor %}
+  <table><thead><tr><th>Data</th><th>Área</th><th>Indicador</th><th>Atividade</th><th>Funcionário</th><th>Valor</th><th>Evidência</th><th>Observação</th></tr></thead><tbody>
+  {% for r in records %}<tr><td>{{ r.date|date:"d/m/Y" }}</td><td>{{ r.metric.area }}</td><td>{{ r.metric.name }}</td><td>{% if r.metric.activity %}{{ r.metric.activity.title }}{% else %}-{% endif %}</td><td>{{ r.executor_full_name|default:"-" }}</td><td>{{ r.value }} {{ r.metric.unit }}</td><td>{% if r.evidence_file %}<a href="{% url 'metric_evidence_download' r.id %}">Arquivo</a>{% else %}-{% endif %}</td><td>{{ r.notes|truncatechars:100 }}</td></tr>
+  {% empty %}<tr><td colspan="8">Sem registros.</td></tr>{% endfor %}
   </tbody></table>
 </section>
 {% endblock %}

@@ -21,8 +21,8 @@
     <p class="muted">Conclusão no mês</p>
     <div class="statline"><span>Total</span><strong>{{ row.total }}</strong></div>
     <div class="statline"><span>Concluído</span><strong>{{ row.concluido }}</strong></div>
-    <div class="statline"><span>Em andamento</span><strong>{{ row.andamento }}</strong></div>
-    <div class="statline"><span>Pendente/Bloqueado</span><strong>{{ row.bloqueado }}</strong></div>
+    <div class="statline"><span>Executando</span><strong>{{ row.andamento }}</strong></div>
+    <div class="statline"><span>Atrasada</span><strong>{{ row.bloqueado }}</strong></div>
   </article>
   {% empty %}
   <article class="card"><p>Nenhuma ocorrência criada neste mês. Abra o checklist do dia para gerar tarefas.</p></article>
@@ -47,7 +47,7 @@
     <thead><tr><th>Data</th><th>Cargo</th><th>Tarefa</th><th>Status</th></tr></thead>
     <tbody>
       {% for item in overdue %}
-      <tr><td>{{ item.date|date:"d/m/Y" }}</td><td>{{ item.position.name }}</td><td>{{ item.template.title }}</td><td><span class="badge {{ item.status|lower }}">{{ item.get_status_display }}</span></td></tr>
+      <tr><td>{{ item.date|date:"d/m/Y" }}</td><td>{{ item.position.name }}</td><td>{{ item.template.title }}</td><td><span class="badge {{ item.operational_status_css }}">{{ item.operational_status_label }}</span></td></tr>
       {% empty %}<tr><td colspan="4">Sem pendências anteriores.</td></tr>{% endfor %}
     </tbody>
   </table>
@@ -59,7 +59,7 @@
     <thead><tr><th>Data</th><th>Cargo</th><th>Tarefa</th><th>Status</th><th>Funcionário</th><th>Atualizado</th></tr></thead>
     <tbody>
       {% for item in recent %}
-      <tr><td>{{ item.date|date:"d/m/Y" }}</td><td>{{ item.position.name }}</td><td>{{ item.template.title }}</td><td>{{ item.get_status_display }}</td><td>{{ item.executor_full_name|default:"-" }}</td><td>{{ item.updated_at|date:"d/m/Y H:i" }}</td></tr>
+      <tr><td>{{ item.date|date:"d/m/Y" }}</td><td>{{ item.position.name }}</td><td>{{ item.template.title }}</td><td>{{ item.operational_status_label }}</td><td>{{ item.executor_full_name|default:"-" }}</td><td>{{ item.updated_at|date:"d/m/Y H:i" }}</td></tr>
       {% empty %}<tr><td colspan="6">Sem atualizações.</td></tr>{% endfor %}
     </tbody>
   </table>

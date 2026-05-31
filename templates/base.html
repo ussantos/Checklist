@@ -24,14 +24,15 @@
       <a href="{% url 'dashboard' %}">Dashboard</a>
       <a href="{% url 'checklist_day' %}">Checklist do dia</a>
       <a href="{% url 'week_view' %}">Semana</a>
-      <a href="{% url 'metrics' %}">Indicadores</a>
+      <a href="{% url 'metric_types_list' %}">Indicadores</a>
       <a href="{% url 'history' %}">Histórico</a>
-      <a href="{% url 'templates_list' %}">Tarefas modelo</a>
+      <a href="{% url 'templates_list' %}">Atividades</a>
       <a href="{% url 'positions_list' %}">Tipos/cargos</a>
       <a href="{% url 'absences_list' %}">Ausências</a>
       <a href="{% url 'employees_list' %}">Usuários</a>
     {% else %}
       <a href="{% url 'activities' %}">Atividades</a>
+      <a href="{% url 'metrics' %}">Indicadores</a>
     {% endif %}
     <a href="{% url 'password_change' %}">Trocar senha</a>
     {% if user.is_staff %}<a href="/admin/">Admin Django</a>{% endif %}

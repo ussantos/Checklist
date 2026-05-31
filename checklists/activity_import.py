@@ -342,11 +342,12 @@ def import_activity_rows(rows, actor, filename=''):
                 template.evidence_required = row.evidence_required
                 template.proof_location = row.proof_location
                 template.notes = row.notes
+                template.requires_evidence = bool(row.evidence_required)
                 template.active = row.active
                 template.source = 'Importação XLSX'
                 template.save(update_fields=[
                     'title', 'expected_result', 'frequency', 'evidence_required',
-                    'proof_location', 'notes', 'active', 'source',
+                    'proof_location', 'notes', 'requires_evidence', 'active', 'source',
                 ])
                 updated += 1
             else:
@@ -362,6 +363,7 @@ def import_activity_rows(rows, actor, filename=''):
                     title=row.title,
                     expected_result=row.expected_result,
                     frequency=row.frequency,
+                    requires_evidence=bool(row.evidence_required),
                     evidence_required=row.evidence_required,
                     proof_location=row.proof_location,
                     notes=row.notes,

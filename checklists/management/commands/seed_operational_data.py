@@ -133,6 +133,7 @@ class Command(BaseCommand):
                             'end_time': end_time,
                             'category': category[:120],
                             'expected_result': expected_result[:300],
+                            'requires_evidence': bool(evidence),
                             'evidence_required': evidence[:300],
                             'proof_location': proof_location[:300],
                             'monthly_goal': expected_result[:255],
@@ -147,6 +148,7 @@ class Command(BaseCommand):
                         template.end_time = end_time
                         template.category = category[:120]
                         template.expected_result = expected_result[:300]
+                        template.requires_evidence = bool(evidence)
                         template.evidence_required = evidence[:300]
                         template.proof_location = proof_location[:300]
                         template.monthly_goal = expected_result[:255]
@@ -157,21 +159,35 @@ class Command(BaseCommand):
         atendente = positions['atendente-comercial']
         instrutor = positions['instrutor-aula-livre']
         metrics = [
-            (atendente, 'leads-mensais', 'Leads registrados no mês', 60, 'leads'),
-            (atendente, 'matriculas-mensais', 'Matrículas fechadas no mês', 12, 'matrículas'),
-            (atendente, 'pesquisas-concorrentes', 'Pesquisas de concorrentes no mês', 20, 'pesquisas'),
-            (atendente, 'avaliacoes-google', 'Avaliações Google solicitadas após aula experimental', 1, 'por aula'),
-            (instrutor, 'aulas-registradas', 'Aulas registradas no mês', 1, 'registros'),
-            (instrutor, 'projetos-montados', 'Projetos pedagógicos montados/testados no mês', 8, 'projetos'),
-            (instrutor, 'feedback-franqueadora', 'Feedbacks quinzenais enviados à franqueadora', 2, 'envios'),
+            (atendente, 'Comercial', 'leads-mensais', 'Leads registrados no mês', 60, 'leads'),
+            (atendente, 'Comercial', 'matriculas-mensais', 'Matrículas fechadas no mês', 12, 'matrículas'),
+            (atendente, 'Comercial', 'pesquisas-concorrentes', 'Pesquisas de concorrentes no mês', 20, 'pesquisas'),
+            (atendente, 'Comercial', 'avaliacoes-google', 'Avaliações Google solicitadas após aula experimental', 1, 'por aula'),
+            (instrutor, 'Pedagógico', 'aulas-registradas', 'Aulas registradas no mês', 1, 'registros'),
+            (instrutor, 'Pedagógico', 'projetos-montados', 'Projetos pedagógicos montados/testados no mês', 8, 'projetos'),
+            (instrutor, 'Pedagógico', 'feedback-franqueadora', 'Feedbacks quinzenais enviados à franqueadora', 2, 'envios'),
         ]
-        for position, code, name, target, unit in metrics:
-            obj, _ = MetricType.objects.get_or_create(code=code, defaults={'name': name, 'position': position})
+        for position, area, code, name, target, unit in metrics:
+            obj, created = MetricType.objects.get_or_create(
+                code=code,
+                defaults={
+                    'name': name,
+                    'area': area,
+                    'frequency': MetricType.FREQ_MONTHLY,
+                    'position': position,
+                    'monthly_target': target,
+                    'unit': unit,
+                    'active': True,
+                },
+            )
             obj.name = name
+            obj.area = area
+            obj.frequency = MetricType.FREQ_MONTHLY
             obj.position = position
             obj.monthly_target = target
             obj.unit = unit
-            obj.active = True
+            if created:
+                obj.active = True
             obj.save()
 
         self.stdout.write(self.style.SUCCESS(f'Seed operacional concluído. Tarefas importadas/atualizadas: {total}.'))

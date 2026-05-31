@@ -137,6 +137,11 @@ class TaskTemplate(models.Model):
     end_time = models.TimeField('Fim previsto', blank=True, null=True)
     category = models.CharField('Categoria', max_length=120, blank=True)
     expected_result = models.CharField('Resultado esperado', max_length=300, blank=True)
+    requires_evidence = models.BooleanField(
+        'Exige evidência',
+        default=True,
+        help_text='Quando marcado, o usuário comum deve registrar evidência ao concluir a atividade.',
+    )
     evidence_required = models.CharField('Evidência exigida', max_length=300, blank=True)
     proof_location = models.CharField('Onde comprovar', max_length=300, blank=True)
     notes = models.TextField('Observações', blank=True)
@@ -187,6 +192,16 @@ class ChecklistOccurrence(models.Model):
         (STATUS_NOT_APPLICABLE, 'Não se aplica'),
         (STATUS_BLOCKED, 'Bloqueado/Pendente'),
     ]
+    OPERATIONAL_STATUS_CHOICES = [
+        (STATUS_PLANNED, 'Pendente'),
+        (STATUS_IN_PROGRESS, 'Executando'),
+        (STATUS_BLOCKED, 'Atrasada'),
+        (STATUS_DONE, 'Concluída'),
+    ]
+    HISTORY_STATUS_CHOICES = OPERATIONAL_STATUS_CHOICES + [
+        (STATUS_NOT_APPLICABLE, 'Não se aplica'),
+    ]
+    OPERATIONAL_STATUS_LABELS = dict(OPERATIONAL_STATUS_CHOICES)
 
     template = models.ForeignKey(TaskTemplate, on_delete=models.PROTECT, related_name='occurrences')
     position = models.ForeignKey(Position, on_delete=models.PROTECT, related_name='occurrences')
@@ -219,6 +234,14 @@ class ChecklistOccurrence(models.Model):
     def __str__(self):
         return f'{self.date} - {self.position.name} - {self.template.title}'
 
+    @property
+    def operational_status_label(self):
+        return self.OPERATIONAL_STATUS_LABELS.get(self.status, self.get_status_display())
+
+    @property
+    def operational_status_css(self):
+        return self.status.lower()
+
     def mark_status(self, new_status, user=None):
         self.status = new_status
         self.updated_by = user
@@ -226,6 +249,40 @@ class ChecklistOccurrence(models.Model):
             self.completed_at = timezone.now()
         if new_status != self.STATUS_DONE:
             self.completed_at = None
+
+
+class ChecklistOccurrenceStatusEvent(models.Model):
+    """Evento auditável de transição de status de uma ocorrência."""
+
+    occurrence = models.ForeignKey(ChecklistOccurrence, on_delete=models.CASCADE, related_name='status_events')
+    previous_status = models.CharField('Status anterior', max_length=20, choices=ChecklistOccurrence.STATUS_CHOICES, blank=True)
+    new_status = models.CharField('Novo status', max_length=20, choices=ChecklistOccurrence.STATUS_CHOICES)
+    changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='checklist_status_events')
+    changed_at = models.DateTimeField('Alterado em', default=timezone.now)
+    created_at = models.DateTimeField('Registrado em', auto_now_add=True)
+
+    class Meta:
+        ordering = ['changed_at', 'id']
+        indexes = [
+            models.Index(fields=['occurrence', 'changed_at']),
+            models.Index(fields=['changed_at']),
+            models.Index(fields=['new_status']),
+        ]
+        verbose_name = 'Evento de status de atividade'
+        verbose_name_plural = 'Eventos de status de atividades'
+
+    def __str__(self):
+        return f'{self.occurrence_id} - {self.previous_status or "-"} -> {self.new_status}'
+
+    @property
+    def previous_status_label(self):
+        if not self.previous_status:
+            return '-'
+        return ChecklistOccurrence.OPERATIONAL_STATUS_LABELS.get(self.previous_status, self.get_previous_status_display())
+
+    @property
+    def new_status_label(self):
+        return ChecklistOccurrence.OPERATIONAL_STATUS_LABELS.get(self.new_status, self.get_new_status_display())
 
 
 class EvidenceAttachment(models.Model):
@@ -273,9 +330,23 @@ class DailyNote(models.Model):
 class MetricType(models.Model):
     """Indicador acompanhado no dashboard."""
 
+    FREQ_DAILY = 'DAILY'
+    FREQ_WEEKLY = 'WEEKLY'
+    FREQ_MONTHLY = 'MONTHLY'
+    FREQ_ANNUAL = 'ANNUAL'
+    FREQ_CHOICES = [
+        (FREQ_DAILY, 'Diário'),
+        (FREQ_WEEKLY, 'Semanal'),
+        (FREQ_MONTHLY, 'Mensal'),
+        (FREQ_ANNUAL, 'Anual'),
+    ]
+
     code = models.SlugField('Código', max_length=80, unique=True)
     name = models.CharField('Indicador', max_length=140)
+    area = models.CharField('Área', max_length=70, default='Operacional')
+    frequency = models.CharField('Frequência', max_length=20, choices=FREQ_CHOICES, default=FREQ_MONTHLY)
     position = models.ForeignKey(Position, on_delete=models.CASCADE, related_name='metric_types', null=True, blank=True)
+    activity = models.ForeignKey(TaskTemplate, on_delete=models.PROTECT, related_name='metric_types', null=True, blank=True)
     monthly_target = models.DecimalField('Meta mensal', max_digits=10, decimal_places=2, default=0)
     unit = models.CharField('Unidade', max_length=40, default='un')
     active = models.BooleanField('Ativo', default=True)

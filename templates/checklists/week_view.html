@@ -25,7 +25,7 @@
     {% else %}
     {% for item in items %}
       <a class="mini-card" href="{% url 'checklist_day' %}?data={{ day|date:'Y-m-d' }}{% if is_admin %}&cargo={{ position.id }}{% endif %}">
-        <span class="badge {{ item.status|lower }}">{{ item.get_status_display }}</span>
+        <span class="badge {{ item.operational_status_css }}">{{ item.operational_status_label }}</span>
         <strong>{{ item.template.title }}</strong>
       </a>
     {% empty %}<p class="muted">Sem tarefas.</p>{% endfor %}

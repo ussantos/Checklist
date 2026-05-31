@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Editar atividade</h1>
+    <p class="muted">{{ occurrence.position.name }} · {{ occurrence.date|date:"d/m/Y" }}</p>
+  </div>
+  <a class="btn" href="{{ return_url }}">Voltar</a>
+</div>
+
+<section class="panel task-readonly">
+  <div class="task-summary detail-summary">
+    <div class="task-time">
+      <span>{% if occurrence.template.start_time %}{{ occurrence.template.start_time|time:"H:i" }}{% else %}--:--{% endif %}</span>
+      <small>{% if occurrence.template.end_time %}{{ occurrence.template.end_time|time:"H:i" }}{% else %}sem fim{% endif %}</small>
+    </div>
+    <div class="task-main">
+      <h2>{{ occurrence.template.title }}</h2>
+      <p class="muted">{{ occurrence.template.get_day_of_week_display }} · {{ occurrence.template.get_frequency_display }}</p>
+    </div>
+    <span class="badge {{ occurrence.operational_status_css }}">{{ occurrence.operational_status_label }}</span>
+  </div>
+
+  <dl class="task-details">
+    <div>
+      <dt>Resultado esperado</dt>
+      <dd>{{ occurrence.template.expected_result|default:occurrence.template.monthly_goal|default:"-" }}</dd>
+    </div>
+    {% if occurrence.template.requires_evidence %}
+      <div>
+        <dt>Evidência exigida</dt>
+        <dd>{{ occurrence.template.evidence_required|default:"Registrar evidência objetiva da execução." }}</dd>
+      </div>
+      <div>
+        <dt>Onde comprovar</dt>
+        <dd>{{ occurrence.template.proof_location|default:"-" }}</dd>
+      </div>
+    {% endif %}
+    <div class="wide">
+      <dt>Observações</dt>
+      <dd>{{ occurrence.template.notes|default:"-"|linebreaksbr }}</dd>
+    </div>
+  </dl>
+
+  {% if occurrence.template.requires_evidence %}
+  <div class="evidence-guidance">
+    <strong>Evidência exigida:</strong> {{ occurrence.template.evidence_required|default:"Registrar evidência objetiva da execução." }}
+    {% if occurrence.template.proof_location %}<span>Comprove em: {{ occurrence.template.proof_location }}</span>{% endif %}
+  </div>
+  {% endif %}
+
+  <details>
+    <summary>Ver instruções</summary>
+    {% if occurrence.template.description %}<pre>{{ occurrence.template.description }}</pre>{% else %}<p class="muted">Sem instruções adicionais cadastradas.</p>{% endif %}
+  </details>
+</section>
+
+<form method="post" enctype="multipart/form-data" action="{% url 'occurrence_edit' occurrence.id %}" class="panel task-form">
+  {% csrf_token %}
+  <input type="hidden" name="next" value="{{ return_url }}">
+
+  {% if form.non_field_errors %}
+    <div class="message error">{{ form.non_field_errors }}</div>
+  {% endif %}
+
+  <div class="form-grid">
+    <label>Status
+      {{ form.status }}
+      {{ form.status.errors }}
+    </label>
+    {% if occurrence.template.requires_evidence %}
+      <label>Evidência textual
+        {{ form.evidence_text }}
+        {{ form.evidence_text.errors }}
+      </label>
+      <label>Arquivos de evidência - PDF ou imagem
+        {{ form.evidence_files }}
+        <span class="help">Você pode anexar PDF, print, foto ou imagem de até 5 MB.</span>
+        {{ form.evidence_files.errors }}
+      </label>
+    {% endif %}
+    <label>Observação operacional
+      {{ form.blocked_reason }}
+      {{ form.blocked_reason.errors }}
+    </label>
+  </div>
+
+  {% if occurrence.template.requires_evidence %}
+    {% if occurrence.evidence_file or occurrence.attachments.all %}
+    <div class="attachments">
+      <strong>Evidências anexadas:</strong>
+      <ul>
+        {% if occurrence.evidence_file %}<li><a href="{% url 'legacy_evidence_download' occurrence.id %}" target="_blank">Arquivo legado</a></li>{% endif %}
+        {% for attachment in occurrence.attachments.all %}
+          <li><a href="{% url 'evidence_attachment_download' attachment.id %}" target="_blank">{{ attachment.original_name|default:attachment.file.name }}</a> - {{ attachment.uploaded_at|date:"d/m/Y H:i" }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  {% endif %}
+
+  <div class="form-actions">
+    <button class="btn primary" type="submit">Salvar atividade</button>
+    <a class="btn" href="{{ return_url }}">Cancelar</a>
+  </div>
+</form>
+
+{% if is_admin %}
+<section class="panel">
+  <h2>Auditoria de tempo por status</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Tempo no dia</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in status_duration_rows %}
+      <tr>
+        <td>{{ row.label }}</td>
+        <td>{{ row.formatted }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="2">Sem dados de tempo.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <h2>Eventos de status</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Quando</th>
+        <th>Usuário</th>
+        <th>De</th>
+        <th>Para</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for event in status_events %}
+      <tr>
+        <td>{{ event.changed_at|date:"d/m/Y H:i:s" }}</td>
+        <td>{% if event.changed_by %}{{ event.changed_by.username }}{% else %}-{% endif %}</td>
+        <td>{{ event.previous_status_label }}</td>
+        <td>{{ event.new_status_label }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="4">Sem eventos registrados.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

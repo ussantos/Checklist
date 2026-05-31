@@ -5,15 +5,16 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
-from django.db.models import Q
+from django.db.models import F, Q
 from .forms import (
     AdminPasswordResetForm, DailyNoteForm, EmployeeCreateForm, EmployeeUpdateForm,
-    MetricRecordForm, OccurrenceUpdateForm, TaskTemplateForm,
+    MetricRecordForm, MetricTypeForm, OccurrenceUpdateForm, TaskTemplateForm,
 )
 from .models import (
-    ActivityLog, ChecklistOccurrence, DailyNote, EvidenceAttachment, MetricRecord,
-    MetricType, Position, TaskTemplate, UserProfile,
+    ActivityLog, ChecklistOccurrence, ChecklistOccurrenceStatusEvent, DailyNote,
+    EvidenceAttachment, MetricRecord, MetricType, Position, TaskTemplate, UserProfile,
 )
 from .activity_import import (
     build_activity_import_template, import_activity_rows, parse_activity_import,
@@ -22,11 +23,20 @@ from .services import (
     absence_for_user_on_date, create_due_occurrences, create_occurrences_for_positions,
     filter_absence_ignored_occurrences, get_user_position, is_admin_user, metrics_summary,
     month_range, monthly_summary, overdue_occurrences, position_absences_on_date,
-    position_is_fully_absent_on_date, user_is_absent_on_date, visible_positions,
-    working_days_between,
+    position_is_fully_absent_on_date, status_duration_summary, user_is_absent_on_date,
+    visible_positions, working_days_between,
 )
 
 User = get_user_model()
+
+
+def _activity_return_url(request, occurrence):
+    next_url = request.POST.get('next') or request.GET.get('next')
+    if next_url and next_url.startswith('/'):
+        return next_url
+    if is_admin_user(request.user):
+        return f'{reverse("checklist_day")}?data={occurrence.date.isoformat()}&cargo={occurrence.position_id}'
+    return f'{reverse("activities")}?periodo=dia&data={occurrence.date.isoformat()}'
 
 
 def _parse_date(value):
@@ -148,7 +158,7 @@ def activities(request):
         position=position,
         date__range=(start_date, end_date),
     ).select_related('template', 'position').prefetch_related('attachments').order_by(
-        'date', 'template__order', 'template__start_time', 'template__title'
+        'date', F('template__start_time').asc(nulls_last=True), 'template__order', 'template__title'
     ))
 
     grouped = []
@@ -169,7 +179,7 @@ def activities(request):
         'end_date': end_date,
         'position': position,
         'grouped': grouped,
-        'statuses': ChecklistOccurrence.STATUS_CHOICES,
+        'statuses': ChecklistOccurrence.OPERATIONAL_STATUS_CHOICES,
         'employee_name': _current_employee_name(request.user),
         'is_admin': False,
     })
@@ -188,7 +198,7 @@ def checklist_day(request):
 
     if not user_absence:
         create_due_occurrences(position, target_date, user=None if is_admin_user(request.user) else request.user)
-    occurrences = ChecklistOccurrence.objects.filter(position=position, date=target_date).select_related('template', 'position').order_by('template__order', 'template__start_time', 'template__title')
+    occurrences = ChecklistOccurrence.objects.filter(position=position, date=target_date).select_related('template', 'position').order_by(F('template__start_time').asc(nulls_last=True), 'template__order', 'template__title')
     occurrences = [] if user_absence else filter_absence_ignored_occurrences(occurrences)
     note, _ = DailyNote.objects.get_or_create(position=position, date=target_date)
 
@@ -212,7 +222,7 @@ def checklist_day(request):
         'position': position,
         'positions': visible_positions(request.user),
         'occurrences': occurrences,
-        'statuses': ChecklistOccurrence.STATUS_CHOICES,
+        'statuses': ChecklistOccurrence.OPERATIONAL_STATUS_CHOICES,
         'employee_name': _current_employee_name(request.user),
         'note_form': form,
         'user_absence': user_absence,
@@ -240,7 +250,7 @@ def week_view(request):
 
     grouped = []
     for day in days:
-        items = ChecklistOccurrence.objects.filter(position=position, date=day).select_related('position', 'template').order_by('template__order', 'template__start_time')
+        items = ChecklistOccurrence.objects.filter(position=position, date=day).select_related('position', 'template').order_by(F('template__start_time').asc(nulls_last=True), 'template__order', 'template__title')
         absence = absences_by_day.get(day)
         if absence:
             grouped.append((day, [], absence, []))
@@ -270,21 +280,80 @@ def update_occurrence(request, occurrence_id):
     if not is_admin_user(request.user) and user_is_absent_on_date(request.user, occurrence.date):
         return HttpResponseForbidden('Você está com ausência registrada para esta data.')
 
+    form, saved = _save_occurrence_update(request, occurrence)
+    if saved:
+        messages.success(request, 'Tarefa atualizada.')
+    else:
+        messages.error(request, 'Não foi possível salvar. Verifique os campos.')
+    return redirect(request.META.get('HTTP_REFERER') or _activity_return_url(request, occurrence))
+
+
+@login_required
+def occurrence_edit(request, occurrence_id):
+    occurrence = get_object_or_404(
+        ChecklistOccurrence.objects.select_related('position', 'template').prefetch_related('attachments'),
+        pk=occurrence_id,
+    )
+    if occurrence.position not in visible_positions(request.user):
+        return HttpResponseForbidden('Você não pode alterar esta tarefa.')
+    if not is_admin_user(request.user) and user_is_absent_on_date(request.user, occurrence.date):
+        return HttpResponseForbidden('Você está com ausência registrada para esta data.')
+
+    if request.method == 'POST':
+        form, saved = _save_occurrence_update(request, occurrence)
+        if saved:
+            messages.success(request, 'Tarefa atualizada.')
+            return redirect(_activity_return_url(request, occurrence))
+        messages.error(request, 'Não foi possível salvar. Verifique os campos.')
+    else:
+        has_existing = bool(occurrence.evidence_file) or occurrence.attachments.exists()
+        form = OccurrenceUpdateForm(
+            instance=occurrence,
+            has_existing_file=has_existing,
+            requires_evidence=occurrence.template.requires_evidence,
+        )
+
+    return render(request, 'checklists/occurrence_form.html', {
+        'occurrence': occurrence,
+        'form': form,
+        'return_url': _activity_return_url(request, occurrence),
+        'status_events': occurrence.status_events.select_related('changed_by').order_by('-changed_at', '-id') if is_admin_user(request.user) else [],
+        'status_duration_rows': status_duration_summary(occurrence) if is_admin_user(request.user) else [],
+        'is_admin': is_admin_user(request.user),
+    })
+
+
+def _save_occurrence_update(request, occurrence):
     old_status = occurrence.status
     has_existing = bool(occurrence.evidence_file) or occurrence.attachments.exists()
-    form = OccurrenceUpdateForm(request.POST, request.FILES, instance=occurrence, has_existing_file=has_existing)
+    requires_evidence = occurrence.template.requires_evidence
+    form = OccurrenceUpdateForm(
+        request.POST,
+        request.FILES,
+        instance=occurrence,
+        has_existing_file=has_existing,
+        requires_evidence=requires_evidence,
+    )
     if form.is_valid():
         obj = form.save(commit=False)
         obj.executor_full_name = _current_employee_name(request.user)
         obj.mark_status(form.cleaned_data['status'], request.user)
         obj.save()
-        for uploaded in request.FILES.getlist('evidence_files'):
-            EvidenceAttachment.objects.create(
+        if old_status != obj.status:
+            ChecklistOccurrenceStatusEvent.objects.create(
                 occurrence=obj,
-                file=uploaded,
-                original_name=uploaded.name,
-                uploaded_by=request.user,
+                previous_status=old_status,
+                new_status=obj.status,
+                changed_by=request.user,
             )
+        if requires_evidence:
+            for uploaded in request.FILES.getlist('evidence_files'):
+                EvidenceAttachment.objects.create(
+                    occurrence=obj,
+                    file=uploaded,
+                    original_name=uploaded.name,
+                    uploaded_by=request.user,
+                )
         ActivityLog.objects.create(
             actor=request.user,
             position=obj.position,
@@ -293,10 +362,8 @@ def update_occurrence(request, occurrence_id):
             object_id=str(obj.id),
             details=f'Status anterior: {old_status}; novo status: {obj.status}; executor: {obj.executor_full_name}; tarefa: {obj.template.title}',
         )
-        messages.success(request, 'Tarefa atualizada.')
-    else:
-        messages.error(request, 'Não foi possível salvar. Verifique os campos.')
-    return redirect(request.META.get('HTTP_REFERER', 'checklist_day'))
+        return form, True
+    return form, False
 
 
 @login_required
@@ -330,7 +397,7 @@ def history(request):
     return render(request, 'checklists/history.html', {
         'occurrences': qs,
         'positions': positions,
-        'statuses': ChecklistOccurrence.STATUS_CHOICES,
+        'statuses': ChecklistOccurrence.HISTORY_STATUS_CHOICES,
         'is_admin': is_admin_user(request.user),
     })
 
@@ -466,7 +533,13 @@ def metrics(request):
 
     if request.method == 'POST':
         form = MetricRecordForm(request.POST, request.FILES)
-        form.fields['metric'].queryset = MetricType.objects.filter(active=True, position__in=[position]) | MetricType.objects.filter(active=True, position__isnull=True)
+        applicable_metrics = (
+            MetricType.objects.filter(active=True)
+            .filter(Q(position=position) | Q(position__isnull=True))
+            .select_related('activity', 'position')
+            .order_by('area', 'name')
+        )
+        form.fields['metric'].queryset = applicable_metrics
         if form.is_valid():
             obj = form.save(commit=False)
             obj.position = position
@@ -478,16 +551,127 @@ def metrics(request):
             return redirect(f'{request.path}?cargo={position.id}')
     else:
         form = MetricRecordForm(initial={'date': timezone.localdate()})
-        form.fields['metric'].queryset = MetricType.objects.filter(active=True, position__in=[position]) | MetricType.objects.filter(active=True, position__isnull=True)
+        applicable_metrics = (
+            MetricType.objects.filter(active=True)
+            .filter(Q(position=position) | Q(position__isnull=True))
+            .select_related('activity', 'position')
+            .order_by('area', 'name')
+        )
+        form.fields['metric'].queryset = applicable_metrics
 
-    records = MetricRecord.objects.filter(position=position).select_related('metric').order_by('-date', '-created_at')[:100]
+    records = MetricRecord.objects.filter(position=position).select_related('metric', 'metric__activity').order_by('-date', '-created_at')[:100]
     return render(request, 'checklists/metrics.html', {
         'position': position,
         'positions': positions,
         'form': form,
+        'applicable_metrics': applicable_metrics,
         'records': records,
         'is_admin': is_admin_user(request.user),
     })
+
+
+@user_passes_test(_admin_check)
+def metric_types_list(request):
+    status = request.GET.get('status', 'ativos')
+    position_id = request.GET.get('cargo')
+    positions = Position.objects.all().order_by('-active', 'name')
+    metrics = MetricType.objects.select_related('position', 'activity').order_by('position__name', 'area', 'name')
+    if status == 'inativos':
+        metrics = metrics.filter(active=False)
+    elif status != 'todos':
+        status = 'ativos'
+        metrics = metrics.filter(active=True)
+    if position_id and position_id.isdigit():
+        metrics = metrics.filter(position_id=position_id)
+
+    return render(request, 'checklists/metric_types_list.html', {
+        'metrics': metrics,
+        'positions': positions,
+        'status': status,
+        'position_id': position_id or '',
+        'is_admin': True,
+    })
+
+
+@user_passes_test(_admin_check)
+def metric_type_create(request):
+    if request.method == 'POST':
+        form = MetricTypeForm(request.POST)
+        if form.is_valid():
+            metric = form.save()
+            ActivityLog.objects.create(
+                actor=request.user,
+                position=metric.position,
+                action='Indicador criado',
+                object_type='MetricType',
+                object_id=str(metric.id),
+                details=f'Indicador: {metric.name}; área: {metric.area}; ativo: {metric.active}',
+            )
+            messages.success(request, 'Indicador criado.')
+            return redirect('metric_types_list')
+    else:
+        form = MetricTypeForm()
+
+    activities = TaskTemplate.objects.select_related('position').filter(active=True).order_by('position__name', 'day_of_week', 'start_time', 'title')
+    return render(request, 'checklists/metric_type_form.html', {
+        'form': form,
+        'activities': activities,
+        'selected_activity_id': str(form['activity'].value() or ''),
+        'selected_position_id': str(form['position'].value() or ''),
+        'title': 'Cadastrar indicador',
+        'submit_label': 'Cadastrar indicador',
+        'is_admin': True,
+    })
+
+
+@user_passes_test(_admin_check)
+def metric_type_edit(request, metric_id):
+    metric = get_object_or_404(MetricType.objects.select_related('position', 'activity'), pk=metric_id)
+    previous_active = metric.active
+    if request.method == 'POST':
+        form = MetricTypeForm(request.POST, instance=metric)
+        if form.is_valid():
+            metric = form.save()
+            if previous_active and not metric.active:
+                action = 'Indicador inativado'
+            elif not previous_active and metric.active:
+                action = 'Indicador reativado'
+            else:
+                action = 'Indicador atualizado'
+            ActivityLog.objects.create(
+                actor=request.user,
+                position=metric.position,
+                action=action,
+                object_type='MetricType',
+                object_id=str(metric.id),
+                details=f'Indicador: {metric.name}; área: {metric.area}; ativo: {metric.active}',
+            )
+            messages.success(request, 'Indicador atualizado.')
+            return redirect('metric_types_list')
+    else:
+        form = MetricTypeForm(instance=metric)
+
+    activities = TaskTemplate.objects.select_related('position').order_by('position__name', 'day_of_week', 'start_time', 'title')
+    return render(request, 'checklists/metric_type_form.html', {
+        'form': form,
+        'activities': activities,
+        'selected_activity_id': str(form['activity'].value() or ''),
+        'selected_position_id': str(form['position'].value() or ''),
+        'title': f'Editar indicador - {metric.name}',
+        'submit_label': 'Salvar alterações',
+        'metric_obj': metric,
+        'is_admin': True,
+    })
+
+
+@login_required
+def metric_evidence_download(request, record_id):
+    record = get_object_or_404(MetricRecord.objects.select_related('position'), pk=record_id)
+    if record.position not in visible_positions(request.user):
+        return HttpResponseForbidden('Você não pode acessar esta evidência.')
+    if not record.evidence_file:
+        raise Http404('Arquivo não encontrado.')
+    return FileResponse(record.evidence_file.open('rb'), as_attachment=False, filename=record.evidence_file.name.split('/')[-1])
 
 
 @login_required
@@ -539,7 +723,7 @@ def _occurrences_csv_response(qs, filename):
             item.date.isoformat(),
             item.position.name,
             item.template.title,
-            item.get_status_display(),
+            item.operational_status_label,
             item.executor_full_name,
             item.evidence_text,
             '; '.join([a.original_name or a.file.name for a in item.attachments.all()]),
