@@ -4,6 +4,13 @@ Sistema web interno para controle de checkups/checklists operacionais da My Robo
 
 A aplicação controla a rotina por **cargo**, mas o acesso é feito por **usuário nominal**. Isso evita uso de login genérico e preserva evidência trabalhista/operacional: cada lançamento fica associado ao funcionário logado e ao cargo exercido.
 
+## Documentação complementar
+
+- [Checklist de Teste de Produção](docs/TESTE_PRODUCAO.md)
+- [Operação Anual e Retenção por 5 anos](docs/OPERACAO_ANUAL.md)
+
+Use o checklist de produção antes de liberar o sistema oficialmente. Use o guia anual para congelar a instância de cada ano, validar backup/restauração e iniciar o ano seguinte.
+
 ## Cargos operacionais
 
 - Atendente Comercial
@@ -95,6 +102,7 @@ Estrutura simplificada:
 ```text
 .
 ├── checklists/                 # App principal Django
+├── docs/                       # Documentação operacional e testes
 ├── myrobot_checklist/          # Configuração do projeto Django
 ├── seed/                       # CSVs com tarefas iniciais por cargo
 ├── scripts/                    # entrypoint, backup e restore
@@ -181,6 +189,14 @@ Acessar:
 http://IP_DO_SERVIDOR:8000
 ```
 
+### 5. Homologar antes de usar
+
+Execute os testes de homologação antes de liberar uso oficial:
+
+```text
+docs/TESTE_PRODUCAO.md
+```
+
 ## Uso operacional
 
 ### Administradores
@@ -239,7 +255,19 @@ cd /opt/checkups
 ./scripts/restore.sh /caminho/do/backup/2026-12-31_200000
 ```
 
+Antes de considerar o backup confiável, faça teste de restauração conforme:
+
+```text
+docs/TESTE_PRODUCAO.md
+```
+
 ## Encerramento anual da instância
+
+Para congelar o ano, validar backup/restauração e iniciar uma nova instância, siga:
+
+```text
+docs/OPERACAO_ANUAL.md
+```
 
 Recomendação para controle anual:
 
