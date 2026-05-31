@@ -14,8 +14,8 @@ class PositionAdmin(admin.ModelAdmin):
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
-    list_display = ('display_name', 'system_role', 'position', 'active', 'user')
-    list_filter = ('system_role', 'position', 'active')
+    list_display = ('display_name', 'system_role', 'position', 'active', 'must_change_password', 'user')
+    list_filter = ('system_role', 'position', 'active', 'must_change_password')
     search_fields = ('display_name', 'user__username', 'position__name')
 
 
