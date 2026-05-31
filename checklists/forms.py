@@ -2,7 +2,6 @@ from pathlib import Path
 from django import forms
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.auth.password_validation import validate_password
 from .models import ChecklistOccurrence, DailyNote, MetricRecord, Position, UserProfile
 from .security import generate_temporary_password
 
@@ -107,8 +106,8 @@ class MetricRecordForm(forms.ModelForm):
 class UserCreateForm(forms.Form):
     """Cadastro de usuário feito por administrador.
 
-    A senha é gerada automaticamente e marcada como temporária. No primeiro login,
-    o usuário deve trocar a senha antes de acessar qualquer tela do sistema.
+    A senha é gerada automaticamente e exibida uma única vez ao administrador.
+    Durante a fase de testes, a troca obrigatória no primeiro login fica desativada.
     """
 
     full_name = forms.CharField(label='Nome completo', max_length=120, widget=forms.TextInput(attrs={'class': 'input'}))
@@ -156,7 +155,7 @@ class UserCreateForm(forms.Form):
         profile.system_role = UserProfile.ROLE_ADMIN if is_admin else UserProfile.ROLE_OPERATOR
         profile.position = None if is_admin else position
         profile.active = self.cleaned_data.get('active', True)
-        profile.must_change_password = True
+        profile.must_change_password = False
         profile.save()
         return user
 
@@ -214,8 +213,8 @@ class UserUpdateForm(forms.Form):
 class AdminPasswordResetForm(forms.Form):
     """Redefinição administrativa de senha.
 
-    A nova senha é gerada automaticamente, exibida uma única vez ao administrador
-    e marcada como temporária para troca obrigatória no próximo login.
+    A nova senha é gerada automaticamente e exibida uma única vez ao administrador.
+    Durante a fase de testes, a troca obrigatória no primeiro login fica desativada.
     """
 
     confirm = forms.BooleanField(
@@ -233,7 +232,7 @@ class AdminPasswordResetForm(forms.Form):
         self.user_obj.set_password(self.generated_password)
         self.user_obj.save(update_fields=['password'])
         profile, _ = UserProfile.objects.get_or_create(user=self.user_obj)
-        profile.must_change_password = True
+        profile.must_change_password = False
         profile.save(update_fields=['must_change_password'])
         return self.user_obj
 
