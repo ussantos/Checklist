@@ -2,7 +2,7 @@
 
 Sistema web interno para controle de checkups/checklists operacionais da My Robot Barra da Tijuca.
 
-A aplicação controla a rotina por **cargo**, mas o acesso é feito por **usuário nominal**. Isso evita uso de login genérico e preserva evidência trabalhista/operacional: cada lançamento fica associado ao funcionário logado e ao cargo exercido.
+A aplicação controla a rotina por **cargo**, mas o acesso é feito por **usuário nominal**. Isso evita uso de login genérico e preserva evidência trabalhista/operacional: cada lançamento fica associado ao usuário logado e ao cargo exercido.
 
 ## Licença e disclaimer de uso
 
@@ -25,18 +25,22 @@ Como o sistema pode armazenar evidências contendo dados de colaboradores, aluno
 
 Use o checklist de produção antes de liberar o sistema oficialmente. Use o guia anual para congelar a instância de cada ano, validar backup/restauração e iniciar o ano seguinte.
 
-## Cargos operacionais
+## Perfis e cargos
 
-- Atendente Comercial
-- Instrutor de Aula Livre
+O sistema trabalha com três tipos de usuário:
+
+- **Administrador**: acompanha todos os cargos, cadastra usuários, redefine senhas e acessa relatórios gerais.
+- **Atendente Comercial**: executa o checklist comercial.
+- **Instrutor de Aula Livre**: executa o checklist pedagógico.
 
 ## Funcionamento de usuários
 
-- Administradores iniciais: `uellington` e `liliane`.
-- Funcionários não são criados como usuários genéricos.
-- Funcionários devem ser cadastrados na tela **Funcionários**.
-- No cadastro, o administrador informa nome completo, usuário de login, e-mail opcional, cargo e senha forte.
-- Cada funcionário pode trocar a própria senha pelo menu **Trocar senha**.
+- O primeiro usuário da aplicação é o administrador técnico `checkupadmin`.
+- O `checkupadmin` é criado automaticamente pelo seed inicial.
+- A partir dele, devem ser cadastrados usuários nominais com uma das funções: **Administrador**, **Atendente Comercial** ou **Instrutor de Aula Livre**.
+- Não há usuários operacionais genéricos para execução diária.
+- No cadastro, o administrador informa nome completo, usuário de login, e-mail opcional, função/perfil e senha forte.
+- A tela **Trocar senha** funciona para qualquer tipo de usuário: administrador, atendente ou instrutor.
 
 ## Regras de senha forte
 
@@ -45,7 +49,8 @@ A senha deve ter pelo menos 12 caracteres, uma letra maiúscula, uma letra minú
 ## Recursos principais
 
 - Login local.
-- Cadastro nominal de funcionários por administradores.
+- Cadastro nominal de usuários por administradores.
+- Criação de usuários com função de Administrador, Atendente Comercial ou Instrutor de Aula Livre.
 - Checklist diário por cargo.
 - Visão semanal por dia útil.
 - Dashboard mensal.
@@ -54,7 +59,7 @@ A senha deve ter pelo menos 12 caracteres, uma letra maiúscula, uma letra minú
 - Evidência textual por atividade.
 - Upload de múltiplos arquivos por atividade.
 - Suporte a PDF, imagens, prints e fotos.
-- Identificação automática do funcionário logado em cada lançamento.
+- Identificação automática do usuário logado em cada lançamento.
 - Anexos protegidos por login e permissão no cargo.
 - Painel administrativo Django para manutenção avançada.
 - Backup diário às 20h com dump PostgreSQL, arquivos de evidência e configurações.
@@ -105,7 +110,24 @@ O limite de tamanho é definido no `.env` pela variável `MAX_EVIDENCE_FILE_SIZE
 
 ## Instalação no Ubuntu 24.04 LTS
 
-Instale o Docker, clone este repositório em `/opt/checkups`, crie o arquivo `.env` com base no `.env.example`, ajuste as variáveis de ambiente e suba a aplicação:
+Instale o Docker, clone este repositório em `/opt/checkups`, crie o arquivo `.env` com base no `.env.example`, ajuste as variáveis de ambiente e suba a aplicação.
+
+Variável obrigatória para o administrador inicial:
+
+```env
+INITIAL_CHECKUPADMIN_PASSWORD=Trocar@Senha2026
+```
+
+Depois de subir o sistema, acesse com:
+
+```text
+Usuário: checkupadmin
+Senha: valor definido em INITIAL_CHECKUPADMIN_PASSWORD
+```
+
+Após o primeiro acesso, troque a senha do `checkupadmin` e crie os administradores nominais necessários.
+
+Subir a aplicação:
 
 ```bash
 cd /opt/checkups
@@ -130,11 +152,11 @@ Antes de liberar uso oficial, execute os testes em `docs/TESTE_PRODUCAO.md`.
 
 ### Administradores
 
-Usuários administradores podem cadastrar funcionários, definir cargo, redefinir senha, visualizar dashboards, filtrar histórico, exportar CSV, revisar evidências e acessar o painel `/admin/`.
+Usuários administradores podem cadastrar outros administradores, cadastrar usuários operacionais, definir cargo, redefinir senha, visualizar dashboards, filtrar histórico, exportar CSV, revisar evidências e acessar o painel `/admin/`.
 
-### Funcionários
+### Usuários operacionais
 
-Funcionários acessam o sistema com usuário individual. O sistema mostra as tarefas de acordo com o cargo cadastrado e grava automaticamente o nome do funcionário logado no histórico.
+Atendentes Comerciais e Instrutores de Aula Livre acessam o sistema com usuário individual. O sistema mostra as tarefas de acordo com o cargo cadastrado e grava automaticamente o nome do usuário logado no histórico.
 
 ## Backup diário às 20h
 
