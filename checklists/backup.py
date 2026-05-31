@@ -2,6 +2,7 @@ import os
 import shutil
 import subprocess
 import tarfile
+import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -33,6 +34,7 @@ CONFIG_PATHS = [
 @dataclass
 class BackupRunResult:
     local_path: Path
+    package_path: Path | None = None
     cloud_status: str = 'disabled'
     cloud_message: str = ''
     warnings: list[str] = field(default_factory=list)
@@ -44,6 +46,13 @@ class BackupRestoreResult:
     restored_path: Path
     safety_backup_path: Path | None = None
     restored_media: bool = False
+
+
+@dataclass
+class BackupImportResult:
+    backup_name: str
+    local_path: Path
+    has_media: bool = False
 
 
 def infer_provider(remote_path):
@@ -161,6 +170,13 @@ def _safe_backup_name(name):
     return name
 
 
+def _parse_backup_stamp(name):
+    try:
+        return datetime.strptime(name, '%Y%m%d_%H%M%S')
+    except ValueError:
+        return None
+
+
 def backup_path_for_name(name):
     backup_name = _safe_backup_name(name)
     backups_dir = (settings.BASE_DIR / 'backups').resolve()
@@ -190,6 +206,7 @@ def list_local_backups(limit=20):
             'has_media': (path / 'media.tar.gz').exists(),
             'has_config': (path / 'app_config.tar.gz').exists(),
             'has_manifest': (path / 'manifest.txt').exists(),
+            'has_package': (path / 'backup_package.tar.gz').exists(),
         })
     return sorted(rows, key=lambda row: row['created_at'], reverse=True)[:limit]
 
@@ -231,6 +248,29 @@ def download_remote_backup(config, backup_name):
     return local_path
 
 
+def _cleanup_remote_backups(config, keep_name, retention_days):
+    if not config.remote_path or shutil.which('rclone') is None:
+        return []
+    removed = []
+    now = timezone.localtime().replace(tzinfo=None)
+    for row in list_remote_backups(config, limit=1000):
+        name = row['name']
+        if name == keep_name:
+            continue
+        stamp = _parse_backup_stamp(name)
+        if not stamp:
+            continue
+        age_days = (now - stamp).days
+        if age_days > int(retention_days):
+            remote_target = f'{config.remote_path.rstrip("/")}/{name}'
+            try:
+                _run_command(['rclone', 'purge', remote_target], timeout=600)
+                removed.append(name)
+            except RuntimeError:
+                continue
+    return removed
+
+
 def _cleanup_old_backups(backups_dir, keep_path, retention_days):
     now = timezone.now().timestamp()
     max_age_seconds = int(retention_days) * 24 * 60 * 60
@@ -240,6 +280,21 @@ def _cleanup_old_backups(backups_dir, keep_path, retention_days):
         age = now - path.stat().st_mtime
         if age > max_age_seconds:
             shutil.rmtree(path)
+
+
+def _write_manifest(backup_root, lines):
+    (backup_root / 'manifest.txt').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+
+def _create_backup_package(backup_root):
+    package_path = backup_root / 'backup_package.tar.gz'
+    package_items = ['db.dump', 'media.tar.gz', 'app_config.tar.gz', 'manifest.txt']
+    with tarfile.open(package_path, 'w:gz') as tar:
+        for item in package_items:
+            item_path = backup_root / item
+            if item_path.exists():
+                tar.add(item_path, arcname=item)
+    return package_path
 
 
 def run_backup(config=None, *, force_local_only=False):
@@ -277,14 +332,20 @@ def run_backup(config=None, *, force_local_only=False):
         for source in CONFIG_PATHS:
             _add_to_tar(tar, source)
 
-    result = BackupRunResult(local_path=backup_root)
     manifest_lines = [
         'Backup My Robot Checklist',
         f'Data: {timezone.localtime().isoformat()}',
         f'Banco: {db.get("NAME", "")}',
         'Arquivos: db.dump, media.tar.gz, app_config.tar.gz',
+        'Evidencias: incluidas em media.tar.gz',
+        'Pacote restauravel: backup_package.tar.gz',
         f'Destino em nuvem: {config.get_cloud_provider_display()}',
+        f'Retencao local/nuvem: {config.retention_days} dia(s)',
     ]
+    _write_manifest(backup_root, manifest_lines)
+    package_path = _create_backup_package(backup_root)
+
+    result = BackupRunResult(local_path=backup_root, package_path=package_path)
 
     if force_local_only:
         result.cloud_status = 'disabled'
@@ -298,8 +359,11 @@ def run_backup(config=None, *, force_local_only=False):
             remote_target = f'{config.remote_path.rstrip("/")}/{stamp}'
             try:
                 _run_command(['rclone', 'copy', str(backup_root), remote_target], timeout=1800)
+                removed_remote = _cleanup_remote_backups(config, stamp, config.retention_days)
                 result.cloud_status = 'uploaded'
                 result.cloud_message = remote_target
+                if removed_remote:
+                    result.warnings.append(f'Remotos antigos removidos: {", ".join(removed_remote)}')
             except RuntimeError as exc:
                 result.cloud_status = 'failed'
                 result.cloud_message = str(exc)
@@ -312,7 +376,8 @@ def run_backup(config=None, *, force_local_only=False):
         f'Status nuvem: {result.cloud_status}',
         f'Detalhe nuvem: {result.cloud_message}',
     ])
-    (backup_root / 'manifest.txt').write_text('\n'.join(manifest_lines) + '\n', encoding='utf-8')
+    _write_manifest(backup_root, manifest_lines)
+    result.package_path = _create_backup_package(backup_root)
 
     _cleanup_old_backups(backups_dir, backup_root, config.retention_days)
     return result
@@ -325,6 +390,85 @@ def _safe_extract_tar(tar, destination):
         if destination != member_path and destination not in member_path.parents:
             raise RuntimeError('Arquivo de backup contem caminho inseguro.')
     tar.extractall(destination)
+
+
+def _safe_extract_zip(zip_file, destination):
+    destination = destination.resolve()
+    for member in zip_file.infolist():
+        member_path = (destination / member.filename).resolve()
+        if destination != member_path and destination not in member_path.parents:
+            raise RuntimeError('Arquivo de backup contem caminho inseguro.')
+    zip_file.extractall(destination)
+
+
+def _copy_backup_files_from_source(source_dir, backup_root):
+    db_files = list(source_dir.rglob('db.dump'))
+    if not db_files:
+        raise RuntimeError('db.dump nao encontrado no arquivo enviado.')
+    source_root = db_files[0].parent
+    expected_files = ['db.dump', 'media.tar.gz', 'app_config.tar.gz', 'manifest.txt', 'backup_package.tar.gz']
+    for filename in expected_files:
+        source_file = source_root / filename
+        if source_file.exists() and source_file.resolve() != (backup_root / filename).resolve():
+            shutil.copy2(source_file, backup_root / filename)
+    if not (backup_root / 'manifest.txt').exists():
+        _write_manifest(backup_root, [
+            'Backup My Robot Checklist',
+            f'Data de importacao: {timezone.localtime().isoformat()}',
+            'Origem: upload manual na tela Backups',
+        ])
+    if not (backup_root / 'backup_package.tar.gz').exists():
+        _create_backup_package(backup_root)
+
+
+def import_uploaded_backup(uploaded_file):
+    stem = Path(uploaded_file.name).name
+    safe_stem = ''.join(char if char.isalnum() or char in {'-', '_'} else '_' for char in stem.split('.')[0])[:40] or 'backup'
+    backup_name = f'upload_{timezone.localtime().strftime("%Y%m%d_%H%M%S")}_{safe_stem}'
+    backup_root = backup_path_for_name(backup_name)
+    backup_root.mkdir(parents=True, exist_ok=False)
+    upload_path = backup_root / stem
+    try:
+        with upload_path.open('wb') as destination:
+            for chunk in uploaded_file.chunks():
+                destination.write(chunk)
+
+        lower_name = stem.lower()
+        if lower_name.endswith('.dump'):
+            shutil.copy2(upload_path, backup_root / 'db.dump')
+            _write_manifest(backup_root, [
+                'Backup My Robot Checklist',
+                f'Data de importacao: {timezone.localtime().isoformat()}',
+                'Origem: upload manual de db.dump',
+                'Evidencias: nao incluidas neste arquivo',
+            ])
+            _create_backup_package(backup_root)
+        elif lower_name.endswith('.zip'):
+            extracted_dir = backup_root / '_extract'
+            extracted_dir.mkdir()
+            with zipfile.ZipFile(upload_path) as archive:
+                _safe_extract_zip(archive, extracted_dir)
+            _copy_backup_files_from_source(extracted_dir, backup_root)
+            shutil.rmtree(extracted_dir, ignore_errors=True)
+        elif lower_name.endswith(('.tar', '.tar.gz', '.tgz')):
+            extracted_dir = backup_root / '_extract'
+            extracted_dir.mkdir()
+            with tarfile.open(upload_path) as archive:
+                _safe_extract_tar(archive, extracted_dir)
+            _copy_backup_files_from_source(extracted_dir, backup_root)
+            shutil.rmtree(extracted_dir, ignore_errors=True)
+        else:
+            raise RuntimeError('Formato de backup nao suportado.')
+
+        upload_path.unlink(missing_ok=True)
+        return BackupImportResult(
+            backup_name=backup_name,
+            local_path=backup_root,
+            has_media=(backup_root / 'media.tar.gz').exists(),
+        )
+    except Exception:
+        shutil.rmtree(backup_root, ignore_errors=True)
+        raise
 
 
 def _recreate_database(db):
@@ -402,3 +546,25 @@ def restore_local_backup(backup_name, *, restore_media=True, create_safety_backu
         safety_backup_path=safety_backup,
         restored_media=restored_media,
     )
+
+
+def scheduled_backup_is_due(config=None, now=None):
+    config = config or get_backup_configuration()
+    now = timezone.localtime(now or timezone.now())
+    if now.time() < config.backup_time:
+        return False
+    if config.last_scheduled_run_at:
+        last_run = timezone.localtime(config.last_scheduled_run_at)
+        if last_run.date() == now.date():
+            return False
+    return True
+
+
+def run_scheduled_backup_if_due():
+    config = get_backup_configuration()
+    if not scheduled_backup_is_due(config):
+        return None
+    result = run_backup(config)
+    config.last_scheduled_run_at = timezone.now()
+    config.save(update_fields=['last_scheduled_run_at', 'updated_at'])
+    return result

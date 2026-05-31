@@ -934,6 +934,10 @@ th {
   margin: 4px 0;
 }
 
+.attachment-link {
+  font-weight: 700;
+}
+
 .temporary-password {
   display: inline-block;
   padding: 10px 12px;

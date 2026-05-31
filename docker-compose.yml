@@ -36,6 +36,26 @@ services:
     ports:
       - "${APP_BIND:-127.0.0.1:8000}:8000"
 
+  backup:
+    build: .
+    container_name: myrobot_checklist_backup
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TZ: America/Sao_Paulo
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./media:/app/media
+      - ./staticfiles:/app/staticfiles
+      - ./logs:/app/logs
+      - ./backups:/app/backups
+      - ./rclone:/root/.config/rclone
+    entrypoint: ["/app/scripts/backup_scheduler.sh"]
+    command: []
+
   grafana:
     image: grafana/grafana:11.6.0
     container_name: myrobot_checklist_grafana

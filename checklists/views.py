@@ -14,14 +14,14 @@ from django.db.models import F, Q
 from .audit import changed_values, log_activity, snapshot_instance
 from .backup import (
     backup_runtime_status, download_remote_backup, get_backup_configuration,
-    list_local_backups, list_remote_backups, restore_local_backup, run_backup,
-    split_remote_path,
+    import_uploaded_backup, list_local_backups, list_remote_backups,
+    restore_local_backup, run_backup, split_remote_path,
 )
 from .forms import (
     ActivityDeactivationSuggestionForm, ActivitySuggestionCreateForm,
     ActivitySuggestionReviewForm, AdminPasswordResetForm, BackupConfigurationForm,
-    DailyNoteForm, EmployeeCreateForm, EmployeeUpdateForm, MetricRecordForm,
-    MetricTypeForm, OccurrenceUpdateForm, TaskTemplateForm,
+    BackupUploadForm, DailyNoteForm, EmployeeCreateForm, EmployeeUpdateForm,
+    MetricRecordForm, MetricTypeForm, OccurrenceUpdateForm, TaskTemplateForm,
 )
 from .models import (
     ActivityLog, ActivitySuggestion, BackupConfiguration, ChecklistOccurrence,
@@ -59,7 +59,7 @@ ACTIVITY_SUGGESTION_AUDIT_FIELDS = [
     'end_time', 'requires_evidence', 'evidence_required', 'proof_location',
     'notes', 'justification', 'review_note', 'reviewed_by', 'reviewed_at',
 ]
-BACKUP_CONFIG_AUDIT_FIELDS = ['cloud_provider', 'remote_path', 'retention_days', 'active']
+BACKUP_CONFIG_AUDIT_FIELDS = ['cloud_provider', 'remote_path', 'retention_days', 'backup_time', 'active']
 
 
 def _activity_return_url(request, occurrence):
@@ -117,6 +117,18 @@ def _selected_position(request):
     if pos_id and is_admin_user(request.user):
         return get_object_or_404(positions, pk=pos_id)
     return positions.first()
+
+
+def _history_positions_for_user(user):
+    if is_admin_user(user):
+        return Position.objects.all().order_by('name')
+    return visible_positions(user)
+
+
+def _can_access_position_history(user, position):
+    if is_admin_user(user):
+        return True
+    return visible_positions(user).filter(pk=position.pk).exists()
 
 
 def _current_employee_name(user):
@@ -371,8 +383,7 @@ def week_view(request):
 @login_required
 def update_occurrence(request, occurrence_id):
     occurrence = get_object_or_404(ChecklistOccurrence.objects.select_related('position', 'template'), pk=occurrence_id)
-    allowed = occurrence.position in visible_positions(request.user)
-    if not allowed:
+    if not _can_access_position_history(request.user, occurrence.position):
         return HttpResponseForbidden('Você não pode alterar esta tarefa.')
     if request.method != 'POST':
         return redirect('checklist_day')
@@ -393,7 +404,7 @@ def occurrence_edit(request, occurrence_id):
         ChecklistOccurrence.objects.select_related('position', 'template').prefetch_related('attachments'),
         pk=occurrence_id,
     )
-    if occurrence.position not in visible_positions(request.user):
+    if not _can_access_position_history(request.user, occurrence.position):
         return HttpResponseForbidden('Você não pode alterar esta tarefa.')
     if not is_admin_user(request.user) and user_is_absent_on_date(request.user, occurrence.date):
         return HttpResponseForbidden('Você está com ausência registrada para esta data.')
@@ -572,8 +583,8 @@ def _save_occurrence_update(request, occurrence):
 
 @login_required
 def history(request):
-    positions = visible_positions(request.user)
-    qs = ChecklistOccurrence.objects.filter(position__in=positions).select_related('position', 'template')
+    positions = _history_positions_for_user(request.user)
+    qs = ChecklistOccurrence.objects.filter(position__in=positions).select_related('position', 'template').prefetch_related('attachments')
 
     start = request.GET.get('inicio')
     end = request.GET.get('fim')
@@ -602,6 +613,14 @@ def history(request):
         'occurrences': qs,
         'positions': positions,
         'statuses': ChecklistOccurrence.HISTORY_STATUS_CHOICES,
+        'filters': {
+            'inicio': start or '',
+            'fim': end or '',
+            'status': status or '',
+            'cargo': cargo or '',
+            'busca': search or '',
+        },
+        'done_status': ChecklistOccurrence.STATUS_DONE,
         'is_admin': is_admin_user(request.user),
     })
 
@@ -715,6 +734,7 @@ def backups(request):
     config = get_backup_configuration()
     runtime = backup_runtime_status()
     rclone_remotes = runtime['rclone_remotes']
+    upload_form = BackupUploadForm()
 
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -738,6 +758,26 @@ def backups(request):
                 )
                 messages.success(request, 'Configuração de backup salva.')
                 return redirect('backups')
+        elif action == 'upload_restore':
+            upload_form = BackupUploadForm(request.POST, request.FILES)
+            if upload_form.is_valid():
+                try:
+                    result = import_uploaded_backup(upload_form.cleaned_data['backup_file'])
+                except Exception as exc:
+                    messages.error(request, f'Backup enviado não foi importado: {exc}')
+                    return redirect('backups')
+                log_activity(
+                    actor=request.user,
+                    action='Backup importado por upload',
+                    obj=config,
+                    new_values={
+                        'backup_name': result.backup_name,
+                        'local_path': str(result.local_path),
+                        'has_media': result.has_media,
+                    },
+                )
+                messages.success(request, f'Backup {result.backup_name} importado para a lista local. Ele já pode ser restaurado.')
+                return redirect('backups')
         elif action == 'run':
             try:
                 result = run_backup(config)
@@ -757,6 +797,7 @@ def backups(request):
                 obj=config,
                 new_values={
                     'local_path': str(result.local_path),
+                    'package_path': str(result.package_path) if result.package_path else '',
                     'cloud_status': result.cloud_status,
                     'cloud_message': result.cloud_message,
                 },
@@ -831,6 +872,7 @@ def backups(request):
         'remote_folder': remote_folder,
         'backup_rows': list_local_backups(),
         'remote_backup_rows': list_remote_backups(config),
+        'upload_form': upload_form,
         'remote_examples': [
             ('Google Drive', 'gdrive:MyRobotBackups/checklist'),
             ('OneDrive', 'onedrive:MyRobotBackups/checklist'),
@@ -1317,21 +1359,21 @@ def metric_evidence_download(request, record_id):
 @login_required
 def evidence_attachment_download(request, attachment_id):
     attachment = get_object_or_404(EvidenceAttachment.objects.select_related('occurrence__position'), pk=attachment_id)
-    if attachment.occurrence.position not in visible_positions(request.user):
+    if not _can_access_position_history(request.user, attachment.occurrence.position):
         return HttpResponseForbidden('Você não pode acessar esta evidência.')
     if not attachment.file:
         raise Http404('Arquivo não encontrado.')
-    return FileResponse(attachment.file.open('rb'), as_attachment=False, filename=attachment.original_name or attachment.file.name)
+    return FileResponse(attachment.file.open('rb'), as_attachment=True, filename=attachment.original_name or attachment.file.name.split('/')[-1])
 
 
 @login_required
 def legacy_evidence_download(request, occurrence_id):
     occurrence = get_object_or_404(ChecklistOccurrence.objects.select_related('position'), pk=occurrence_id)
-    if occurrence.position not in visible_positions(request.user):
+    if not _can_access_position_history(request.user, occurrence.position):
         return HttpResponseForbidden('Você não pode acessar esta evidência.')
     if not occurrence.evidence_file:
         raise Http404('Arquivo não encontrado.')
-    return FileResponse(occurrence.evidence_file.open('rb'), as_attachment=False, filename=occurrence.evidence_file.name.split('/')[-1])
+    return FileResponse(occurrence.evidence_file.open('rb'), as_attachment=True, filename=occurrence.evidence_file.name.split('/')[-1])
 
 
 @login_required
@@ -1346,8 +1388,8 @@ def monthly_csv(request):
 
 @login_required
 def history_csv(request):
-    positions = visible_positions(request.user)
-    qs = ChecklistOccurrence.objects.filter(position__in=positions).select_related('position', 'template').order_by('-date', 'position__name')
+    positions = _history_positions_for_user(request.user)
+    qs = ChecklistOccurrence.objects.filter(position__in=positions).select_related('position', 'template').prefetch_related('attachments').order_by('-date', 'position__name')
     qs = filter_absence_ignored_occurrences(qs)
     return _occurrences_csv_response(qs, 'historico_checklist.csv')
 

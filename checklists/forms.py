@@ -689,15 +689,17 @@ class BackupConfigurationForm(forms.ModelForm):
 
     class Meta:
         model = BackupConfiguration
-        fields = ['cloud_provider', 'retention_days', 'active']
+        fields = ['cloud_provider', 'backup_time', 'retention_days', 'active']
         widgets = {
             'cloud_provider': forms.Select(attrs={'class': 'input'}),
+            'backup_time': forms.TimeInput(attrs={'class': 'input', 'type': 'time'}),
             'retention_days': forms.NumberInput(attrs={'class': 'input', 'min': 1, 'max': 3650}),
             'active': forms.CheckboxInput(),
         }
         help_texts = {
             'cloud_provider': 'Escolha somente backup local, Google Drive ou OneDrive.',
-            'retention_days': 'Backups locais mais antigos que este prazo sao removidos apos um backup bem-sucedido.',
+            'backup_time': 'Horario local em que o backup automatico diario deve rodar.',
+            'retention_days': 'Backups locais e na nuvem mais antigos que este prazo sao removidos apos um backup bem-sucedido.',
             'active': 'Quando marcado, o backup local tambem sera copiado para o caminho remoto configurado.',
         }
 
@@ -713,7 +715,7 @@ class BackupConfigurationForm(forms.ModelForm):
         if value < 1:
             raise forms.ValidationError('Informe pelo menos 1 dia de retencao.')
         if value > 3650:
-            raise forms.ValidationError('Use no maximo 3650 dias de retencao local.')
+            raise forms.ValidationError('Use no maximo 3650 dias de retencao local/nuvem.')
         return value
 
     def clean(self):
@@ -749,6 +751,25 @@ class BackupConfigurationForm(forms.ModelForm):
         if commit:
             config.save()
         return config
+
+
+class BackupUploadForm(forms.Form):
+    backup_file = forms.FileField(
+        label='Arquivo de backup',
+        widget=forms.ClearableFileInput(attrs={'class': 'input', 'accept': '.zip,.tar,.gz,.tgz,.dump'}),
+        help_text='Envie um pacote .tar.gz/.tgz/.zip contendo db.dump e, opcionalmente, media.tar.gz; ou envie somente db.dump.',
+    )
+
+    def clean_backup_file(self):
+        uploaded = self.cleaned_data['backup_file']
+        name = uploaded.name.lower()
+        allowed = name.endswith(('.zip', '.tar', '.tar.gz', '.tgz', '.dump'))
+        if not allowed:
+            raise forms.ValidationError('Envie um arquivo .zip, .tar, .tar.gz, .tgz ou .dump.')
+        max_bytes = 1024 * 1024 * 1024
+        if uploaded.size > max_bytes:
+            raise forms.ValidationError('Arquivo maior que 1 GB. Faça o upload manual para a pasta backups/.')
+        return uploaded
 
 
 # Aliases mantidos para compatibilidade com as views/URLs antigas.

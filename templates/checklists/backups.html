@@ -27,6 +27,11 @@
     <div class="metric-big">{% if config.active %}Nuvem{% else %}Local{% endif %}</div>
     <p class="muted">{{ config.get_cloud_provider_display }}{% if remote_name %} · {{ remote_name }}{% endif %}</p>
   </div>
+  <div class="card">
+    <span class="muted">Backup diário</span>
+    <div class="metric-big">{{ config.backup_time|time:"H:i" }}</div>
+    <p class="muted">Retenção local/nuvem: {{ config.retention_days }} dia(s)</p>
+  </div>
 </section>
 
 <form method="post" class="panel">
@@ -37,6 +42,7 @@
     <label>{{ form.cloud_provider.label }} {{ form.cloud_provider }} <span class="muted">{{ form.cloud_provider.help_text }}</span></label>
     <label>{{ form.remote_name.label }} {{ form.remote_name }} <span class="muted">{{ form.remote_name.help_text }}</span></label>
     <label>{{ form.remote_folder.label }} {{ form.remote_folder }} <span class="muted">{{ form.remote_folder.help_text }}</span></label>
+    <label>{{ form.backup_time.label }} {{ form.backup_time }} <span class="muted">{{ form.backup_time.help_text }}</span></label>
     <label>{{ form.retention_days.label }} {{ form.retention_days }} <span class="muted">{{ form.retention_days.help_text }}</span></label>
     <p>{{ form.active }} {{ form.active.label_tag }}<br><span class="muted">{{ form.active.help_text }}</span></p>
   </div>
@@ -89,7 +95,22 @@
 <section class="panel danger-light">
   <h2>Restaurar backup local</h2>
   <p class="muted">A restauração substitui o banco atual pelo backup selecionado. Antes de restaurar, o sistema gera automaticamente um novo backup local de segurança.</p>
-  <p class="muted">Use preferencialmente backups da mesma versão do sistema. Após restaurar, valide login, usuários, atividades, indicadores e anexos.</p>
+  <p class="muted">Os arquivos de evidência ficam em <code>media.tar.gz</code> e são incluídos nos backups gerados pelo sistema. Use preferencialmente backups da mesma versão. Após restaurar, valide login, usuários, atividades, indicadores e anexos.</p>
+</section>
+
+<section class="panel">
+  <h2>Upload de backup para restore</h2>
+  <p class="muted">Use esta opção quando o backup foi baixado manualmente da nuvem. Envie <code>backup_package.tar.gz</code>, um <code>.zip</code>/<code>.tar.gz</code> contendo <code>db.dump</code> e <code>media.tar.gz</code>, ou somente um <code>db.dump</code>.</p>
+  <form method="post" enctype="multipart/form-data" class="form-grid">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="upload_restore">
+    <label>{{ upload_form.backup_file.label }}
+      {{ upload_form.backup_file }}
+      <span class="muted">{{ upload_form.backup_file.help_text }}</span>
+      {{ upload_form.backup_file.errors }}
+    </label>
+    <button class="btn primary" type="submit">Importar backup</button>
+  </form>
 </section>
 
 <section class="panel">
@@ -105,6 +126,7 @@
         <th>Mídia</th>
         <th>Configuração</th>
         <th>Manifesto</th>
+        <th>Pacote</th>
         <th>Restore</th>
       </tr>
     </thead>
@@ -118,6 +140,7 @@
         <td>{% if backup.has_media %}OK{% else %}-{% endif %}</td>
         <td>{% if backup.has_config %}OK{% else %}-{% endif %}</td>
         <td>{% if backup.has_manifest %}OK{% else %}-{% endif %}</td>
+        <td>{% if backup.has_package %}OK{% else %}-{% endif %}</td>
         <td>
           {% if backup.has_db %}
           <form method="post" class="inline-form restore-form">
@@ -134,7 +157,7 @@
         </td>
       </tr>
       {% empty %}
-      <tr><td colspan="8">Nenhum backup local encontrado.</td></tr>
+      <tr><td colspan="9">Nenhum backup local encontrado.</td></tr>
       {% endfor %}
     </tbody>
   </table>

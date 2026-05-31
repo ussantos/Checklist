@@ -72,7 +72,7 @@ Senhas criadas ou redefinidas por administradores seguem essa regra automaticame
 - Identificação automática do usuário logado em cada lançamento.
 - Anexos protegidos por login e permissão no cargo.
 - Painel administrativo Django para manutenção avançada.
-- Backup diário às 20h com dump PostgreSQL, arquivos de evidência e configurações.
+- Backup diário configurável com dump PostgreSQL, arquivos de evidência e configurações.
 - Script de restauração.
 
 ## Status das atividades operacionais
@@ -213,20 +213,22 @@ Usuários administradores podem cadastrar outros administradores, cadastrar usu�
 
 Usuários operacionais acessam o sistema com usuário individual. O sistema mostra apenas atividades, indicadores e metas de acordo com o cargo cadastrado, grava automaticamente o nome do usuário logado no histórico e permite sugerir novas atividades ou desativação de atividades existentes.
 
-## Backup diário às 20h
+## Backup diário
 
-A tela administrativa **Backups** permite configurar backup local, envio opcional para Google Drive ou OneDrive via `rclone` e restauração de backups locais. A aplicação não armazena credenciais OAuth: configure a autenticação do `rclone` no container com `docker compose exec web rclone config`.
+A tela administrativa **Backups** permite configurar o horário do backup diário, backup local, envio opcional para Google Drive ou OneDrive via `rclone` e restauração de backups locais. O horário padrão é **20:00** e pode ser alterado na própria tela.
 
 No `rclone`, cada **remoto** é uma conta configurada. Se você criar o remoto `gdrive` autenticado com uma conta Google e o remoto `onedrive` autenticado com uma conta Microsoft, a tela Backups usará a conta do remoto selecionado. Na tela, informe o remoto e a pasta, por exemplo remoto `gdrive` e pasta `MyRobotBackups/checklist`, que formam o destino `gdrive:MyRobotBackups/checklist`.
 
-O script `scripts/backup.sh` executa o comando Django `run_configured_backup`, gerando dump PostgreSQL, pasta `media/`, `.env`, configurações, seeds e scripts. Os diretórios `backups/` e `rclone/` ficam montados no container `web` e devem continuar ignorados pelo Git.
+O serviço `backup` do Docker Compose executa o agendador interno e roda o backup uma vez por dia no horário configurado. O script `scripts/backup.sh` continua disponível para execução manual, chamando o comando Django `run_configured_backup`.
 
-Para restaurar, acesse **Backups**, baixe o backup da nuvem para a lista local se necessário, digite `RESTAURAR` na linha do backup local e confirme. Antes de substituir o banco, o sistema gera automaticamente um backup local de segurança do estado atual.
+Cada backup gera dump PostgreSQL, `media.tar.gz` com evidências e anexos, `.env`, configurações, seeds, scripts e o pacote único `backup_package.tar.gz`, que pode ser enviado pela tela para restore. A retenção padrão é de **30 dias** tanto local quanto na nuvem. Os diretórios `backups/` e `rclone/` ficam montados nos containers `web`/`backup` e devem continuar ignorados pelo Git.
 
-Agendamento sugerido no cron:
+Para restaurar, acesse **Backups**, baixe o backup da nuvem para a lista local ou envie um arquivo de backup baixado manualmente, digite `RESTAURAR` na linha do backup local e confirme. Antes de substituir o banco, o sistema gera automaticamente um backup local de segurança do estado atual.
 
-```cron
-0 20 * * * cd /opt/checklist && /bin/bash scripts/backup.sh >> logs/backup.log 2>&1
+Execução manual:
+
+```bash
+bash scripts/backup.sh
 ```
 
 ## Restauração
@@ -352,7 +354,7 @@ Passwords created or reset by administrators follow this rule automatically. The
 - Automatic identification of the logged-in user for each entry.
 - Attachments protected by login and position permission.
 - Django admin panel for advanced maintenance.
-- Daily backup at 8 PM with PostgreSQL dump, evidence files, and configuration files.
+- Configurable daily backup with PostgreSQL dump, evidence files, and configuration files.
 - Restore script.
 
 ## Operational Activity Statuses
@@ -493,20 +495,22 @@ Administrators can create other administrators, create operational users, define
 
 Operational users access the system with individual user accounts. The system shows only activities, indicators, and goals according to the user's registered position, automatically records the logged-in user's name in history, and allows users to suggest new activities or deactivation of existing activities.
 
-## Daily Backup at 8 PM
+## Daily Backup
 
-The admin **Backups** screen lets administrators configure local backup, optional upload to Google Drive or OneDrive through `rclone`, and local backup restore. The application does not store OAuth credentials: configure `rclone` authentication in the container with `docker compose exec web rclone config`.
+The admin **Backups** screen lets administrators configure the daily backup time, local backup, optional upload to Google Drive or OneDrive through `rclone`, and local backup restore. The default time is **8:00 PM** and can be changed in the screen.
 
 In `rclone`, each **remote** is a configured account. If you create a `gdrive` remote authenticated with one Google account and an `onedrive` remote authenticated with one Microsoft account, the Backups screen will use the account behind the selected remote. In the screen, enter the remote and folder, for example remote `gdrive` and folder `MyRobotBackups/checklist`, which form the destination `gdrive:MyRobotBackups/checklist`.
 
-The `scripts/backup.sh` script runs the Django `run_configured_backup` command, backing up the PostgreSQL database, the `media/` folder, `.env`, settings, seeds, and scripts. The `backups/` and `rclone/` directories are mounted into the `web` container and must remain ignored by Git.
+The Docker Compose `backup` service runs the internal scheduler and creates one backup per day at the configured time. The `scripts/backup.sh` script remains available for manual execution and calls the Django `run_configured_backup` command.
 
-To restore, open **Backups**, download the cloud backup into the local list if needed, type `RESTAURAR` on the local backup row, and confirm. Before replacing the database, the system automatically creates a local safety backup of the current state.
+Each backup includes the PostgreSQL dump, `media.tar.gz` with evidence files and attachments, `.env`, settings, seeds, scripts, and the single-file `backup_package.tar.gz`, which can be uploaded in the screen for restore. The default retention is **30 days** both locally and in the cloud. The `backups/` and `rclone/` directories are mounted into the `web`/`backup` containers and must remain ignored by Git.
 
-Suggested cron schedule:
+To restore, open **Backups**, download the cloud backup into the local list or upload a backup file downloaded manually, type `RESTAURAR` on the local backup row, and confirm. Before replacing the database, the system automatically creates a local safety backup of the current state.
 
-```cron
-0 20 * * * cd /opt/checklist && /bin/bash scripts/backup.sh >> logs/backup.log 2>&1
+Manual execution:
+
+```bash
+bash scripts/backup.sh
 ```
 
 ## Restore

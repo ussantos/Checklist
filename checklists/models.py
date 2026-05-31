@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
+from datetime import time
 
 
 class Position(models.Model):
@@ -477,7 +478,9 @@ class BackupConfiguration(models.Model):
         help_text='Exemplo: gdrive:MyRobotBackups/checklist ou onedrive:MyRobotBackups/checklist.',
     )
     retention_days = models.PositiveIntegerField('Retencao local em dias', default=30)
+    backup_time = models.TimeField('Horario diario do backup', default=time(20, 0))
     active = models.BooleanField('Enviar backup para nuvem', default=False)
+    last_scheduled_run_at = models.DateTimeField('Ultimo backup agendado', blank=True, null=True)
     updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField('Criado em', auto_now_add=True)
     updated_at = models.DateTimeField('Atualizado em', auto_now=True)

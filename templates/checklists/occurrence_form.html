@@ -85,18 +85,16 @@
     </label>
   </div>
 
-  {% if occurrence.template.requires_evidence %}
-    {% if occurrence.evidence_file or occurrence.attachments.all %}
-    <div class="attachments">
-      <strong>Evidências anexadas:</strong>
-      <ul>
-        {% if occurrence.evidence_file %}<li><a href="{% url 'legacy_evidence_download' occurrence.id %}" target="_blank">Arquivo legado</a></li>{% endif %}
-        {% for attachment in occurrence.attachments.all %}
-          <li><a href="{% url 'evidence_attachment_download' attachment.id %}" target="_blank">{{ attachment.original_name|default:attachment.file.name }}</a> - {{ attachment.uploaded_at|date:"d/m/Y H:i" }}</li>
-        {% endfor %}
-      </ul>
-    </div>
-    {% endif %}
+  {% if occurrence.evidence_file or occurrence.attachments.all %}
+  <div class="attachments">
+    <strong>Evidências anexadas:</strong>
+    <ul>
+      {% if occurrence.evidence_file %}<li><a class="attachment-link" href="{% url 'legacy_evidence_download' occurrence.id %}">Baixar arquivo legado</a></li>{% endif %}
+      {% for attachment in occurrence.attachments.all %}
+        <li><a class="attachment-link" href="{% url 'evidence_attachment_download' attachment.id %}">Baixar {{ attachment.original_name|default:attachment.file.name }}</a> - {{ attachment.uploaded_at|date:"d/m/Y H:i" }}</li>
+      {% endfor %}
+    </ul>
+  </div>
   {% endif %}
 
   <div class="form-actions">

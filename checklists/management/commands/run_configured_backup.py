@@ -30,6 +30,7 @@ class Command(BaseCommand):
             object_label=str(config),
             new_values={
                 'local_path': str(result.local_path),
+                'package_path': str(result.package_path) if result.package_path else '',
                 'cloud_status': result.cloud_status,
                 'cloud_message': result.cloud_message,
             },

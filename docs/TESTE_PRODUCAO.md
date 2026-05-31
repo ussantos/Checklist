@@ -299,9 +299,10 @@ bash scripts/backup.sh
 Validar:
 
 - [ ] Backup do banco foi gerado.
-- [ ] Backup da pasta `media/` foi gerado.
+- [ ] Backup da pasta `media/` foi gerado, incluindo arquivos de evidência.
 - [ ] Backup do `.env` foi gerado.
 - [ ] Backup de scripts/seed/configurações foi gerado.
+- [ ] Pacote `backup_package.tar.gz` foi gerado.
 - [ ] Log não tem erro.
 - [ ] Arquivo foi enviado para o remoto `rclone`, se configurado.
 
@@ -314,26 +315,27 @@ Na tela **Backups**, validar:
 - [ ] Antes do restore, um novo backup local de segurança é gerado automaticamente.
 - [ ] Restore de banco conclui sem erro.
 - [ ] Restore de mídia pode ser marcado/desmarcado.
+- [ ] Upload de `backup_package.tar.gz` baixado da nuvem importa o backup para a lista local.
 - [ ] Após restore, login, usuários, atividades, indicadores e anexos são validados.
 
-## 17. Cron de backup
+## 17. Agendador de backup
 
-Configurar:
+Validar o serviço interno:
 
 ```bash
-crontab -e
+docker compose ps backup
 ```
 
-Adicionar:
+Na tela **Backups**:
 
-```cron
-0 20 * * * cd /opt/checklist && /bin/bash scripts/backup.sh >> logs/backup.log 2>&1
-```
+- [ ] Horário padrão está em 20:00.
+- [ ] Horário pode ser alterado e salvo.
+- [ ] Retenção local/nuvem está em 30 dias.
+- [ ] Serviço `backup` está rodando.
 
 Validar no dia seguinte:
 
-- [ ] `logs/backup.log` foi criado.
-- [ ] Backup rodou às 20h.
+- [ ] Backup rodou no horário configurado.
 - [ ] Arquivos apareceram na pasta de backup.
 - [ ] Arquivos apareceram no Google Drive/OneDrive, se configurado.
 
@@ -378,7 +380,7 @@ Liberar uso somente se todos estes itens estiverem OK:
 - [ ] Acesso a evidências protegido.
 - [ ] Histórico e CSV testados.
 - [ ] Backup manual testado.
-- [ ] Cron configurado.
+- [ ] Agendador de backup configurado.
 - [ ] Restauração testada.
 - [ ] Firewall/rede interna revisados.
 - [ ] `.env` não foi enviado ao GitHub.
