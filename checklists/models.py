@@ -28,9 +28,9 @@ class Position(models.Model):
 class UserProfile(models.Model):
     """Perfil local do usuário autenticado.
 
-    Usuários administradores acompanham todos os cargos e cadastram funcionários.
+    Usuários administradores acompanham todos os cargos e cadastram usuários.
     Usuários operacionais enxergam apenas o cargo vinculado.
-    O campo display_name representa o nome completo do funcionário.
+    O campo display_name representa o nome completo do usuário.
     """
 
     ROLE_ADMIN = 'ADMIN'
@@ -45,6 +45,11 @@ class UserProfile(models.Model):
     system_role = models.CharField('Perfil', max_length=20, choices=ROLE_CHOICES, default=ROLE_OPERATOR)
     position = models.ForeignKey(Position, on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
     active = models.BooleanField('Ativo', default=True)
+    must_change_password = models.BooleanField(
+        'Deve trocar senha no próximo login',
+        default=False,
+        help_text='Quando marcado, o usuário é redirecionado obrigatoriamente para a troca de senha antes de usar o sistema.',
+    )
 
     class Meta:
         verbose_name = 'Perfil de usuário'
@@ -257,26 +262,3 @@ class MetricRecord(models.Model):
         ordering = ['-date', 'metric__name']
         verbose_name = 'Registro de indicador'
         verbose_name_plural = 'Registros de indicadores'
-
-    def __str__(self):
-        return f'{self.date} - {self.metric.name}: {self.value}'
-
-
-class ActivityLog(models.Model):
-    """Trilha de auditoria simples."""
-
-    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
-    position = models.ForeignKey(Position, on_delete=models.SET_NULL, null=True, blank=True)
-    action = models.CharField('Ação', max_length=120)
-    object_type = models.CharField('Tipo de objeto', max_length=80, blank=True)
-    object_id = models.CharField('ID do objeto', max_length=80, blank=True)
-    details = models.TextField('Detalhes', blank=True)
-    created_at = models.DateTimeField('Criado em', auto_now_add=True)
-
-    class Meta:
-        ordering = ['-created_at']
-        verbose_name = 'Log de atividade'
-        verbose_name_plural = 'Logs de atividade'
-
-    def __str__(self):
-        return f'{self.created_at:%d/%m/%Y %H:%M} - {self.action}'
