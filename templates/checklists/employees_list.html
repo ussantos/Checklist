@@ -2,27 +2,28 @@
 {% block content %}
 <div class="page-title">
   <div>
-    <h1>Funcionários</h1>
-    <p class="muted">Cadastro nominal dos funcionários que executam os checklists.</p>
+    <h1>Usuários</h1>
+    <p class="muted">Cadastro nominal de administradores e usuários operacionais.</p>
   </div>
-  <a class="btn primary" href="{% url 'employee_create' %}">Cadastrar funcionário</a>
+  <a class="btn primary" href="{% url 'employee_create' %}">Cadastrar usuário</a>
 </div>
 
 <section class="panel info-light">
   <strong>Regra de uso</strong>
-  <p class="muted">Cada funcionário deve usar seu próprio login. O cargo define o checklist exibido; o nome completo vem do cadastro e fica gravado no histórico de cada atividade.</p>
+  <p class="muted">Cada pessoa deve usar seu próprio login. Administradores acompanham todos os cargos. Usuários operacionais recebem um cargo: Atendente Comercial ou Instrutor de Aula Livre. O nome completo vem do cadastro e fica gravado no histórico de cada atividade.</p>
 </section>
 
 <table class="panel-table">
   <thead>
-    <tr><th>Nome completo</th><th>Usuário</th><th>Cargo</th><th>Status</th><th>Ações</th></tr>
+    <tr><th>Nome completo</th><th>Usuário</th><th>Perfil</th><th>Cargo</th><th>Status</th><th>Ações</th></tr>
   </thead>
   <tbody>
     {% for profile in profiles %}
     <tr>
       <td>{{ profile.display_name }}</td>
       <td>{{ profile.user.username }}</td>
-      <td>{{ profile.position.name|default:"Sem cargo" }}</td>
+      <td>{{ profile.get_system_role_display }}</td>
+      <td>{{ profile.position.name|default:"Todos / Administração" }}</td>
       <td>{% if profile.user.is_active and profile.active %}Ativo{% else %}Inativo{% endif %}</td>
       <td>
         <a class="btn small" href="{% url 'employee_edit' profile.user.id %}">Editar</a>
@@ -30,7 +31,7 @@
       </td>
     </tr>
     {% empty %}
-    <tr><td colspan="5">Nenhum funcionário cadastrado.</td></tr>
+    <tr><td colspan="6">Nenhum usuário cadastrado.</td></tr>
     {% endfor %}
   </tbody>
 </table>
