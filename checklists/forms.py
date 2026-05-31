@@ -107,20 +107,27 @@ class MetricRecordForm(forms.ModelForm):
         }
 
 
-class EmployeeCreateForm(forms.Form):
-    """Cadastro de funcionário feito por administrador.
+class UserCreateForm(forms.Form):
+    """Cadastro de usuário feito por administrador.
 
-    O usuário criado é nominal, mas recebe um cargo operacional.
-    O checklist exibido depende do cargo.
+    O primeiro usuário técnico é `checkupadmin`. Depois disso, administradores
+    cadastram usuários nominais com um dos perfis:
+    Administrador, Atendente Comercial ou Instrutor de Aula Livre.
     """
 
     full_name = forms.CharField(label='Nome completo', max_length=120, widget=forms.TextInput(attrs={'class': 'input'}))
     username = forms.CharField(label='Usuário de login', max_length=150, widget=forms.TextInput(attrs={'class': 'input'}))
     email = forms.EmailField(label='E-mail', required=False, widget=forms.EmailInput(attrs={'class': 'input'}))
-    position = forms.ModelChoiceField(label='Cargo', queryset=Position.objects.filter(active=True), widget=forms.Select(attrs={'class': 'input'}))
+    role = forms.ChoiceField(label='Função/perfil no sistema', choices=[], widget=forms.Select(attrs={'class': 'input'}))
     password1 = forms.CharField(label='Senha forte', widget=forms.PasswordInput(attrs={'class': 'input'}), help_text='Mínimo de 12 caracteres, maiúscula, minúscula, número e caractere especial.')
     password2 = forms.CharField(label='Confirmar senha', widget=forms.PasswordInput(attrs={'class': 'input'}))
     active = forms.BooleanField(label='Ativo', required=False, initial=True)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        choices = [('ADMIN', 'Administrador')]
+        choices += [(f'POSITION:{p.id}', p.name) for p in Position.objects.filter(active=True).order_by('name')]
+        self.fields['role'].choices = choices
 
     def clean_username(self):
         username = self.cleaned_data['username'].strip().lower()
@@ -140,6 +147,13 @@ class EmployeeCreateForm(forms.Form):
 
     def save(self):
         full_name = self.cleaned_data['full_name'].strip()
+        role = self.cleaned_data['role']
+        is_admin = role == 'ADMIN'
+        position = None
+        if role.startswith('POSITION:'):
+            position_id = role.split(':', 1)[1]
+            position = Position.objects.get(pk=position_id, active=True)
+
         user = User.objects.create_user(
             username=self.cleaned_data['username'],
             email=self.cleaned_data.get('email') or '',
@@ -147,25 +161,32 @@ class EmployeeCreateForm(forms.Form):
             first_name=full_name,
             is_active=self.cleaned_data.get('active', True),
         )
+        user.is_staff = is_admin
+        user.is_superuser = is_admin
+        user.save()
+
         profile, _ = UserProfile.objects.get_or_create(user=user)
         profile.display_name = full_name
-        profile.system_role = UserProfile.ROLE_OPERATOR
-        profile.position = self.cleaned_data['position']
+        profile.system_role = UserProfile.ROLE_ADMIN if is_admin else UserProfile.ROLE_OPERATOR
+        profile.position = None if is_admin else position
         profile.active = self.cleaned_data.get('active', True)
         profile.save()
         return user
 
 
-class EmployeeUpdateForm(forms.Form):
+class UserUpdateForm(forms.Form):
     full_name = forms.CharField(label='Nome completo', max_length=120, widget=forms.TextInput(attrs={'class': 'input'}))
     username = forms.CharField(label='Usuário de login', max_length=150, widget=forms.TextInput(attrs={'class': 'input'}))
     email = forms.EmailField(label='E-mail', required=False, widget=forms.EmailInput(attrs={'class': 'input'}))
-    position = forms.ModelChoiceField(label='Cargo', queryset=Position.objects.filter(active=True), widget=forms.Select(attrs={'class': 'input'}))
+    role = forms.ChoiceField(label='Função/perfil no sistema', choices=[], widget=forms.Select(attrs={'class': 'input'}))
     active = forms.BooleanField(label='Ativo', required=False)
 
     def __init__(self, *args, user_obj=None, **kwargs):
         self.user_obj = user_obj
         super().__init__(*args, **kwargs)
+        choices = [('ADMIN', 'Administrador')]
+        choices += [(f'POSITION:{p.id}', p.name) for p in Position.objects.filter(active=True).order_by('name')]
+        self.fields['role'].choices = choices
 
     def clean_username(self):
         username = self.cleaned_data['username'].strip().lower()
@@ -180,13 +201,24 @@ class EmployeeUpdateForm(forms.Form):
         user = self.user_obj
         profile = user.userprofile
         full_name = self.cleaned_data['full_name'].strip()
+        role = self.cleaned_data['role']
+        is_admin = role == 'ADMIN'
+        position = None
+        if role.startswith('POSITION:'):
+            position_id = role.split(':', 1)[1]
+            position = Position.objects.get(pk=position_id, active=True)
+
         user.username = self.cleaned_data['username']
         user.email = self.cleaned_data.get('email') or ''
         user.first_name = full_name
         user.is_active = self.cleaned_data.get('active', False)
+        user.is_staff = is_admin
+        user.is_superuser = is_admin
         user.save()
+
         profile.display_name = full_name
-        profile.position = self.cleaned_data['position']
+        profile.system_role = UserProfile.ROLE_ADMIN if is_admin else UserProfile.ROLE_OPERATOR
+        profile.position = None if is_admin else position
         profile.active = self.cleaned_data.get('active', False)
         profile.save()
         return user
@@ -214,3 +246,8 @@ class AdminPasswordResetForm(forms.Form):
         self.user_obj.set_password(self.cleaned_data['password1'])
         self.user_obj.save(update_fields=['password'])
         return self.user_obj
+
+
+# Aliases mantidos para compatibilidade com as views/URLs antigas.
+EmployeeCreateForm = UserCreateForm
+EmployeeUpdateForm = UserUpdateForm
