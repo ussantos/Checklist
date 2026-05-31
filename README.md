@@ -93,6 +93,7 @@ O limite de tamanho é definido no `.env` pela variável `MAX_EVIDENCE_FILE_SIZE
 - Gunicorn
 - WhiteNoise para arquivos estáticos
 - Docker Compose
+- Grafana para dashboards internos
 - Backup via `pg_dump` + `rclone`
 
 ## Estrutura simplificada
@@ -101,6 +102,7 @@ O limite de tamanho é definido no `.env` pela variável `MAX_EVIDENCE_FILE_SIZE
 .
 ├── checklists/                 # App principal Django
 ├── docs/                       # Documentação operacional e testes
+├── grafana/                    # Provisionamento de datasource Grafana
 ├── myrobot_checklist/          # Configuração do projeto Django
 ├── seed/                       # CSVs com tarefas iniciais por cargo
 ├── scripts/                    # entrypoint, backup e restore
@@ -157,6 +159,45 @@ Acesse pelo endereço configurado no servidor, por exemplo:
 ```text
 http://IP_DO_SERVIDOR:8000
 ```
+
+## Grafana interno
+
+O Docker Compose também sobe um Grafana para validação e criação futura de dashboards. Ele é publicado por padrão apenas em `127.0.0.1:3000`, ou seja, acessível localmente na máquina/servidor onde o Compose está rodando.
+
+Variáveis no `.env`:
+
+```env
+GRAFANA_BIND=127.0.0.1:3000
+GRAFANA_ADMIN_USER=admin
+GRAFANA_ADMIN_PASSWORD=troque-esta-senha-grafana
+```
+
+Acesse localmente:
+
+```text
+http://127.0.0.1:3000
+```
+
+O datasource PostgreSQL é provisionado automaticamente com o nome `Checklist PostgreSQL`, usando o banco da aplicação (`db:5432`).
+
+Dashboards provisionados automaticamente na pasta `Checklist`:
+
+- `Checklist - Indicadores e Metas - Diário`
+- `Checklist - Indicadores e Metas - Semanal`
+- `Checklist - Indicadores e Metas - Mensal`
+- `Checklist - Indicadores e Metas - Anual`
+
+Os dashboards possuem filtros por tipo/cargo e usuário, tabelas de metas/realizado/% e totalizadores.
+
+Estratégia de permissão: o Grafana não herda as permissões do Django. Por isso, nesta fase ele deve ser tratado como ferramenta administrativa, acessível apenas localmente, por VPN ou rede interna restrita. Usuários comuns devem acompanhar seus próprios indicadores pelo dashboard interno do Checklist, que aplica as permissões do sistema e impede acesso a outros cargos/usuários.
+
+Para logs:
+
+```bash
+docker compose logs -f grafana
+```
+
+Mantenha `GRAFANA_BIND=127.0.0.1:3000` para uso local. Para acesso por rede interna/VPN, ajuste o bind conscientemente e proteja com firewall.
 
 Antes de liberar uso oficial, execute os testes em `docs/TESTE_PRODUCAO.md`.
 

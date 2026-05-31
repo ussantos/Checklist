@@ -152,9 +152,9 @@ def activities(request):
     if not position:
         return HttpResponseForbidden('Usuário sem cargo vinculado. Peça ao administrador para configurar o perfil.')
 
-    period = request.GET.get('periodo', 'dia')
+    period = request.GET.get('periodo', 'semana')
     if period not in {'dia', 'semana', 'mes'}:
-        period = 'dia'
+        period = 'semana'
 
     reference_date = _parse_date(request.GET.get('data'))
     if period == 'semana':
@@ -594,6 +594,8 @@ def metrics(request):
     dashboard_user = None if is_admin_user(request.user) else request.user
 
     if request.method == 'POST':
+        if not is_admin_user(request.user):
+            return HttpResponseForbidden('Usuário comum não pode registrar indicadores.')
         form = MetricRecordForm(request.POST, request.FILES)
         applicable_metrics = (
             MetricType.objects.filter(active=True)

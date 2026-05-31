@@ -1,16 +1,15 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-title">
-  <div><h1>Indicadores</h1><p class="muted">Registre números operacionais do cargo. O funcionário será identificado pelo login atual.</p></div>
+  <div><h1>Indicadores</h1><p class="muted">{% if is_admin %}Registre números operacionais do cargo e acompanhe metas.{% else %}Acompanhe seus indicadores, metas e realizado.{% endif %}</p></div>
   <form method="get" class="filters">
-    <select class="input" name="periodo">
+    <select class="input" name="periodo" onchange="this.form.submit()">
       {% for value,label in period_choices %}
         <option value="{{ value }}" {% if metric_period == value %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
-    <input class="input" type="date" name="data" value="{{ reference_date|date:'Y-m-d' }}">
-    {% if is_admin %}<select class="input" name="cargo">{% for p in positions %}<option value="{{ p.id }}" {% if p.id == position.id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select>{% endif %}
-    <button class="btn">Abrir</button>
+    <input class="input" type="date" name="data" value="{{ reference_date|date:'Y-m-d' }}" onchange="this.form.submit()">
+    {% if is_admin %}<select class="input" name="cargo" onchange="this.form.submit()">{% for p in positions %}<option value="{{ p.id }}" {% if p.id == position.id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}</select>{% endif %}
   </form>
 </div>
 
@@ -64,7 +63,7 @@
         <td>{{ metric.name }}</td>
         <td>{{ metric.get_frequency_display }}</td>
         <td>{% if metric.activity %}{{ metric.activity.title }}{% else %}<span class="muted">Geral do cargo</span>{% endif %}</td>
-        <td>TXT, planilha, PDF, imagem ou arquivo similar até 5 MB</td>
+        <td>{% if is_admin %}TXT, planilha, PDF, imagem ou arquivo similar até 5 MB{% else %}Administrado pela equipe responsável{% endif %}</td>
       </tr>
       {% empty %}
       <tr><td colspan="5">Nenhum indicador ativo para este cargo.</td></tr>
@@ -73,6 +72,7 @@
   </table>
 </section>
 
+{% if is_admin %}
 <section class="panel">
   <h2>Novo registro — {{ position.name }}</h2>
   <form method="post" enctype="multipart/form-data" class="form-grid">
@@ -104,6 +104,7 @@
     </div>
   </form>
 </section>
+{% endif %}
 <section class="panel">
   <h2>Últimos registros</h2>
   <table><thead><tr><th>Data</th><th>Área</th><th>Indicador</th><th>Atividade</th><th>Funcionário</th><th>Valor</th><th>Evidência</th><th>Observação</th></tr></thead><tbody>
