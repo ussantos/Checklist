@@ -9,8 +9,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends postgresql-client curl ca-certificates tzdata rclone \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends postgresql-client curl ca-certificates tzdata unzip \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL https://rclone.org/install.sh | bash
 
 COPY requirements.txt /app/requirements.txt
 RUN pip install --upgrade pip && pip install -r /app/requirements.txt

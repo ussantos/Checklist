@@ -119,9 +119,17 @@ O limite efetivo para evidências operacionais é de até 5 MB por arquivo.
 └── README.md
 ```
 
-## Instalação no Ubuntu 24.04 LTS
+## Instalação no Ubuntu Server 26.04 LTS
 
 Instale o Docker, clone este repositório em `/opt/checklist`, crie o arquivo `.env` com base no `.env.example`, ajuste as variáveis de ambiente e suba a aplicação.
+
+Para instalar em um Ubuntu Server 26.04 LTS recém instalado usando pacote fechado, gere o instalador com:
+
+```bash
+bash scripts/build_installer_package.sh
+```
+
+Depois copie o `.tar.gz` de `dist/` para o servidor e siga `docs/INSTALACAO_UBUNTU26.md`.
 
 Variável obrigatória para o administrador inicial:
 
@@ -401,9 +409,17 @@ The effective limit for operational evidence is up to 5 MB per file.
 └── README.md
 ```
 
-## Installation on Ubuntu 24.04 LTS
+## Installation on Ubuntu Server 26.04 LTS
 
 Install Docker, clone this repository into `/opt/checklist`, create `.env` based on `.env.example`, adjust the environment variables, and start the application.
+
+To install on a fresh Ubuntu Server 26.04 LTS using a packaged installer, generate the archive with:
+
+```bash
+bash scripts/build_installer_package.sh
+```
+
+Then copy the `.tar.gz` from `dist/` to the server and follow `docs/INSTALACAO_UBUNTU26.md`.
 
 Required variable for the initial administrator:
 

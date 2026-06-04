@@ -8,7 +8,7 @@ O objetivo é validar instalação, autenticação, cadastro de usuários, ativi
 
 Confirmar:
 
-- [ ] Ubuntu 24.04 LTS instalado.
+- [ ] Ubuntu Server 26.04 LTS instalado.
 - [ ] Servidor atualizado com `sudo apt update && sudo apt upgrade -y`.
 - [ ] Docker instalado.
 - [ ] Usuário operacional adicionado ao grupo `docker`.
@@ -17,9 +17,9 @@ Confirmar:
 - [ ] `DJANGO_SECRET_KEY` trocada por chave forte.
 - [ ] `POSTGRES_PASSWORD` trocada por senha forte.
 - [ ] `DJANGO_DEBUG=False`.
-- [ ] `DJANGO_ALLOWED_HOSTS` ajustado para `localhost`, `127.0.0.1` e IP/hostname real do servidor.
+- [ ] `DJANGO_ALLOWED_HOSTS` revisado. No instalador Ubuntu Server 26.04 o padrão é `*` para responder por qualquer IP do servidor; em ambientes com domínio/proxy, restringir conforme a política interna.
 - [ ] `CSRF_TRUSTED_ORIGINS` ajustado para a URL real de acesso.
-- [ ] `APP_BIND` definido conforme estratégia de acesso: `127.0.0.1:8000` ou `0.0.0.0:8000`.
+- [ ] `APP_BIND` definido conforme estratégia de acesso. No instalador Ubuntu Server 26.04 o padrão é `0.0.0.0:8000`.
 - [ ] Firewall configurado.
 - [ ] Acesso não exposto diretamente à internet, salvo por VPN/firewall.
 
