@@ -1916,7 +1916,33 @@ class BackupConfigurationForm(forms.ModelForm):
         return config
 
 
-class BackupUploadForm(forms.Form):
+class AdminPasswordConfirmationForm(forms.Form):
+    admin_password = forms.CharField(
+        label='Senha do administrador',
+        widget=forms.PasswordInput(attrs={
+            'class': 'input',
+            'autocomplete': 'current-password',
+            'placeholder': 'Confirme sua senha',
+        }),
+        help_text='Obrigatoria para restaurar backups.',
+    )
+
+    def __init__(self, *args, user=None, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+
+    def clean_admin_password(self):
+        password = self.cleaned_data['admin_password']
+        if not self.user or not self.user.check_password(password):
+            raise forms.ValidationError('Senha incorreta.')
+        return password
+
+
+class BackupRestorePasswordForm(AdminPasswordConfirmationForm):
+    pass
+
+
+class BackupUploadForm(AdminPasswordConfirmationForm):
     backup_file = forms.FileField(
         label='Arquivo de backup',
         widget=forms.ClearableFileInput(attrs={'class': 'input', 'accept': '.zip,.tar,.gz,.tgz,.dump'}),

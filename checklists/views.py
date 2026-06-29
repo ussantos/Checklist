@@ -6,7 +6,7 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.db import transaction
-from django.http import HttpResponse, HttpResponseForbidden
+from django.http import FileResponse, HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -14,13 +14,13 @@ from django.db.models import F, Q
 from .audit import changed_values, log_activity, snapshot_instance
 from .backup import (
     backup_runtime_status, download_remote_backup, get_backup_configuration,
-    import_uploaded_backup, list_local_backups, list_remote_backups,
+    import_uploaded_backup, list_local_backups, list_remote_backups, local_backup_package_path,
     restore_local_backup, run_backup, split_remote_path,
 )
 from .forms import (
     ActivityDeactivationSuggestionForm, ActivitySuggestionCreateForm,
     ActivitySuggestionReviewForm, AdminPasswordResetForm, BackupConfigurationForm,
-    BackupUploadForm, DailyNoteForm, EmployeeCreateForm, EmployeeUpdateForm,
+    BackupRestorePasswordForm, BackupUploadForm, DailyNoteForm, EmployeeCreateForm, EmployeeUpdateForm,
     MetricRecordForm, MetricTypeForm, OccurrenceUpdateForm, TaskTemplateForm,
 )
 from .models import (
@@ -703,7 +703,8 @@ def backups(request):
     config = get_backup_configuration()
     runtime = backup_runtime_status()
     rclone_remotes = runtime['rclone_remotes']
-    upload_form = BackupUploadForm()
+    form = BackupConfigurationForm(instance=config, rclone_remotes=rclone_remotes)
+    upload_form = BackupUploadForm(user=request.user)
 
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -728,24 +729,34 @@ def backups(request):
                 messages.success(request, 'Configuração de backup salva.')
                 return redirect('backups')
         elif action == 'upload_restore':
-            upload_form = BackupUploadForm(request.POST, request.FILES)
+            upload_form = BackupUploadForm(request.POST, request.FILES, user=request.user)
             if upload_form.is_valid():
                 try:
-                    result = import_uploaded_backup(upload_form.cleaned_data['backup_file'])
+                    import_result = import_uploaded_backup(upload_form.cleaned_data['backup_file'])
+                    restore_result = restore_local_backup(import_result.backup_name, restore_media=True)
                 except Exception as exc:
-                    messages.error(request, f'Backup enviado não foi importado: {exc}')
+                    messages.error(request, f'Backup enviado não foi restaurado: {exc}')
                     return redirect('backups')
-                log_activity(
-                    actor=request.user,
-                    action='Backup importado por upload',
-                    obj=config,
-                    new_values={
-                        'backup_name': result.backup_name,
-                        'local_path': str(result.local_path),
-                        'has_media': result.has_media,
-                    },
+                try:
+                    log_activity(
+                        actor=None,
+                        action='Backup restaurado por upload pela tela administrativa',
+                        object_type='BackupRestore',
+                        object_id=restore_result.backup_name,
+                        object_label=restore_result.backup_name,
+                        new_values={
+                            'restored_path': str(restore_result.restored_path),
+                            'safety_backup_path': str(restore_result.safety_backup_path) if restore_result.safety_backup_path else '',
+                            'restored_media': restore_result.restored_media,
+                            'source': 'upload',
+                        },
+                    )
+                except Exception:
+                    pass
+                messages.success(
+                    request,
+                    f'Backup {restore_result.backup_name} restaurado. Backup de segurança antes da restauração: {restore_result.safety_backup_path}.',
                 )
-                messages.success(request, f'Backup {result.backup_name} importado para a lista local. Ele já pode ser restaurado.')
                 return redirect('backups')
         elif action == 'run':
             try:
@@ -795,13 +806,12 @@ def backups(request):
             return redirect('backups')
         elif action == 'restore':
             backup_name = request.POST.get('backup_name', '')
-            confirmation = request.POST.get('confirm_restore', '').strip().upper()
-            restore_media = request.POST.get('restore_media') == 'on'
-            if confirmation != 'RESTAURAR':
-                messages.error(request, 'Digite RESTAURAR para confirmar a restauração.')
+            restore_form = BackupRestorePasswordForm(request.POST, user=request.user)
+            if not restore_form.is_valid():
+                messages.error(request, 'Senha incorreta. Restauração não executada.')
                 return redirect('backups')
             try:
-                result = restore_local_backup(backup_name, restore_media=restore_media)
+                result = restore_local_backup(backup_name, restore_media=True)
             except Exception as exc:
                 messages.error(request, f'Restauração não concluída: {exc}')
                 return redirect('backups')
@@ -826,10 +836,7 @@ def backups(request):
             )
             return redirect('backups')
         else:
-            form = BackupConfigurationForm(instance=config, rclone_remotes=rclone_remotes)
             messages.error(request, 'Ação de backup inválida.')
-    else:
-        form = BackupConfigurationForm(instance=config, rclone_remotes=rclone_remotes)
 
     remote_name, remote_folder = split_remote_path(config.remote_path)
 
@@ -848,6 +855,22 @@ def backups(request):
         ],
         'is_admin': True,
     })
+
+
+@user_passes_test(_admin_check)
+def download_local_backup(request, backup_name):
+    try:
+        package_path = local_backup_package_path(backup_name)
+    except Exception as exc:
+        messages.error(request, f'Pacote de backup não disponível: {exc}')
+        return redirect('backups')
+    response = FileResponse(
+        package_path.open('rb'),
+        as_attachment=True,
+        filename=f'{backup_name}_backup_package.tar.gz',
+        content_type='application/gzip',
+    )
+    return response
 
 
 @user_passes_test(_admin_check)

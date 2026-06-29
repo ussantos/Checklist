@@ -12,6 +12,7 @@ urlpatterns = [
     path('auditoria/', views.admin_activity_history, name='admin_activity_history'),
     path('auditoria.csv', views.admin_activity_history_csv, name='admin_activity_history_csv'),
     path('backups/', views.backups, name='backups'),
+    path('backups/<str:backup_name>/download/', views.download_local_backup, name='backup_download'),
     path('gestao-comercial/tipos-de-funis/', commercial_views.funnel_types_list, name='commercial_funnel_types'),
     path('gestao-comercial/tipos-de-funis/novo/', commercial_views.funnel_type_create, name='funnel_type_create'),
     path('gestao-comercial/tipos-de-funis/<int:funnel_type_id>/editar/', commercial_views.funnel_type_edit, name='funnel_type_edit'),

@@ -1185,16 +1185,16 @@ th {
   flex-wrap: wrap;
 }
 
-.restore-check {
-  display: inline-flex;
+.backup-actions {
+  display: flex;
   align-items: center;
-  gap: 5px;
-  white-space: nowrap;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-.restore-confirm {
-  min-width: 120px;
-  width: 130px;
+.restore-password {
+  min-width: 180px;
+  width: 220px;
 }
 
 .messages {

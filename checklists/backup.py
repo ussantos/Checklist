@@ -5,6 +5,7 @@ import tarfile
 import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 
 from django.conf import settings
@@ -28,6 +29,40 @@ CONFIG_PATHS = [
     'templates',
     'static',
     'grafana',
+]
+
+ENV_BACKUP_KEYS = [
+    'DJANGO_SECRET_KEY',
+    'DJANGO_DEBUG',
+    'DJANGO_ALLOWED_HOSTS',
+    'CSRF_TRUSTED_ORIGINS',
+    'APP_BIND',
+    'POSTGRES_DB',
+    'POSTGRES_USER',
+    'POSTGRES_PASSWORD',
+    'POSTGRES_HOST',
+    'POSTGRES_PORT',
+    'GRAFANA_BIND',
+    'GRAFANA_ADMIN_USER',
+    'GRAFANA_ADMIN_PASSWORD',
+    'INITIAL_CHECKLISTADMIN_PASSWORD',
+    'FORCE_PASSWORD_CHANGE_ON_FIRST_LOGIN',
+    'AUTO_SEED_OPERATIONAL_DATA',
+    'MAX_EVIDENCE_FILE_SIZE_MB',
+    'SPONTE_API_ENABLED',
+    'SPONTE_API_BASE_URL',
+    'SPONTE_API_CLIENT_CODE',
+    'SPONTE_API_TOKEN',
+    'SPONTE_API_TIMEOUT_SECONDS',
+    'SPONTE_API_CACHE_TTL_MINUTES',
+    'SPONTE_API_MAX_REQUESTS_PER_MINUTE',
+    'SPONTE_STUDENT_SEARCH_PARAMS',
+    'SPONTE_COURSE_SEARCH_PARAMS',
+    'SPONTE_SCHEDULE_SYNC_DAYS_BACK',
+    'SPONTE_SCHEDULE_SYNC_DAYS_AHEAD',
+    'RCLONE_REMOTE',
+    'BACKUP_RETENTION_DAYS',
+    'BACKUP_SCHEDULER_INTERVAL_SECONDS',
 ]
 
 
@@ -144,6 +179,45 @@ def _add_to_tar(tar, source):
         tar.add(source_path, arcname=source)
 
 
+def _add_text_to_tar(tar, arcname, content):
+    encoded = content.encode('utf-8')
+    info = tarfile.TarInfo(arcname)
+    info.size = len(encoded)
+    info.mtime = int(timezone.now().timestamp())
+    tar.addfile(info, BytesIO(encoded))
+
+
+def _env_file_value(value):
+    value = str(value).replace('\r', '').replace('\n', '\\n')
+    if value == '' or any(char.isspace() or char in {'"', "'", '#', '=', '$', '`', '\\'} for char in value):
+        return '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    return value
+
+
+def _add_runtime_env_to_tar(tar):
+    lines = [
+        '# Gerado automaticamente pelo backup do Checklist.',
+        '# Este arquivo pode conter segredos. Guarde o backup em local seguro.',
+    ]
+    for key in ENV_BACKUP_KEYS:
+        if key in os.environ:
+            lines.append(f'{key}={_env_file_value(os.environ.get(key, ""))}')
+    _add_text_to_tar(tar, '.env.generated', '\n'.join(lines) + '\n')
+
+
+def _add_rclone_config_to_tar(tar):
+    config_file = os.environ.get('RCLONE_CONFIG', '').strip()
+    if config_file:
+        path = Path(config_file)
+        if path.is_file():
+            tar.add(path, arcname='rclone/rclone.conf')
+            return
+
+    config_dir = Path.home() / '.config' / 'rclone'
+    if config_dir.exists():
+        tar.add(config_dir, arcname='rclone')
+
+
 def _folder_size(path):
     total = 0
     for item in path.rglob('*'):
@@ -209,6 +283,14 @@ def list_local_backups(limit=20):
             'has_package': (path / 'backup_package.tar.gz').exists(),
         })
     return sorted(rows, key=lambda row: row['created_at'], reverse=True)[:limit]
+
+
+def local_backup_package_path(backup_name):
+    backup_path = backup_path_for_name(backup_name)
+    package_path = backup_path / 'backup_package.tar.gz'
+    if not package_path.exists():
+        raise RuntimeError('backup_package.tar.gz nao encontrado neste backup.')
+    return package_path
 
 
 def list_remote_backups(config=None, limit=30):
@@ -331,13 +413,16 @@ def run_backup(config=None, *, force_local_only=False):
     with tarfile.open(backup_root / 'app_config.tar.gz', 'w:gz') as tar:
         for source in CONFIG_PATHS:
             _add_to_tar(tar, source)
+        _add_runtime_env_to_tar(tar)
+        _add_rclone_config_to_tar(tar)
 
     manifest_lines = [
         'Backup My Robot Checklist',
         f'Data: {timezone.localtime().isoformat()}',
         f'Banco: {db.get("NAME", "")}',
         'Arquivos: db.dump, media.tar.gz, app_config.tar.gz',
-        'Midia local: incluida em media.tar.gz quando existir',
+        'Arquivos locais: incluidos em media.tar.gz quando existirem',
+        'Configuracoes: inclui .env quando existir, .env.generated, codigo, scripts, static, grafana e rclone quando existirem',
         'Pacote restauravel: backup_package.tar.gz',
         f'Destino em nuvem: {config.get_cloud_provider_display()}',
         f'Retencao local/nuvem: {config.retention_days} dia(s)',
@@ -440,7 +525,7 @@ def import_uploaded_backup(uploaded_file):
                 'Backup My Robot Checklist',
                 f'Data de importacao: {timezone.localtime().isoformat()}',
                 'Origem: upload manual de db.dump',
-                'Midia local: nao incluida neste arquivo',
+                'Arquivos locais: nao incluidos neste arquivo',
             ])
             _create_backup_package(backup_root)
         elif lower_name.endswith('.zip'):

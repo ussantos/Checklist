@@ -95,12 +95,12 @@
 <section class="panel danger-light">
   <h2>Restaurar backup local</h2>
   <p class="muted">A restauração substitui o banco atual pelo backup selecionado. Antes de restaurar, o sistema gera automaticamente um novo backup local de segurança.</p>
-  <p class="muted">O pacote de backup inclui banco, configurações e arquivos locais do sistema quando existirem. Use preferencialmente backups da mesma versão. Após restaurar, valide login, usuários e cadastros principais.</p>
+  <p class="muted">O pacote de backup inclui banco, configurações, arquivos locais do sistema e configuração rclone quando existirem. Ele pode conter segredos como variáveis de ambiente, então mantenha esses arquivos em local seguro. Use preferencialmente backups da mesma versão. Após restaurar, valide login, usuários e cadastros principais.</p>
 </section>
 
 <section class="panel">
-  <h2>Upload de backup para restore</h2>
-  <p class="muted">Use esta opção quando o backup foi baixado manualmente da nuvem. Envie <code>backup_package.tar.gz</code>, um <code>.zip</code>/<code>.tar.gz</code> contendo <code>db.dump</code> e <code>media.tar.gz</code>, ou somente um <code>db.dump</code>.</p>
+  <h2>Restaurar backup enviado</h2>
+  <p class="muted">Use esta opção quando o backup foi baixado manualmente da nuvem. Envie <code>backup_package.tar.gz</code>, um <code>.zip</code>/<code>.tar.gz</code> contendo <code>db.dump</code> e <code>media.tar.gz</code>, ou somente um <code>db.dump</code>. A restauração só é executada após confirmar sua senha.</p>
   <form method="post" enctype="multipart/form-data" class="form-grid">
     {% csrf_token %}
     <input type="hidden" name="action" value="upload_restore">
@@ -109,7 +109,12 @@
       <span class="muted">{{ upload_form.backup_file.help_text }}</span>
       {{ upload_form.backup_file.errors }}
     </label>
-    <button class="btn primary" type="submit">Importar backup</button>
+    <label>{{ upload_form.admin_password.label }}
+      {{ upload_form.admin_password }}
+      <span class="muted">{{ upload_form.admin_password.help_text }}</span>
+      {{ upload_form.admin_password.errors }}
+    </label>
+    <button class="btn danger" type="submit">Restaurar backup enviado</button>
   </form>
 </section>
 
@@ -123,11 +128,10 @@
         <th>Data</th>
         <th>Tamanho</th>
         <th>Banco</th>
-        <th>Mídia</th>
         <th>Configuração</th>
         <th>Manifesto</th>
         <th>Pacote</th>
-        <th>Restore</th>
+        <th>Ações</th>
       </tr>
     </thead>
     <tbody>
@@ -137,27 +141,30 @@
         <td>{{ backup.created_at|date:"d/m/Y H:i:s" }}</td>
         <td>{{ backup.size }}</td>
         <td>{% if backup.has_db %}OK{% else %}-{% endif %}</td>
-        <td>{% if backup.has_media %}OK{% else %}-{% endif %}</td>
         <td>{% if backup.has_config %}OK{% else %}-{% endif %}</td>
         <td>{% if backup.has_manifest %}OK{% else %}-{% endif %}</td>
         <td>{% if backup.has_package %}OK{% else %}-{% endif %}</td>
         <td>
+          <div class="backup-actions">
+          {% if backup.has_package %}
+            <a class="btn small" href="{% url 'backup_download' backup.name %}">Baixar pacote</a>
+          {% endif %}
           {% if backup.has_db %}
           <form method="post" class="inline-form restore-form">
             {% csrf_token %}
             <input type="hidden" name="action" value="restore">
             <input type="hidden" name="backup_name" value="{{ backup.name }}">
-            <label class="restore-check"><input type="checkbox" name="restore_media" checked> mídia</label>
-            <input class="input restore-confirm" name="confirm_restore" placeholder="RESTAURAR">
+            <input class="input restore-password" type="password" name="admin_password" placeholder="Senha do administrador" autocomplete="current-password" required>
             <button class="btn danger small" type="submit">Restaurar</button>
           </form>
           {% else %}
             <span class="muted">Sem db.dump</span>
           {% endif %}
+          </div>
         </td>
       </tr>
       {% empty %}
-      <tr><td colspan="9">Nenhum backup local encontrado.</td></tr>
+      <tr><td colspan="8">Nenhum backup local encontrado.</td></tr>
       {% endfor %}
     </tbody>
   </table>

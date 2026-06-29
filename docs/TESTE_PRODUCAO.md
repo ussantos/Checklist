@@ -291,11 +291,12 @@ Validar:
 Na tela **Backups**, validar:
 
 - [ ] Backups locais aparecem na tabela.
-- [ ] A tela exige digitar `RESTAURAR` antes de restaurar.
+- [ ] Backups locais com pacote exibem botão para baixar `backup_package.tar.gz`.
+- [ ] A tela exige informar novamente a senha do administrador antes de restaurar.
 - [ ] Antes do restore, um novo backup local de segurança é gerado automaticamente.
 - [ ] Restore de banco conclui sem erro.
-- [ ] Restore de mídia pode ser marcado/desmarcado.
-- [ ] Upload de `backup_package.tar.gz` baixado da nuvem importa o backup para a lista local.
+- [ ] Arquivos locais incluídos no pacote são restaurados junto com o banco.
+- [ ] Upload de `backup_package.tar.gz` baixado da nuvem restaura somente após senha correta.
 - [ ] Após restore, login, usuários, atividades e indicadores são validados.
 
 ## 17. Agendador de backup

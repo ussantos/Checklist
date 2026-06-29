@@ -254,9 +254,9 @@ No `rclone`, cada **remoto** é uma conta configurada. Se você criar o remoto `
 
 O serviço `backup` do Docker Compose executa o agendador interno e roda o backup uma vez por dia no horário configurado. Por padrão, o agendador verifica a cada 15 minutos (`BACKUP_SCHEDULER_INTERVAL_SECONDS=900`) se o horário já venceu. O script `scripts/backup.sh` continua disponível para execução manual, chamando o comando Django `run_configured_backup`.
 
-Cada backup gera dump PostgreSQL, `media.tar.gz` quando houver arquivos locais do sistema, `.env`, configurações, seeds, scripts e o pacote único `backup_package.tar.gz`, que pode ser enviado pela tela para restore. A retenção padrão é de **30 dias** tanto local quanto na nuvem. Os diretórios `backups/` e `rclone/` ficam montados nos containers `web`/`backup` e devem continuar ignorados pelo Git.
+Cada backup gera dump PostgreSQL, `media.tar.gz` quando houver arquivos locais do sistema, `.env` quando existir no container, `.env.generated` com as variáveis relevantes de runtime, configurações, seeds, scripts, configuração `rclone/` quando existir e o pacote único `backup_package.tar.gz`, que pode ser baixado ou enviado pela tela para restore. O pacote pode conter segredos e deve ser guardado em local seguro. A retenção padrão é de **30 dias** tanto local quanto na nuvem. Os diretórios `backups/` e `rclone/` ficam montados nos containers `web`/`backup` e devem continuar ignorados pelo Git.
 
-Para restaurar, acesse **Backups**, baixe o backup da nuvem para a lista local ou envie um arquivo de backup baixado manualmente, digite `RESTAURAR` na linha do backup local e confirme. Antes de substituir o banco, o sistema gera automaticamente um backup local de segurança do estado atual.
+Para restaurar, acesse **Backups**, baixe o backup da nuvem para a lista local ou envie um arquivo de backup baixado manualmente, informe novamente sua senha de administrador e confirme. Antes de substituir o banco, o sistema gera automaticamente um backup local de segurança do estado atual. Backups locais com pacote disponível também podem ser baixados pela própria tela.
 
 Execução manual:
 
@@ -569,9 +569,9 @@ In `rclone`, each **remote** is a configured account. If you create a `gdrive` r
 
 The Docker Compose `backup` service runs the internal scheduler and creates one backup per day at the configured time. By default, the scheduler checks every 15 minutes (`BACKUP_SCHEDULER_INTERVAL_SECONDS=900`) whether the configured time is due. The `scripts/backup.sh` script remains available for manual execution and calls the Django `run_configured_backup` command.
 
-Each backup includes the PostgreSQL dump, `media.tar.gz` when local system files exist, `.env`, settings, seeds, scripts, and the single-file `backup_package.tar.gz`, which can be uploaded in the screen for restore. The default retention is **30 days** both locally and in the cloud. The `backups/` and `rclone/` directories are mounted into the `web`/`backup` containers and must remain ignored by Git.
+Each backup includes the PostgreSQL dump, `media.tar.gz` when local system files exist, `.env` when it exists in the container, `.env.generated` with the relevant runtime variables, settings, seeds, scripts, the `rclone/` configuration when present, and the single-file `backup_package.tar.gz`, which can be downloaded or uploaded in the screen for restore. The package may contain secrets and must be stored securely. The default retention is **30 days** both locally and in the cloud. The `backups/` and `rclone/` directories are mounted into the `web`/`backup` containers and must remain ignored by Git.
 
-To restore, open **Backups**, download the cloud backup into the local list or upload a backup file downloaded manually, type `RESTAURAR` on the local backup row, and confirm. Before replacing the database, the system automatically creates a local safety backup of the current state.
+To restore, open **Backups**, download the cloud backup into the local list or upload a backup file downloaded manually, enter your administrator password again, and confirm. Before replacing the database, the system automatically creates a local safety backup of the current state. Local backups with an available package can also be downloaded from the same screen.
 
 Manual execution:
 
