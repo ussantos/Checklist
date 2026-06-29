@@ -91,10 +91,6 @@ def rio_local_holidays_for_year(year):
             'date': easter + timedelta(days=60),
             'description': 'Feriado estadual RJ - Corpus Christi',
         },
-        {
-            'date': date(year, 11, 20),
-            'description': 'Feriado estadual RJ - Zumbi e Consciencia Negra',
-        },
     ]
 
 
@@ -105,6 +101,36 @@ def rio_local_holidays():
         holiday
         for year in years
         for holiday in rio_local_holidays_for_year(year)
+    ]
+
+
+def national_holidays_for_year(year):
+    easter = easter_date(year)
+    holidays = [
+        (date(year, 1, 1), 'Feriado nacional - Confraternizacao Universal'),
+        (easter - timedelta(days=2), 'Feriado nacional - Paixao de Cristo'),
+        (date(year, 4, 21), 'Feriado nacional - Tiradentes'),
+        (date(year, 5, 1), 'Feriado nacional - Dia do Trabalho'),
+        (date(year, 9, 7), 'Feriado nacional - Independencia do Brasil'),
+        (date(year, 10, 12), 'Feriado nacional - Nossa Senhora Aparecida'),
+        (date(year, 11, 2), 'Feriado nacional - Finados'),
+        (date(year, 11, 15), 'Feriado nacional - Proclamacao da Republica'),
+        (date(year, 11, 20), 'Feriado nacional - Zumbi e Consciencia Negra'),
+        (date(year, 12, 25), 'Feriado nacional - Natal'),
+    ]
+    return [
+        {'date': holiday_date, 'description': description}
+        for holiday_date, description in holidays
+    ]
+
+
+def national_holidays():
+    current_year = date.today().year
+    years = range(current_year, current_year + 2)
+    return [
+        holiday
+        for year in years
+        for holiday in national_holidays_for_year(year)
     ]
 
 
@@ -176,6 +202,47 @@ class Command(BaseCommand):
             if created:
                 holidays_created += 1
 
+        national_holidays_created = 0
+        national_holidays_updated = 0
+        for data in national_holidays():
+            holiday = SchoolHoliday.objects.filter(
+                start_date=data['date'],
+                end_date=data['date'],
+                kind=SchoolHoliday.KIND_NATIONAL,
+                description=data['description'],
+            ).first()
+
+            if holiday is None and data['date'].month == 11 and data['date'].day == 20:
+                holiday = SchoolHoliday.objects.filter(
+                    start_date=data['date'],
+                    end_date=data['date'],
+                    description__icontains='Zumbi',
+                ).first()
+
+            if holiday is None:
+                SchoolHoliday.objects.create(
+                    start_date=data['date'],
+                    end_date=data['date'],
+                    kind=SchoolHoliday.KIND_NATIONAL,
+                    description=data['description'],
+                    active=True,
+                )
+                national_holidays_created += 1
+            else:
+                changed = False
+                if holiday.kind != SchoolHoliday.KIND_NATIONAL:
+                    holiday.kind = SchoolHoliday.KIND_NATIONAL
+                    changed = True
+                if holiday.description != data['description']:
+                    holiday.description = data['description']
+                    changed = True
+                if not holiday.active:
+                    holiday.active = True
+                    changed = True
+                if changed:
+                    holiday.save(update_fields=['kind', 'description', 'active', 'updated_at'])
+                    national_holidays_updated += 1
+
         recesses_created = 0
         for data in YEAR_END_RECESSES:
             _, created = SchoolHoliday.objects.get_or_create(
@@ -196,6 +263,8 @@ class Command(BaseCommand):
                 f'Salas novas: {rooms_created}. '
                 f'Horários novos: {slots_created}. '
                 f'Feriados locais novos: {holidays_created}. '
+                f'Feriados nacionais novos: {national_holidays_created}. '
+                f'Feriados nacionais atualizados: {national_holidays_updated}. '
                 f'Recessos novos: {recesses_created}.'
             )
         )
