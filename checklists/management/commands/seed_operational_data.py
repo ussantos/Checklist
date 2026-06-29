@@ -1,3 +1,4 @@
+from decimal import Decimal
 from datetime import date, time, timedelta
 
 from django.core.management.base import BaseCommand
@@ -11,9 +12,21 @@ ROLE_POSITIONS = [
     ('instrutor-aula-livre', 'Instrutor de Aula Livre'),
 ]
 
+DEFAULT_COURSE_VALUE = Decimal('3690.00')
+PREMIUM_COURSE_VALUE = Decimal('4190.00')
+
 SAMPLE_COURSES = [
-    {'name': 'Techbot', 'value': '0.00', 'kit_quantity': 2},
-    {'name': 'Programação', 'value': '0.00', 'kit_quantity': 2},
+    {'name': 'Firtsbot', 'value': DEFAULT_COURSE_VALUE, 'kit_quantity': 2},
+    {'name': 'Onebot', 'value': DEFAULT_COURSE_VALUE, 'kit_quantity': 2},
+    {'name': 'Electrobot', 'value': DEFAULT_COURSE_VALUE, 'kit_quantity': 1},
+    {'name': 'Skillbot', 'value': DEFAULT_COURSE_VALUE, 'kit_quantity': 1},
+    {'name': 'My Robot Business', 'value': DEFAULT_COURSE_VALUE, 'kit_quantity': 4},
+    {'name': 'Gamebot', 'value': DEFAULT_COURSE_VALUE, 'kit_quantity': 1},
+    {'name': 'Techbot', 'value': DEFAULT_COURSE_VALUE, 'kit_quantity': 2},
+    {'name': 'Autobot', 'value': DEFAULT_COURSE_VALUE, 'kit_quantity': 1},
+    {'name': '3D Print Lab', 'value': PREMIUM_COURSE_VALUE, 'kit_quantity': 1},
+    {'name': 'Inteligência Artificial', 'value': PREMIUM_COURSE_VALUE, 'kit_quantity': 4},
+    {'name': 'APP Developer', 'value': DEFAULT_COURSE_VALUE, 'kit_quantity': 4},
 ]
 
 SAMPLE_ROOMS = [
@@ -158,8 +171,9 @@ class Command(BaseCommand):
             total += 1
 
         courses_created = 0
+        courses_updated = 0
         for data in SAMPLE_COURSES:
-            _, created = Course.objects.get_or_create(
+            course, created = Course.objects.get_or_create(
                 name=data['name'],
                 defaults={
                     'value': data['value'],
@@ -169,6 +183,20 @@ class Command(BaseCommand):
             )
             if created:
                 courses_created += 1
+            else:
+                changed = False
+                if course.value != data['value']:
+                    course.value = data['value']
+                    changed = True
+                if course.kit_quantity != data['kit_quantity']:
+                    course.kit_quantity = data['kit_quantity']
+                    changed = True
+                if not course.active:
+                    course.active = True
+                    changed = True
+                if changed:
+                    course.save(update_fields=['value', 'kit_quantity', 'active', 'updated_at'])
+                    courses_updated += 1
 
         rooms_created = 0
         for data in SAMPLE_ROOMS:
@@ -260,6 +288,7 @@ class Command(BaseCommand):
                 'Seed operacional concluído. '
                 f'Cargos criados/atualizados: {total}. '
                 f'Cursos novos: {courses_created}. '
+                f'Cursos atualizados: {courses_updated}. '
                 f'Salas novas: {rooms_created}. '
                 f'Horários novos: {slots_created}. '
                 f'Feriados locais novos: {holidays_created}. '
