@@ -191,6 +191,16 @@ Ao cadastrar uma **Aula Experimental ou Play**, o administrador deve informar se
 
 As variáveis `SPONTE_SCHEDULE_SYNC_DAYS_BACK` e `SPONTE_SCHEDULE_SYNC_DAYS_AHEAD` controlam a janela sincronizada em relação à data selecionada na agenda. Se uma aula regular do Sponte não voltar mais dentro da janela sincronizada, ela é marcada como cancelada no Checklist, sem exclusão física.
 
+## Feedback de Aula
+
+A tela **Gestão Pedagógica > Feedback de Aula** substitui os antigos modelos de feedback. O Checklist usa um único formulário de feedback para aulas regulares de alunos matriculados.
+
+O feedback é preenchido após cada aula regular sincronizada do Sponte. **Aulas Experimentais ou Play não exigem feedback** nesse fluxo. Instrutores de cursos livres e administradores podem acessar a tela.
+
+As notas são selecionadas de 0 a 10. A pontualidade aparece como **Sim** ou **Não**, mas é registrada internamente como 10 ou 5. Quando a aula tiver programação, o instrutor marca essa opção e passa a preencher comentário e nota de programação. Se a aula não tiver programação, essa nota não entra no cálculo.
+
+A nota geral é calculada automaticamente pela média das notas informadas e fica somente leitura no formulário.
+
 Ver logs:
 
 ```bash
@@ -504,6 +514,16 @@ On **Pedagogical Management > Schedule**, the **Sync Sponte** button fetches eac
 When creating a **Trial or Play Lesson**, the administrator must choose whether it is `Trial` or `Play` and link it to a commercial opportunity. One opportunity may have several Trial or Play Lessons, keeping traceability for clients that do not exist in Sponte yet.
 
 `SPONTE_SCHEDULE_SYNC_DAYS_BACK` and `SPONTE_SCHEDULE_SYNC_DAYS_AHEAD` control the sync window relative to the selected schedule date. If a regular Sponte lesson no longer appears within the synced window, it is marked as cancelled in Checklist without physical deletion.
+
+## Lesson Feedback
+
+The **Pedagogical Management > Lesson Feedback** screen replaces the previous feedback model placeholder. Checklist uses one standard feedback form for regular enrolled-student lessons.
+
+Feedback is filled out after each regular Sponte-synced lesson. **Trial or Play Lessons do not require feedback** in this flow. Free-course instructors and administrators can access the screen.
+
+Scores are selected from 0 to 10. Punctuality is shown as **Yes** or **No**, but it is stored internally as 10 or 5. When the lesson includes programming, the instructor enables that option and fills in the programming comment and score. If the lesson does not include programming, that score is excluded from the calculation.
+
+The general score is calculated automatically from the provided scores and is read-only in the form.
 
 View logs:
 

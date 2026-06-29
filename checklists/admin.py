@@ -6,7 +6,7 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from .models import (
     ActivityLog, CommercialFunnel, CommercialOpportunity,
     CommercialOpportunityFollowUp, CommercialOpportunityStageEvent, FunnelModel,
-    FunnelModelField, FunnelStage, FunnelType, Course, Lesson, OpportunityOrigin,
+    FunnelModelField, FunnelStage, FunnelType, Course, Lesson, LessonFeedback, OpportunityOrigin,
     PedagogicalStudent, Position, Room, SchoolHoliday, TimeSlot, UserProfile,
 )
 
@@ -203,6 +203,17 @@ class LessonAdmin(admin.ModelAdmin):
     )
     list_filter = ('lesson_type', 'trial_kind', 'source', 'status', 'course', 'room', 'date')
     readonly_fields = ('created_at', 'updated_at', 'synced_at')
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(LessonFeedback)
+class LessonFeedbackAdmin(admin.ModelAdmin):
+    list_display = ('lesson', 'punctuality_score', 'assembly_score', 'participation_score', 'behavior_score', 'general_score', 'updated_at')
+    search_fields = ('lesson__student_name_snapshot', 'lesson__course__name', 'general_comment')
+    list_filter = ('has_programming', 'lesson__course', 'lesson__date')
+    readonly_fields = ('general_score', 'created_at', 'updated_at')
 
     def has_delete_permission(self, request, obj=None):
         return False

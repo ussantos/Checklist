@@ -7,7 +7,7 @@ from django.test import TestCase
 from .forms import CommercialOpportunityForm
 from .models import (
     CommercialFunnel, CommercialOpportunity, Course, FunnelModel, FunnelStage,
-    FunnelType, Lesson, OpportunityOrigin, PedagogicalStudent, Room,
+    FunnelType, Lesson, LessonFeedback, OpportunityOrigin, PedagogicalStudent, Room,
     SchoolHoliday, TimeSlot,
 )
 from .sponte import (
@@ -170,6 +170,90 @@ class PedagogicalSchedulingRulesTests(TestCase):
         ).save()
 
         self.assertEqual(self.opportunity.trial_lessons.count(), 2)
+
+
+class LessonFeedbackTests(TestCase):
+    def setUp(self):
+        self.day = date(2026, 7, 7)
+        self.course = Course.objects.create(name='Techbot', value='500.00', kit_quantity=2, active=True)
+        self.room = Room.objects.create(name='Sala Maker', capacity=2, active=True)
+        self.student = PedagogicalStudent.objects.create(name='Aluno Um', responsible_name='Responsável Um', whatsapp='21999990001')
+        self.lesson = Lesson.objects.create(
+            lesson_type=Lesson.TYPE_REGULAR,
+            student=self.student,
+            course=self.course,
+            room=self.room,
+            date=self.day,
+            start_time=time(14, 0),
+            end_time=time(16, 0),
+            status=Lesson.STATUS_DONE,
+            source=Lesson.SOURCE_SPONTE,
+            external_id='aula_livre:1',
+        )
+        self.funnel_model = FunnelModel.objects.create(name='Modelo teste', active=True)
+        self.funnel = CommercialFunnel.objects.create(name='Funil teste', funnel_model=self.funnel_model, active=True)
+        self.opportunity = CommercialOpportunity.objects.create(
+            title='Interessado Teste',
+            commercial_funnel=self.funnel,
+            contact_name='Responsável Teste',
+            contact_phone='21999990003',
+            next_follow_up_date=self.day,
+            active=True,
+        )
+
+    def _feedback(self, **kwargs):
+        data = {
+            'lesson': self.lesson,
+            'punctuality_score': 10,
+            'assembly_comment': 'Montou dentro do tempo.',
+            'assembly_score': 8,
+            'has_programming': False,
+            'participation_comment': 'Participou bem.',
+            'participation_score': 9,
+            'behavior_comment': 'Comportamento adequado.',
+            'behavior_score': 10,
+            'general_comment': 'Bom desempenho geral.',
+        }
+        data.update(kwargs)
+        return LessonFeedback(**data)
+
+    def test_calculates_general_score_without_programming(self):
+        feedback = self._feedback()
+        feedback.save()
+
+        self.assertEqual(str(feedback.general_score), '9.25')
+        self.assertIsNone(feedback.programming_score)
+        self.assertEqual(feedback.programming_comment, '')
+
+    def test_calculates_general_score_with_programming(self):
+        feedback = self._feedback(
+            has_programming=True,
+            programming_comment='Programou com apoio.',
+            programming_score=7,
+        )
+        feedback.save()
+
+        self.assertEqual(str(feedback.general_score), '8.80')
+
+    def test_blocks_feedback_for_trial_or_play_lesson(self):
+        trial = Lesson.objects.create(
+            lesson_type=Lesson.TYPE_TRIAL,
+            trial_kind=Lesson.TRIAL_KIND_PLAY,
+            commercial_opportunity=self.opportunity,
+            student_name_snapshot='Interessado Teste',
+            course=self.course,
+            room=self.room,
+            date=self.day,
+            start_time=time(16, 0),
+            end_time=time(17, 0),
+            status=Lesson.STATUS_DONE,
+        )
+        feedback = self._feedback(lesson=trial)
+
+        with self.assertRaises(ValidationError) as ctx:
+            feedback.save()
+
+        self.assertIn('lesson', ctx.exception.message_dict)
 
 
 class SponteStudentImportTests(TestCase):

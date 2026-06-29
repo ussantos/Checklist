@@ -2,6 +2,7 @@ from datetime import date
 
 from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
+from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -9,11 +10,11 @@ from django.views.decorators.http import require_POST
 
 from .audit import changed_values, log_activity, snapshot_instance
 from .forms import (
-    CourseForm, LessonForm, PedagogicalStudentForm, RoomForm, SchoolHolidayForm,
+    CourseForm, LessonFeedbackForm, LessonForm, PedagogicalStudentForm, RoomForm, SchoolHolidayForm,
     TimeSlotForm,
 )
-from .models import CommercialOpportunity, Course, Lesson, PedagogicalStudent, Room, SchoolHoliday, TimeSlot
-from .services import is_admin_user
+from .models import CommercialOpportunity, Course, Lesson, LessonFeedback, PedagogicalStudent, Room, SchoolHoliday, TimeSlot
+from .services import get_user_position, is_admin_user
 from .sponte import (
     SponteClientError, SponteConfigurationError, default_sponte_schedule_window,
     import_sponte_students, sync_sponte_free_class_schedule,
@@ -30,10 +31,25 @@ LESSON_AUDIT_FIELDS = [
     'whatsapp_snapshot', 'course', 'room', 'date', 'start_time', 'end_time',
     'status', 'notes', 'source', 'external_id', 'synced_at', 'created_by',
 ]
+LESSON_FEEDBACK_AUDIT_FIELDS = [
+    'lesson', 'punctuality_score', 'assembly_comment', 'assembly_score',
+    'has_programming', 'programming_comment', 'programming_score',
+    'participation_comment', 'participation_score', 'behavior_comment',
+    'behavior_score', 'general_comment', 'general_score', 'created_by', 'updated_by',
+]
 
 
 def _admin_check(user):
     return user.is_authenticated and is_admin_user(user)
+
+
+def _feedback_access_check(user):
+    if not user.is_authenticated:
+        return False
+    if is_admin_user(user):
+        return True
+    position = get_user_position(user)
+    return bool(position and position.code == 'instrutor-aula-livre')
 
 
 def _parse_date(value):
@@ -74,6 +90,16 @@ def _log_change(*, request, obj, action, audit_fields, previous_values_full=None
         details=details,
         previous_values=previous_values,
         new_values=new_values,
+    )
+
+
+def _feedback_lessons_queryset():
+    return (
+        Lesson.objects
+        .filter(lesson_type=Lesson.TYPE_REGULAR)
+        .exclude(status=Lesson.STATUS_CANCELLED)
+        .select_related('student', 'course', 'room', 'feedback', 'feedback__created_by', 'feedback__updated_by')
+        .order_by('-date', '-start_time', 'student_name_snapshot')
     )
 
 
@@ -472,6 +498,79 @@ def student_toggle(request, student_id):
     _log_change(request=request, obj=student, action='Aluno pedagógico ativado' if student.active else 'Aluno pedagógico desativado', audit_fields=STUDENT_AUDIT_FIELDS, previous_values_full=previous_values_full, details=f'Aluno: {student.name}; status: {student.status}')
     messages.success(request, f'Aluno {"ativado" if student.active else "desativado"}.')
     return redirect('pedagogical_students')
+
+
+@user_passes_test(_feedback_access_check)
+def lesson_feedbacks(request):
+    target_date = _parse_date(request.GET.get('data'))
+    feedback_status = request.GET.get('status', 'pendentes')
+    if feedback_status not in {'pendentes', 'preenchidos', 'todos'}:
+        feedback_status = 'pendentes'
+
+    lessons = _feedback_lessons_queryset().filter(date=target_date)
+    if feedback_status == 'pendentes':
+        lessons = lessons.filter(feedback__isnull=True)
+    elif feedback_status == 'preenchidos':
+        lessons = lessons.filter(feedback__isnull=False)
+
+    lessons = list(lessons)
+    for lesson in lessons:
+        try:
+            lesson.feedback_record = lesson.feedback
+        except LessonFeedback.DoesNotExist:
+            lesson.feedback_record = None
+
+    return render(request, 'checklists/lesson_feedbacks.html', {
+        'lessons': lessons,
+        'target_date': target_date,
+        'feedback_status': feedback_status,
+        'is_admin': is_admin_user(request.user),
+    })
+
+
+@user_passes_test(_feedback_access_check)
+def lesson_feedback_edit(request, lesson_id):
+    lesson = get_object_or_404(
+        _feedback_lessons_queryset(),
+        pk=lesson_id,
+    )
+    if lesson.lesson_type != Lesson.TYPE_REGULAR:
+        return HttpResponseForbidden('Feedback de aula é permitido apenas para aulas de aluno matriculado.')
+
+    try:
+        feedback = lesson.feedback
+    except LessonFeedback.DoesNotExist:
+        feedback = None
+    previous_values_full = snapshot_instance(feedback, LESSON_FEEDBACK_AUDIT_FIELDS) if feedback else None
+    if request.method == 'POST':
+        form = LessonFeedbackForm(request.POST, instance=feedback)
+        if form.is_valid():
+            feedback = form.save(commit=False)
+            feedback.lesson = lesson
+            if not feedback.pk:
+                feedback.created_by = request.user
+            feedback.updated_by = request.user
+            feedback.save()
+            action = 'Feedback de aula criado' if previous_values_full is None else 'Feedback de aula atualizado'
+            _log_change(
+                request=request,
+                obj=feedback,
+                action=action,
+                audit_fields=LESSON_FEEDBACK_AUDIT_FIELDS,
+                previous_values_full=previous_values_full,
+                details=f'Feedback: {lesson}; nota geral: {feedback.general_score}',
+            )
+            messages.success(request, 'Feedback de aula salvo.')
+            return redirect(f'{reverse("pedagogical_lesson_feedbacks")}?data={lesson.date.isoformat()}')
+    else:
+        form = LessonFeedbackForm(instance=feedback)
+
+    return render(request, 'checklists/lesson_feedback_form.html', {
+        'form': form,
+        'lesson': lesson,
+        'feedback': feedback,
+        'is_admin': is_admin_user(request.user),
+    })
 
 
 def _lesson_queryset():

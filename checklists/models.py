@@ -1,4 +1,5 @@
 from datetime import datetime, time
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
@@ -724,6 +725,80 @@ class Lesson(models.Model):
                 self.responsible_name_snapshot = self.commercial_opportunity.contact_name
             if not self.whatsapp_snapshot:
                 self.whatsapp_snapshot = self.commercial_opportunity.contact_phone
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class LessonFeedback(models.Model):
+    """Feedback pedagógico preenchido após uma aula regular de aluno matriculado."""
+
+    SCORE_CHOICES = [(score, str(score)) for score in range(0, 11)]
+    PUNCTUALITY_CHOICES = [
+        (10, 'Sim'),
+        (5, 'Não'),
+    ]
+
+    lesson = models.OneToOneField(Lesson, on_delete=models.PROTECT, related_name='feedback', verbose_name='Aula')
+    punctuality_score = models.PositiveSmallIntegerField('Pontualidade', choices=PUNCTUALITY_CHOICES)
+    assembly_comment = models.TextField('Montagem')
+    assembly_score = models.PositiveSmallIntegerField('Montagem nota', choices=SCORE_CHOICES)
+    has_programming = models.BooleanField('A aula teve programação?', default=False)
+    programming_comment = models.TextField('Programação', blank=True)
+    programming_score = models.PositiveSmallIntegerField('Programação nota', choices=SCORE_CHOICES, null=True, blank=True)
+    participation_comment = models.TextField('Interesse/Participação')
+    participation_score = models.PositiveSmallIntegerField('Interesse/Participação nota', choices=SCORE_CHOICES)
+    behavior_comment = models.TextField('Comportamento')
+    behavior_score = models.PositiveSmallIntegerField('Comportamento nota', choices=SCORE_CHOICES)
+    general_comment = models.TextField('Comentário geral')
+    general_score = models.DecimalField('Comentário geral nota', max_digits=4, decimal_places=2, default=0)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='lesson_feedbacks_created', verbose_name='Criado por')
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='lesson_feedbacks_updated', verbose_name='Atualizado por')
+    created_at = models.DateTimeField('Criado em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizado em', auto_now=True)
+
+    class Meta:
+        ordering = ['-lesson__date', '-lesson__start_time']
+        verbose_name = 'Feedback de aula'
+        verbose_name_plural = 'Feedbacks de aula'
+
+    def __str__(self):
+        return f'Feedback - {self.lesson}'
+
+    def _score_values(self):
+        values = [
+            self.punctuality_score,
+            self.assembly_score,
+            self.participation_score,
+            self.behavior_score,
+        ]
+        if self.has_programming:
+            values.append(self.programming_score)
+        return [score for score in values if score is not None]
+
+    def calculate_general_score(self):
+        values = self._score_values()
+        if not values:
+            return Decimal('0.00')
+        average = Decimal(sum(values)) / Decimal(len(values))
+        return average.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    def clean(self):
+        errors = {}
+        if self.lesson_id and self.lesson.lesson_type != Lesson.TYPE_REGULAR:
+            errors['lesson'] = 'Feedback de aula é permitido apenas para aulas de aluno matriculado.'
+        if self.has_programming:
+            if not (self.programming_comment or '').strip():
+                errors['programming_comment'] = 'Informe o comentário de programação.'
+            if self.programming_score is None:
+                errors['programming_score'] = 'Informe a nota de programação.'
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if not self.has_programming:
+            self.programming_comment = ''
+            self.programming_score = None
+        self.general_score = self.calculate_general_score()
         self.full_clean()
         return super().save(*args, **kwargs)
 

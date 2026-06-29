@@ -12,7 +12,7 @@ from .backup import build_remote_path, split_remote_path
 from .models import (
     ActivitySuggestion, BackupConfiguration, ChecklistOccurrence, CommercialFunnel,
     CommercialOpportunity, Course, DailyNote, EmployeeAbsence, FunnelModel,
-    FunnelModelField, FunnelStage, FunnelType, Lesson, MetricRecord, MetricType,
+    FunnelModelField, FunnelStage, FunnelType, Lesson, LessonFeedback, MetricRecord, MetricType,
     OpportunityOrigin, PedagogicalStudent, Position, Room, SchoolHoliday,
     TaskTemplate, TimeSlot, UserProfile,
 )
@@ -995,6 +995,66 @@ class LessonForm(forms.ModelForm):
                 self.add_error('commercial_opportunity', 'Vincule a aula a uma oportunidade comercial.')
             if not student_name and not opportunity:
                 self.add_error('student_name_snapshot', 'Informe o nome do interessado.')
+        return cleaned
+
+
+class LessonFeedbackForm(forms.ModelForm):
+    NOTE_CHOICES = [('', 'Selecione')] + [(score, str(score)) for score in range(0, 11)]
+
+    class Meta:
+        model = LessonFeedback
+        fields = [
+            'punctuality_score',
+            'assembly_comment',
+            'assembly_score',
+            'has_programming',
+            'programming_comment',
+            'programming_score',
+            'participation_comment',
+            'participation_score',
+            'behavior_comment',
+            'behavior_score',
+            'general_comment',
+            'general_score',
+        ]
+        widgets = {
+            'punctuality_score': forms.Select(attrs={'class': 'input', 'data-feedback-score': '1'}),
+            'assembly_comment': forms.Textarea(attrs={'class': 'input', 'rows': 4}),
+            'assembly_score': forms.Select(attrs={'class': 'input', 'data-feedback-score': '1'}),
+            'has_programming': forms.CheckboxInput(attrs={'data-programming-toggle': '1'}),
+            'programming_comment': forms.Textarea(attrs={'class': 'input', 'rows': 4, 'data-programming-field': '1'}),
+            'programming_score': forms.Select(attrs={'class': 'input', 'data-feedback-score': '1', 'data-programming-field': '1'}),
+            'participation_comment': forms.Textarea(attrs={'class': 'input', 'rows': 4}),
+            'participation_score': forms.Select(attrs={'class': 'input', 'data-feedback-score': '1'}),
+            'behavior_comment': forms.Textarea(attrs={'class': 'input', 'rows': 4}),
+            'behavior_score': forms.Select(attrs={'class': 'input', 'data-feedback-score': '1'}),
+            'general_comment': forms.Textarea(attrs={'class': 'input', 'rows': 5}),
+            'general_score': forms.NumberInput(attrs={'class': 'input', 'readonly': 'readonly', 'data-general-score': '1'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field_name in ['assembly_score', 'programming_score', 'participation_score', 'behavior_score']:
+            self.fields[field_name].choices = self.NOTE_CHOICES
+        self.fields['punctuality_score'].choices = [('', 'Selecione'), *LessonFeedback.PUNCTUALITY_CHOICES]
+        self.fields['general_score'].required = False
+        self.fields['general_score'].disabled = True
+        self.fields['programming_comment'].required = False
+        self.fields['programming_score'].required = False
+
+    def clean(self):
+        cleaned = super().clean()
+        has_programming = cleaned.get('has_programming')
+        programming_comment = (cleaned.get('programming_comment') or '').strip()
+        programming_score = cleaned.get('programming_score')
+        if has_programming:
+            if not programming_comment:
+                self.add_error('programming_comment', 'Informe o comentário de programação.')
+            if programming_score is None:
+                self.add_error('programming_score', 'Informe a nota de programação.')
+        else:
+            cleaned['programming_comment'] = ''
+            cleaned['programming_score'] = None
         return cleaned
 
 

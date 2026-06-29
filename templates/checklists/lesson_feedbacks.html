@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Feedback de Aula</h1>
+    <p class="muted">Preenchimento obrigatório após aulas regulares de alunos matriculados.</p>
+  </div>
+</div>
+
+<form method="get" class="filters panel">
+  <label>Data
+    <input class="input" type="date" name="data" value="{{ target_date|date:'Y-m-d' }}">
+  </label>
+  <label>Status
+    <select class="input" name="status">
+      <option value="pendentes" {% if feedback_status == "pendentes" %}selected{% endif %}>Pendentes</option>
+      <option value="preenchidos" {% if feedback_status == "preenchidos" %}selected{% endif %}>Preenchidos</option>
+      <option value="todos" {% if feedback_status == "todos" %}selected{% endif %}>Todos</option>
+    </select>
+  </label>
+  <button class="btn">Filtrar</button>
+</form>
+
+<table class="panel-table">
+  <thead>
+    <tr>
+      <th>Horário</th>
+      <th>Aluno</th>
+      <th>Curso</th>
+      <th>Sala</th>
+      <th>Feedback</th>
+      <th>Ações</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for lesson in lessons %}
+    <tr>
+      <td>{{ lesson.start_time|time:"H:i" }} - {{ lesson.end_time|time:"H:i" }}</td>
+      <td>
+        {{ lesson.student_name_snapshot }}<br>
+        <span class="muted">{{ lesson.responsible_name_snapshot|default:"-" }}{% if lesson.whatsapp_snapshot %} · {{ lesson.whatsapp_snapshot }}{% endif %}</span>
+      </td>
+      <td>{{ lesson.course.name }}</td>
+      <td>{{ lesson.room.name }}</td>
+      <td>
+        {% if lesson.feedback_record %}
+          <span class="badge done">Preenchido</span>
+          <span class="muted">Nota {{ lesson.feedback_record.general_score }}</span>
+        {% else %}
+          <span class="badge warning">Pendente</span>
+        {% endif %}
+      </td>
+      <td>
+        <a class="btn small" href="{% url 'pedagogical_lesson_feedback_edit' lesson.id %}">
+          {% if lesson.feedback_record %}Editar{% else %}Preencher{% endif %}
+        </a>
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6">Nenhuma aula regular encontrada para os filtros selecionados.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

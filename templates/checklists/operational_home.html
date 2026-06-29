@@ -18,7 +18,12 @@
 
 <section class="panel">
   <h2>Acesso disponível</h2>
-  <p class="muted">Neste momento, seu acesso permanece ativo para autenticação e troca de senha.</p>
-  <a class="btn primary" href="{% url 'password_change' %}">Trocar senha</a>
+  <p class="muted">Neste momento, seu acesso permanece ativo para autenticação, troca de senha e módulos liberados para seu cargo.</p>
+  <div class="row-actions">
+    {% if position.code == "instrutor-aula-livre" %}
+      <a class="btn primary" href="{% url 'pedagogical_lesson_feedbacks' %}">Feedback de Aula</a>
+    {% endif %}
+    <a class="btn" href="{% url 'password_change' %}">Trocar senha</a>
+  </div>
 </section>
 {% endblock %}

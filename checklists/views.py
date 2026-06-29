@@ -223,15 +223,6 @@ def pedagogical_class_schedule(request):
     )
 
 
-@user_passes_test(_admin_check)
-def pedagogical_feedback_models(request):
-    return _admin_module_placeholder(
-        request,
-        title='Modelos de Feedback de Aula',
-        section='Gestão Pedagógica > Aulas',
-    )
-
-
 @login_required
 def activities(request):
     if is_admin_user(request.user):

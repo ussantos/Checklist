@@ -267,6 +267,21 @@ img {
   margin-bottom: 12px;
 }
 
+.info-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.info-grid div {
+  display: grid;
+  gap: 4px;
+}
+
+.info-grid span {
+  color: var(--muted);
+}
+
 .form-stack {
   display: grid;
   gap: 16px;

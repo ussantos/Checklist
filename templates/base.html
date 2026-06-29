@@ -57,7 +57,7 @@
             <a href="{% url 'pedagogical_lesson_create' %}">Agendar Aula</a>
             <a href="{% url 'pedagogical_trial_lessons' %}">Aulas Experimentais ou Play</a>
             <a href="{% url 'pedagogical_students' %}">Alunos</a>
-            <a href="{% url 'pedagogical_feedback_models' %}">Modelos de Feedback</a>
+            <a href="{% url 'pedagogical_lesson_feedbacks' %}">Feedback de Aula</a>
           </div>
           <div class="nav-group">
             <span class="nav-group-title">Configuração</span>
@@ -75,6 +75,9 @@
       <a href="{% url 'employees_list' %}">Usuários</a>
     {% else %}
       <a href="{% url 'operational_home' %}">Início</a>
+      {% if user.userprofile.position.code == "instrutor-aula-livre" %}
+        <a href="{% url 'pedagogical_lesson_feedbacks' %}">Feedback de Aula</a>
+      {% endif %}
     {% endif %}
     <a href="{% url 'password_change' %}">Trocar senha</a>
     {% if user.is_staff %}<a href="/admin/">Admin Django</a>{% endif %}

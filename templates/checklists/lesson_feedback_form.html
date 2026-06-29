@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Feedback de Aula</h1>
+    <p class="muted">{{ lesson.date|date:"d/m/Y" }} · {{ lesson.start_time|time:"H:i" }} - {{ lesson.end_time|time:"H:i" }}</p>
+  </div>
+  <a class="btn" href="{% url 'pedagogical_lesson_feedbacks' %}?data={{ lesson.date|date:'Y-m-d' }}">Voltar</a>
+</div>
+
+<section class="panel">
+  <h2>Dados da aula</h2>
+  <div class="info-grid">
+    <div>
+      <strong>Aluno</strong>
+      <span>{{ lesson.student_name_snapshot }}</span>
+    </div>
+    <div>
+      <strong>Curso</strong>
+      <span>{{ lesson.course.name }}</span>
+    </div>
+    <div>
+      <strong>Sala</strong>
+      <span>{{ lesson.room.name }}</span>
+    </div>
+    <div>
+      <strong>Origem</strong>
+      <span>{% if lesson.is_sponte_synced %}Sponte{% else %}Checklist{% endif %}</span>
+    </div>
+  </div>
+</section>
+
+<form method="post" class="form-stack" data-feedback-form="1">
+  {% csrf_token %}
+  {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+
+  <section class="panel">
+    <h2>Avaliação</h2>
+    <div class="form-grid">
+      <p>
+        {{ form.punctuality_score.label_tag }}
+        {{ form.punctuality_score }}
+        {{ form.punctuality_score.errors }}
+      </p>
+      <p>
+        {{ form.assembly_score.label_tag }}
+        {{ form.assembly_score }}
+        {{ form.assembly_score.errors }}
+      </p>
+      <p>
+        {{ form.participation_score.label_tag }}
+        {{ form.participation_score }}
+        {{ form.participation_score.errors }}
+      </p>
+      <p>
+        {{ form.behavior_score.label_tag }}
+        {{ form.behavior_score }}
+        {{ form.behavior_score.errors }}
+      </p>
+      <p>
+        {{ form.general_score.label_tag }}
+        {{ form.general_score }}
+        {{ form.general_score.errors }}
+      </p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Montagem</h2>
+    <p>
+      {{ form.assembly_comment.label_tag }}
+      {{ form.assembly_comment }}
+      {{ form.assembly_comment.errors }}
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2>Programação</h2>
+    <label class="checkbox-line">
+      {{ form.has_programming }}
+      <span>A aula teve programação</span>
+    </label>
+    {{ form.has_programming.errors }}
+    <div data-programming-section="1">
+      <div class="form-grid">
+        <p>
+          {{ form.programming_score.label_tag }}
+          {{ form.programming_score }}
+          {{ form.programming_score.errors }}
+        </p>
+      </div>
+      <p>
+        {{ form.programming_comment.label_tag }}
+        {{ form.programming_comment }}
+        {{ form.programming_comment.errors }}
+      </p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Interesse/Participação</h2>
+    <p>
+      {{ form.participation_comment.label_tag }}
+      {{ form.participation_comment }}
+      {{ form.participation_comment.errors }}
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2>Comportamento</h2>
+    <p>
+      {{ form.behavior_comment.label_tag }}
+      {{ form.behavior_comment }}
+      {{ form.behavior_comment.errors }}
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2>Comentário geral</h2>
+    <p>
+      {{ form.general_comment.label_tag }}
+      {{ form.general_comment }}
+      {{ form.general_comment.errors }}
+    </p>
+  </section>
+
+  <div class="form-actions">
+    <button class="btn primary" type="submit">Salvar feedback</button>
+  </div>
+</form>
+
+<script>
+  (() => {
+    const form = document.querySelector('[data-feedback-form="1"]');
+    if (!form) return;
+    const hasProgramming = form.querySelector('[data-programming-toggle="1"]');
+    const programmingSection = form.querySelector('[data-programming-section="1"]');
+    const generalScore = form.querySelector('[data-general-score="1"]');
+
+    const scoreFields = () => {
+      const fields = [
+        form.querySelector('#id_punctuality_score'),
+        form.querySelector('#id_assembly_score'),
+        form.querySelector('#id_participation_score'),
+        form.querySelector('#id_behavior_score'),
+      ];
+      if (hasProgramming && hasProgramming.checked) {
+        fields.push(form.querySelector('#id_programming_score'));
+      }
+      return fields.filter(Boolean);
+    };
+
+    const updateProgrammingVisibility = () => {
+      if (!programmingSection || !hasProgramming) return;
+      programmingSection.hidden = !hasProgramming.checked;
+    };
+
+    const updateGeneralScore = () => {
+      if (!generalScore) return;
+      const values = scoreFields()
+        .map((field) => field.value === '' ? null : Number(field.value))
+        .filter((value) => value !== null && !Number.isNaN(value));
+      if (!values.length) {
+        generalScore.value = '';
+        return;
+      }
+      const total = values.reduce((sum, value) => sum + value, 0);
+      generalScore.value = (total / values.length).toFixed(2);
+    };
+
+    form.querySelectorAll('[data-feedback-score="1"]').forEach((field) => {
+      field.addEventListener('change', updateGeneralScore);
+    });
+    if (hasProgramming) {
+      hasProgramming.addEventListener('change', () => {
+        updateProgrammingVisibility();
+        updateGeneralScore();
+      });
+    }
+    updateProgrammingVisibility();
+    updateGeneralScore();
+  })();
+</script>
+{% endblock %}
