@@ -54,11 +54,17 @@
           <div class="nav-group">
             <span class="nav-group-title">Aulas</span>
             <a href="{% url 'pedagogical_class_schedule' %}">Agenda</a>
+            <a href="{% url 'pedagogical_lesson_create' %}">Agendar Aula</a>
+            <a href="{% url 'pedagogical_trial_lessons' %}">Aulas Experimentais</a>
+            <a href="{% url 'pedagogical_students' %}">Alunos</a>
             <a href="{% url 'pedagogical_feedback_models' %}">Modelos de Feedback</a>
           </div>
           <div class="nav-group">
-            <span class="nav-group-title">Cursos</span>
-            <a href="{% url 'pedagogical_courses' %}">Gestão de Cursos</a>
+            <span class="nav-group-title">Configuração</span>
+            <a href="{% url 'pedagogical_courses' %}">Cursos</a>
+            <a href="{% url 'pedagogical_rooms' %}">Salas</a>
+            <a href="{% url 'pedagogical_time_slots' %}">Horários</a>
+            <a href="{% url 'pedagogical_holidays' %}">Feriados e Recessos</a>
           </div>
         </div>
       </details>

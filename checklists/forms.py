@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 from django import forms
 from django.conf import settings
@@ -10,8 +11,9 @@ from .backup import build_remote_path, split_remote_path
 from .models import (
     ActivitySuggestion, BackupConfiguration, ChecklistOccurrence, CommercialFunnel,
     CommercialOpportunity, Course, DailyNote, EmployeeAbsence, FunnelModel,
-    FunnelModelField, FunnelStage, FunnelType, MetricRecord, MetricType,
-    OpportunityOrigin, Position, TaskTemplate, UserProfile,
+    FunnelModelField, FunnelStage, FunnelType, Lesson, MetricRecord, MetricType,
+    OpportunityOrigin, PedagogicalStudent, Position, Room, SchoolHoliday,
+    TaskTemplate, TimeSlot, UserProfile,
 )
 from .security import generate_temporary_password, should_force_password_change_on_first_login
 
@@ -644,14 +646,20 @@ class CourseForm(forms.ModelForm):
 
     class Meta:
         model = Course
-        fields = ['name', 'value']
+        fields = ['name', 'description', 'value', 'kit_quantity', 'max_students_per_slot']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'input'}),
+            'description': forms.Textarea(attrs={'class': 'input', 'rows': 3}),
             'value': forms.NumberInput(attrs={'class': 'input', 'min': '0', 'step': '0.01'}),
+            'kit_quantity': forms.NumberInput(attrs={'class': 'input', 'min': '1'}),
+            'max_students_per_slot': forms.NumberInput(attrs={'class': 'input', 'min': '1'}),
         }
         labels = {
             'name': 'Nome',
+            'description': 'Descrição',
             'value': 'Valor',
+            'kit_quantity': 'Quantidade de kits',
+            'max_students_per_slot': 'Máximo de alunos por horário',
         }
 
     def __init__(self, *args, **kwargs):
@@ -677,12 +685,289 @@ class CourseForm(forms.ModelForm):
             raise forms.ValidationError('O valor do curso não pode ser negativo.')
         return value
 
+    def clean_kit_quantity(self):
+        value = self.cleaned_data.get('kit_quantity')
+        if not value or value < 1:
+            raise forms.ValidationError('Informe ao menos 1 kit disponível.')
+        return value
+
+    def clean_max_students_per_slot(self):
+        value = self.cleaned_data.get('max_students_per_slot')
+        if value is not None and value < 1:
+            raise forms.ValidationError('Informe um número maior que zero ou deixe em branco.')
+        return value
+
     def save(self, commit=True):
         course = super().save(commit=False)
         course.active = self.cleaned_data.get('status') == self.STATUS_ACTIVE
         if commit:
             course.save()
         return course
+
+
+class RoomForm(forms.ModelForm):
+    STATUS_ACTIVE = 'active'
+    STATUS_INACTIVE = 'inactive'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Ativa'),
+        (STATUS_INACTIVE, 'Desativada'),
+    ]
+
+    status = forms.ChoiceField(label='Status', choices=STATUS_CHOICES, widget=forms.Select(attrs={'class': 'input'}))
+
+    class Meta:
+        model = Room
+        fields = ['name', 'capacity']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'input'}),
+            'capacity': forms.NumberInput(attrs={'class': 'input', 'min': '1'}),
+        }
+        labels = {
+            'name': 'Nome',
+            'capacity': 'Capacidade',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['status'].initial = self.STATUS_ACTIVE if self.instance.active else self.STATUS_INACTIVE
+
+    def clean_name(self):
+        name = (self.cleaned_data.get('name') or '').strip()
+        if not name:
+            raise forms.ValidationError('Informe o nome da sala.')
+        qs = Room.objects.filter(name__iexact=name)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError('Já existe uma sala com este nome.')
+        return name
+
+    def clean_capacity(self):
+        value = self.cleaned_data.get('capacity')
+        if not value or value < 1:
+            raise forms.ValidationError('Informe capacidade maior que zero.')
+        return value
+
+    def save(self, commit=True):
+        room = super().save(commit=False)
+        room.active = self.cleaned_data.get('status') == self.STATUS_ACTIVE
+        if commit:
+            room.save()
+        return room
+
+
+class TimeSlotForm(forms.ModelForm):
+    STATUS_ACTIVE = 'active'
+    STATUS_INACTIVE = 'inactive'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Ativo'),
+        (STATUS_INACTIVE, 'Desativado'),
+    ]
+
+    status = forms.ChoiceField(label='Status', choices=STATUS_CHOICES, widget=forms.Select(attrs={'class': 'input'}))
+
+    class Meta:
+        model = TimeSlot
+        fields = ['weekday', 'start_time', 'end_time']
+        widgets = {
+            'weekday': forms.Select(attrs={'class': 'input'}),
+            'start_time': forms.TimeInput(attrs={'class': 'input', 'type': 'time'}),
+            'end_time': forms.TimeInput(attrs={'class': 'input', 'type': 'time'}),
+        }
+        labels = {
+            'weekday': 'Dia da semana',
+            'start_time': 'Início',
+            'end_time': 'Fim',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['status'].initial = self.STATUS_ACTIVE if self.instance.active else self.STATUS_INACTIVE
+
+    def clean(self):
+        cleaned = super().clean()
+        start_time = cleaned.get('start_time')
+        end_time = cleaned.get('end_time')
+        weekday = cleaned.get('weekday')
+        if start_time and end_time:
+            if start_time >= end_time:
+                raise forms.ValidationError('A hora fim deve ser maior que a hora de início.')
+            duration = (
+                datetime.combine(datetime.today(), end_time)
+                - datetime.combine(datetime.today(), start_time)
+            ).total_seconds() / 3600
+            if duration > 2:
+                raise forms.ValidationError('Horários pedagógicos podem durar no máximo 2 horas.')
+        if weekday is not None and start_time and end_time:
+            qs = TimeSlot.objects.filter(weekday=weekday, start_time=start_time, end_time=end_time)
+            if self.instance and self.instance.pk:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise forms.ValidationError('Já existe este horário para o dia selecionado.')
+        return cleaned
+
+    def save(self, commit=True):
+        slot = super().save(commit=False)
+        slot.active = self.cleaned_data.get('status') == self.STATUS_ACTIVE
+        if commit:
+            slot.save()
+        return slot
+
+
+class SchoolHolidayForm(forms.ModelForm):
+    STATUS_ACTIVE = 'active'
+    STATUS_INACTIVE = 'inactive'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Ativo'),
+        (STATUS_INACTIVE, 'Desativado'),
+    ]
+
+    status = forms.ChoiceField(label='Status', choices=STATUS_CHOICES, widget=forms.Select(attrs={'class': 'input'}))
+
+    class Meta:
+        model = SchoolHoliday
+        fields = ['description', 'kind', 'start_date', 'end_date']
+        widgets = {
+            'description': forms.TextInput(attrs={'class': 'input'}),
+            'kind': forms.Select(attrs={'class': 'input'}),
+            'start_date': forms.DateInput(attrs={'class': 'input', 'type': 'date'}),
+            'end_date': forms.DateInput(attrs={'class': 'input', 'type': 'date'}),
+        }
+        labels = {
+            'description': 'Descrição',
+            'kind': 'Tipo',
+            'start_date': 'Data inicial',
+            'end_date': 'Data final',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['status'].initial = self.STATUS_ACTIVE if self.instance.active else self.STATUS_INACTIVE
+
+    def clean(self):
+        cleaned = super().clean()
+        start_date = cleaned.get('start_date')
+        end_date = cleaned.get('end_date')
+        if start_date and end_date and end_date < start_date:
+            raise forms.ValidationError('A data final deve ser igual ou posterior à data inicial.')
+        return cleaned
+
+    def save(self, commit=True):
+        holiday = super().save(commit=False)
+        holiday.active = self.cleaned_data.get('status') == self.STATUS_ACTIVE
+        if commit:
+            holiday.save()
+        return holiday
+
+
+class PedagogicalStudentForm(forms.ModelForm):
+    class Meta:
+        model = PedagogicalStudent
+        fields = ['name', 'enrollment_number', 'responsible_name', 'whatsapp', 'status', 'source', 'external_id']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'input'}),
+            'enrollment_number': forms.TextInput(attrs={'class': 'input'}),
+            'responsible_name': forms.TextInput(attrs={'class': 'input'}),
+            'whatsapp': forms.TextInput(attrs={'class': 'input'}),
+            'status': forms.Select(attrs={'class': 'input'}),
+            'source': forms.TextInput(attrs={'class': 'input'}),
+            'external_id': forms.TextInput(attrs={'class': 'input'}),
+        }
+        labels = {
+            'name': 'Nome',
+            'enrollment_number': 'Matrícula',
+            'responsible_name': 'Responsável',
+            'whatsapp': 'WhatsApp',
+            'status': 'Status',
+            'source': 'Origem',
+            'external_id': 'ID externo',
+        }
+
+    def clean_name(self):
+        value = (self.cleaned_data.get('name') or '').strip()
+        if not value:
+            raise forms.ValidationError('Informe o nome do aluno.')
+        return value
+
+    def clean_enrollment_number(self):
+        value = (self.cleaned_data.get('enrollment_number') or '').strip()
+        if value:
+            qs = PedagogicalStudent.objects.filter(enrollment_number__iexact=value)
+            if self.instance and self.instance.pk:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise forms.ValidationError('Já existe um aluno com esta matrícula.')
+        return value
+
+
+class LessonForm(forms.ModelForm):
+    class Meta:
+        model = Lesson
+        fields = [
+            'lesson_type', 'student', 'student_name_snapshot', 'responsible_name_snapshot',
+            'whatsapp_snapshot', 'course', 'room', 'date', 'start_time', 'end_time',
+            'status', 'notes',
+        ]
+        widgets = {
+            'lesson_type': forms.Select(attrs={'class': 'input'}),
+            'student': forms.Select(attrs={'class': 'input'}),
+            'student_name_snapshot': forms.TextInput(attrs={'class': 'input'}),
+            'responsible_name_snapshot': forms.TextInput(attrs={'class': 'input'}),
+            'whatsapp_snapshot': forms.TextInput(attrs={'class': 'input'}),
+            'course': forms.Select(attrs={'class': 'input'}),
+            'room': forms.Select(attrs={'class': 'input'}),
+            'date': forms.DateInput(attrs={'class': 'input', 'type': 'date'}),
+            'start_time': forms.TimeInput(attrs={'class': 'input', 'type': 'time'}),
+            'end_time': forms.TimeInput(attrs={'class': 'input', 'type': 'time'}),
+            'status': forms.Select(attrs={'class': 'input'}),
+            'notes': forms.Textarea(attrs={'class': 'input', 'rows': 4}),
+        }
+        labels = {
+            'lesson_type': 'Tipo',
+            'student': 'Aluno matriculado',
+            'student_name_snapshot': 'Nome do interessado experimental',
+            'responsible_name_snapshot': 'Responsável',
+            'whatsapp_snapshot': 'WhatsApp',
+            'course': 'Curso',
+            'room': 'Sala',
+            'date': 'Data',
+            'start_time': 'Início',
+            'end_time': 'Fim',
+            'status': 'Status',
+            'notes': 'Observação',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        courses = Course.objects.filter(active=True).order_by('name')
+        rooms = Room.objects.filter(active=True).order_by('name')
+        students = PedagogicalStudent.objects.filter(status=PedagogicalStudent.STATUS_ACTIVE).order_by('name')
+        if self.instance and self.instance.pk:
+            if self.instance.course_id:
+                courses = Course.objects.filter(pk__in=list(courses.values_list('pk', flat=True)) + [self.instance.course_id]).order_by('name')
+            if self.instance.room_id:
+                rooms = Room.objects.filter(pk__in=list(rooms.values_list('pk', flat=True)) + [self.instance.room_id]).order_by('name')
+            if self.instance.student_id:
+                students = PedagogicalStudent.objects.filter(pk__in=list(students.values_list('pk', flat=True)) + [self.instance.student_id]).order_by('name')
+        self.fields['course'].queryset = courses
+        self.fields['room'].queryset = rooms
+        self.fields['student'].queryset = students
+        self.fields['student'].required = False
+        self.fields['student_name_snapshot'].required = False
+        self.fields['responsible_name_snapshot'].required = False
+        self.fields['whatsapp_snapshot'].required = False
+        self.fields['notes'].required = False
+
+    def clean(self):
+        cleaned = super().clean()
+        lesson_type = cleaned.get('lesson_type')
+        student = cleaned.get('student')
+        student_name = (cleaned.get('student_name_snapshot') or '').strip()
+        if lesson_type == Lesson.TYPE_REGULAR and not student:
+            self.add_error('student', 'Selecione um aluno para aula de matriculado.')
+        if lesson_type == Lesson.TYPE_TRIAL and not student_name:
+            self.add_error('student_name_snapshot', 'Informe o nome do interessado experimental.')
+        return cleaned
 
 
 class CommercialOpportunityForm(forms.ModelForm):

@@ -3,14 +3,15 @@
 <div class="page-title">
   <div>
     <h1>{{ title }}</h1>
-    <p class="muted">Configure status, nome, valor e quantidade de kits disponíveis para agendamento.</p>
+    <p class="muted">O sistema bloqueia falta de kit, sala cheia, feriado/recesso e conflito do aluno no mesmo horário.</p>
   </div>
-  <a class="btn" href="{% url 'pedagogical_courses' %}">Voltar</a>
+  <a class="btn" href="{% url 'pedagogical_class_schedule' %}">Voltar</a>
 </div>
 
 <section class="panel">
   <form method="post" class="form-grid">
     {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
     {{ form.as_p }}
     <button class="btn primary" type="submit">{{ submit_label }}</button>
   </form>

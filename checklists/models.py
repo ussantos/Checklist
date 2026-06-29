@@ -1,10 +1,27 @@
-from datetime import time
+from datetime import datetime, time
 
 from django.conf import settings
-from django.core.exceptions import ObjectDoesNotExist
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db import models
 from django.db.models.deletion import ProtectedError
 from django.utils import timezone
+
+
+LUNCH_START = time(12, 0)
+LUNCH_END = time(13, 0)
+
+
+def is_lunch_boundary_time(value):
+    return value is not None and LUNCH_START < value < LUNCH_END
+
+
+def lunch_boundary_errors(start_time, end_time):
+    errors = {}
+    if is_lunch_boundary_time(start_time):
+        errors['start_time'] = 'A aula/horário não pode iniciar entre 12:00 e 13:00.'
+    if is_lunch_boundary_time(end_time):
+        errors['end_time'] = 'A aula/horário não pode terminar entre 12:00 e 13:00.'
+    return errors
 
 
 class Position(models.Model):
@@ -366,7 +383,10 @@ class Course(models.Model):
     """Curso pedagógico administrado internamente."""
 
     name = models.CharField('Nome', max_length=160, unique=True)
+    description = models.TextField('Descrição', blank=True)
     value = models.DecimalField('Valor', max_digits=10, decimal_places=2)
+    kit_quantity = models.PositiveIntegerField('Quantidade de kits', default=1)
+    max_students_per_slot = models.PositiveIntegerField('Máximo de alunos por horário', null=True, blank=True)
     active = models.BooleanField('Ativo', default=True)
     created_at = models.DateTimeField('Criado em', auto_now_add=True)
     updated_at = models.DateTimeField('Atualizado em', auto_now=True)
@@ -378,6 +398,267 @@ class Course(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class Room(models.Model):
+    """Sala disponível para aulas pedagógicas."""
+
+    name = models.CharField('Nome', max_length=120, unique=True)
+    capacity = models.PositiveIntegerField('Capacidade', default=1)
+    active = models.BooleanField('Ativa', default=True)
+    created_at = models.DateTimeField('Criada em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizada em', auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Sala'
+        verbose_name_plural = 'Salas'
+
+    def __str__(self):
+        return self.name
+
+
+class TimeSlot(models.Model):
+    """Horário padrão usado na agenda pedagógica."""
+
+    WEEKDAY_CHOICES = [
+        (0, 'Segunda-feira'),
+        (1, 'Terça-feira'),
+        (2, 'Quarta-feira'),
+        (3, 'Quinta-feira'),
+        (4, 'Sexta-feira'),
+        (5, 'Sábado'),
+    ]
+
+    weekday = models.IntegerField('Dia da semana', choices=WEEKDAY_CHOICES)
+    start_time = models.TimeField('Início')
+    end_time = models.TimeField('Fim')
+    active = models.BooleanField('Ativo', default=True)
+    created_at = models.DateTimeField('Criado em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizado em', auto_now=True)
+
+    class Meta:
+        ordering = ['weekday', 'start_time', 'end_time']
+        constraints = [
+            models.UniqueConstraint(fields=['weekday', 'start_time', 'end_time'], name='unique_pedagogical_timeslot'),
+        ]
+        verbose_name = 'Horário pedagógico'
+        verbose_name_plural = 'Horários pedagógicos'
+
+    def __str__(self):
+        return f'{self.get_weekday_display()} {self.start_time:%H:%M}-{self.end_time:%H:%M}'
+
+    def clean(self):
+        errors = lunch_boundary_errors(self.start_time, self.end_time)
+        if self.start_time and self.end_time:
+            if self.start_time >= self.end_time:
+                errors['end_time'] = 'A hora fim deve ser maior que a hora de início.'
+            else:
+                duration = (
+                    datetime.combine(timezone.localdate(), self.end_time)
+                    - datetime.combine(timezone.localdate(), self.start_time)
+                ).total_seconds() / 3600
+                if duration > 2:
+                    errors['end_time'] = 'Horários pedagógicos podem durar no máximo 2 horas.'
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class SchoolHoliday(models.Model):
+    """Feriado ou recesso que bloqueia agendamentos pedagógicos."""
+
+    KIND_NATIONAL = 'national_holiday'
+    KIND_INSTITUTIONAL = 'institutional_holiday'
+    KIND_RECESS = 'recess'
+    KIND_CHOICES = [
+        (KIND_NATIONAL, 'Feriado nacional'),
+        (KIND_INSTITUTIONAL, 'Feriado institucional'),
+        (KIND_RECESS, 'Recesso'),
+    ]
+
+    start_date = models.DateField('Data inicial')
+    end_date = models.DateField('Data final')
+    kind = models.CharField('Tipo', max_length=30, choices=KIND_CHOICES, default=KIND_INSTITUTIONAL)
+    description = models.CharField('Descrição', max_length=180)
+    active = models.BooleanField('Ativo', default=True)
+    created_at = models.DateTimeField('Criado em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizado em', auto_now=True)
+
+    class Meta:
+        ordering = ['start_date', 'description']
+        verbose_name = 'Feriado/Recesso'
+        verbose_name_plural = 'Feriados/Recessos'
+
+    def __str__(self):
+        return f'{self.description} ({self.start_date:%d/%m/%Y} a {self.end_date:%d/%m/%Y})'
+
+
+class PedagogicalStudent(models.Model):
+    """Aluno matriculado disponível para agendamento de aulas regulares."""
+
+    STATUS_ACTIVE = 'active'
+    STATUS_INACTIVE = 'inactive'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Ativo'),
+        (STATUS_INACTIVE, 'Desativado'),
+    ]
+
+    name = models.CharField('Nome', max_length=160)
+    enrollment_number = models.CharField('Matrícula', max_length=80, blank=True)
+    responsible_name = models.CharField('Responsável', max_length=160, blank=True)
+    whatsapp = models.CharField('WhatsApp', max_length=30, blank=True)
+    status = models.CharField('Status', max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    source = models.CharField('Origem', max_length=80, blank=True)
+    external_id = models.CharField('ID externo', max_length=120, blank=True)
+    created_at = models.DateTimeField('Criado em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizado em', auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['enrollment_number'],
+                condition=~models.Q(enrollment_number=''),
+                name='unique_pedagogical_student_enrollment',
+            ),
+        ]
+        verbose_name = 'Aluno pedagógico'
+        verbose_name_plural = 'Alunos pedagógicos'
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def active(self):
+        return self.status == self.STATUS_ACTIVE
+
+
+class Lesson(models.Model):
+    """Aula regular ou experimental na agenda pedagógica."""
+
+    TYPE_REGULAR = 'regular'
+    TYPE_TRIAL = 'trial'
+    TYPE_CHOICES = [
+        (TYPE_REGULAR, 'Matriculado'),
+        (TYPE_TRIAL, 'Experimental'),
+    ]
+
+    STATUS_SCHEDULED = 'scheduled'
+    STATUS_DONE = 'done'
+    STATUS_CANCELLED = 'cancelled'
+    STATUS_ABSENT = 'absent'
+    STATUS_RESCHEDULED = 'rescheduled'
+    STATUS_CHOICES = [
+        (STATUS_SCHEDULED, 'Agendada'),
+        (STATUS_DONE, 'Realizada'),
+        (STATUS_CANCELLED, 'Cancelada'),
+        (STATUS_ABSENT, 'Falta'),
+        (STATUS_RESCHEDULED, 'Reagendada'),
+    ]
+    OCCUPYING_STATUSES = [STATUS_SCHEDULED, STATUS_DONE, STATUS_ABSENT]
+
+    student = models.ForeignKey(PedagogicalStudent, on_delete=models.PROTECT, related_name='lessons', verbose_name='Aluno', null=True, blank=True)
+    student_name_snapshot = models.CharField('Nome do aluno/interessado', max_length=160, blank=True)
+    responsible_name_snapshot = models.CharField('Responsável', max_length=160, blank=True)
+    whatsapp_snapshot = models.CharField('WhatsApp', max_length=30, blank=True)
+    lesson_type = models.CharField('Tipo', max_length=20, choices=TYPE_CHOICES, default=TYPE_REGULAR)
+    course = models.ForeignKey(Course, on_delete=models.PROTECT, related_name='lessons', verbose_name='Curso')
+    room = models.ForeignKey(Room, on_delete=models.PROTECT, related_name='lessons', verbose_name='Sala')
+    date = models.DateField('Data')
+    start_time = models.TimeField('Início')
+    end_time = models.TimeField('Fim')
+    status = models.CharField('Status', max_length=20, choices=STATUS_CHOICES, default=STATUS_SCHEDULED)
+    notes = models.TextField('Observação', blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='pedagogical_lessons_created', verbose_name='Criado por')
+    created_at = models.DateTimeField('Criado em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizado em', auto_now=True)
+
+    class Meta:
+        ordering = ['date', 'start_time', 'room__name', 'student_name_snapshot']
+        indexes = [
+            models.Index(fields=['date', 'start_time', 'end_time'], name='lesson_date_time_idx'),
+            models.Index(fields=['course', 'date', 'start_time'], name='lesson_course_date_idx'),
+            models.Index(fields=['room', 'date', 'start_time'], name='lesson_room_date_idx'),
+        ]
+        verbose_name = 'Aula'
+        verbose_name_plural = 'Aulas'
+
+    def __str__(self):
+        return f'{self.student_name_snapshot} - {self.course} - {self.date:%d/%m/%Y} {self.start_time:%H:%M}'
+
+    def _duration_hours(self):
+        if not self.date or not self.start_time or not self.end_time:
+            return None
+        start = datetime.combine(self.date, self.start_time)
+        end = datetime.combine(self.date, self.end_time)
+        return (end - start).total_seconds() / 3600
+
+    def _overlapping_lessons(self):
+        if not self.date or not self.start_time or not self.end_time:
+            return Lesson.objects.none()
+        lessons = Lesson.objects.filter(
+            date=self.date,
+            start_time__lt=self.end_time,
+            end_time__gt=self.start_time,
+            status__in=self.OCCUPYING_STATUSES,
+        )
+        if self.pk:
+            lessons = lessons.exclude(pk=self.pk)
+        return lessons
+
+    def assistant_warning_message(self):
+        if self.status not in self.OCCUPYING_STATUSES:
+            return ''
+        total = self._overlapping_lessons().count() + 1
+        if total >= 3:
+            return 'Atenção: este horário terá 3 ou mais alunos/aulas. É recomendável ter um assistente para apoiar o instrutor.'
+        return ''
+
+    def clean(self):
+        errors = {}
+        if self.start_time and self.end_time:
+            errors.update(lunch_boundary_errors(self.start_time, self.end_time))
+            if self.start_time >= self.end_time:
+                errors['end_time'] = 'A hora fim deve ser maior que a hora de início.'
+            elif self._duration_hours() is not None and self._duration_hours() > 2:
+                errors['end_time'] = 'A aula pode durar no máximo 2 horas.'
+
+        if self.lesson_type == self.TYPE_REGULAR and not self.student_id:
+            errors['student'] = 'Selecione um aluno para aula de matriculado.'
+        if self.lesson_type == self.TYPE_TRIAL and not (self.student_name_snapshot or '').strip():
+            errors['student_name_snapshot'] = 'Informe o nome do interessado experimental.'
+
+        if errors:
+            raise ValidationError(errors)
+
+        overlapping = self._overlapping_lessons()
+        if self.status in self.OCCUPYING_STATUSES:
+            if SchoolHoliday.objects.filter(active=True, start_date__lte=self.date, end_date__gte=self.date).exists():
+                errors['date'] = 'Não é permitido agendar aulas em feriado ou recesso.'
+
+            if self.course_id and self.course and overlapping.filter(course_id=self.course_id).count() >= self.course.kit_quantity:
+                errors['course'] = 'Não há kits disponíveis para este curso neste dia e horário.'
+
+            if self.room_id and self.room and overlapping.filter(room_id=self.room_id).count() >= self.room.capacity:
+                errors['room'] = 'Não há vagas disponíveis nesta sala neste dia e horário.'
+
+            if self.student_id and overlapping.filter(student_id=self.student_id).exists():
+                errors['student'] = 'Este aluno já possui aula neste dia e horário.'
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if self.student_id:
+            self.student_name_snapshot = self.student.name
+            self.responsible_name_snapshot = self.student.responsible_name
+            self.whatsapp_snapshot = self.student.whatsapp
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
 
 class UserProfile(models.Model):

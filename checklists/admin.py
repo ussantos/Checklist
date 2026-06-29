@@ -6,8 +6,8 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from .models import (
     ActivityLog, CommercialFunnel, CommercialOpportunity,
     CommercialOpportunityFollowUp, CommercialOpportunityStageEvent, FunnelModel,
-    FunnelModelField, FunnelStage, FunnelType, Course, OpportunityOrigin, Position,
-    UserProfile,
+    FunnelModelField, FunnelStage, FunnelType, Course, Lesson, OpportunityOrigin,
+    PedagogicalStudent, Position, Room, SchoolHoliday, TimeSlot, UserProfile,
 )
 
 
@@ -144,9 +144,59 @@ class CommercialOpportunityStageEventAdmin(admin.ModelAdmin):
 
 @admin.register(Course)
 class CourseAdmin(admin.ModelAdmin):
-    list_display = ('name', 'value', 'active')
+    list_display = ('name', 'value', 'kit_quantity', 'active')
     search_fields = ('name',)
     list_filter = ('active',)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Room)
+class RoomAdmin(admin.ModelAdmin):
+    list_display = ('name', 'capacity', 'active')
+    search_fields = ('name',)
+    list_filter = ('active',)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(TimeSlot)
+class TimeSlotAdmin(admin.ModelAdmin):
+    list_display = ('weekday', 'start_time', 'end_time', 'active')
+    list_filter = ('weekday', 'active')
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(SchoolHoliday)
+class SchoolHolidayAdmin(admin.ModelAdmin):
+    list_display = ('description', 'kind', 'start_date', 'end_date', 'active')
+    search_fields = ('description',)
+    list_filter = ('kind', 'active')
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PedagogicalStudent)
+class PedagogicalStudentAdmin(admin.ModelAdmin):
+    list_display = ('name', 'enrollment_number', 'responsible_name', 'whatsapp', 'status')
+    search_fields = ('name', 'enrollment_number', 'responsible_name', 'whatsapp')
+    list_filter = ('status',)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Lesson)
+class LessonAdmin(admin.ModelAdmin):
+    list_display = ('date', 'start_time', 'end_time', 'student_name_snapshot', 'lesson_type', 'course', 'room', 'status')
+    search_fields = ('student_name_snapshot', 'responsible_name_snapshot', 'whatsapp_snapshot')
+    list_filter = ('lesson_type', 'status', 'course', 'room', 'date')
+    readonly_fields = ('created_at', 'updated_at')
 
     def has_delete_permission(self, request, obj=None):
         return False

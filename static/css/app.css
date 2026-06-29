@@ -587,6 +587,17 @@ th {
   color: #991b1b;
 }
 
+.badge.pending,
+.badge.warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge.neutral {
+  background: #f2f4f7;
+  color: #475467;
+}
+
 .board-list {
   display: grid;
   gap: 14px;
