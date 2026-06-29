@@ -619,10 +619,19 @@ class CommercialOpportunityForm(forms.ModelForm):
         choices=STATUS_CHOICES,
         widget=forms.Select(attrs={'class': 'input'}),
     )
+    follow_up_note = forms.CharField(
+        label='Observação do follow-up',
+        required=False,
+        widget=forms.Textarea(attrs={'class': 'input', 'rows': 3}),
+        help_text='Opcional. Use para registrar contexto da mudança de follow-up.',
+    )
 
     class Meta:
         model = CommercialOpportunity
-        fields = ['title', 'commercial_funnel', 'funnel_type', 'stage', 'origin', 'contact_name', 'contact_phone', 'notes']
+        fields = [
+            'title', 'commercial_funnel', 'funnel_type', 'stage', 'origin',
+            'contact_name', 'contact_phone', 'next_follow_up_date', 'notes',
+        ]
         widgets = {
             'title': forms.TextInput(attrs={'class': 'input'}),
             'commercial_funnel': forms.Select(attrs={'class': 'input'}),
@@ -631,6 +640,7 @@ class CommercialOpportunityForm(forms.ModelForm):
             'origin': forms.Select(attrs={'class': 'input'}),
             'contact_name': forms.TextInput(attrs={'class': 'input'}),
             'contact_phone': forms.TextInput(attrs={'class': 'input'}),
+            'next_follow_up_date': forms.DateInput(attrs={'class': 'input', 'type': 'date'}),
             'notes': forms.Textarea(attrs={'class': 'input', 'rows': 4}),
         }
         labels = {
@@ -641,6 +651,7 @@ class CommercialOpportunityForm(forms.ModelForm):
             'origin': 'Origem',
             'contact_name': 'Nome do responsável',
             'contact_phone': 'Telefone do responsável',
+            'next_follow_up_date': 'Data próx. Follow-Up',
             'notes': 'Observações',
         }
 

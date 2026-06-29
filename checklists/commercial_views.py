@@ -11,8 +11,8 @@ from .forms import (
     FunnelModelForm, FunnelStageForm, FunnelTypeForm, OpportunityOriginForm,
 )
 from .models import (
-    CommercialFunnel, CommercialOpportunity, FunnelModel, FunnelModelField,
-    FunnelStage, FunnelType, OpportunityOrigin,
+    CommercialFunnel, CommercialOpportunity, CommercialOpportunityFollowUp,
+    FunnelModel, FunnelModelField, FunnelStage, FunnelType, OpportunityOrigin,
 )
 from .services import is_admin_user
 
@@ -24,7 +24,7 @@ FUNNEL_MODEL_AUDIT_FIELDS = ['name', 'active']
 COMMERCIAL_FUNNEL_AUDIT_FIELDS = ['name', 'funnel_model', 'active']
 COMMERCIAL_OPPORTUNITY_AUDIT_FIELDS = [
     'title', 'commercial_funnel', 'funnel_type', 'stage', 'origin', 'contact_name', 'contact_phone',
-    'field_values', 'notes', 'active',
+    'next_follow_up_date', 'field_values', 'notes', 'active',
 ]
 
 
@@ -74,6 +74,16 @@ def _opportunity_custom_values(opportunity):
             value = raw_value
         display_values.append({'label': field.name, 'value': value})
     return display_values
+
+
+def _record_follow_up_event(*, opportunity, actor, previous_date=None, note=''):
+    return CommercialOpportunityFollowUp.objects.create(
+        opportunity=opportunity,
+        previous_date=previous_date,
+        scheduled_date=opportunity.next_follow_up_date,
+        note=(note or '').strip(),
+        actor=actor,
+    )
 
 
 def _confirm_delete(request, *, title, object_label, warning, cancel_url):
@@ -784,6 +794,12 @@ def commercial_opportunity_create(request):
         if form.is_valid():
             opportunity = form.save()
             opportunity = _commercial_opportunity_queryset().get(pk=opportunity.pk)
+            _record_follow_up_event(
+                opportunity=opportunity,
+                actor=request.user,
+                previous_date=None,
+                note=form.cleaned_data.get('follow_up_note') or 'Follow-up inicial da oportunidade.',
+            )
             log_activity(
                 actor=request.user,
                 obj=opportunity,
@@ -813,12 +829,21 @@ def commercial_opportunity_create(request):
 def commercial_opportunity_edit(request, opportunity_id):
     opportunity = get_object_or_404(_commercial_opportunity_queryset(), pk=opportunity_id)
     previous_active = opportunity.active
+    previous_follow_up_date = opportunity.next_follow_up_date
     previous_values_full = _commercial_opportunity_snapshot(opportunity)
     if request.method == 'POST':
         form = CommercialOpportunityForm(request.POST, instance=opportunity)
         if form.is_valid():
             opportunity = form.save()
             opportunity = _commercial_opportunity_queryset().get(pk=opportunity.pk)
+            follow_up_note = form.cleaned_data.get('follow_up_note') or ''
+            if previous_follow_up_date != opportunity.next_follow_up_date or follow_up_note.strip():
+                _record_follow_up_event(
+                    opportunity=opportunity,
+                    actor=request.user,
+                    previous_date=previous_follow_up_date,
+                    note=follow_up_note,
+                )
             previous_values, new_values = changed_values(
                 previous_values_full,
                 _commercial_opportunity_snapshot(opportunity),
@@ -848,6 +873,7 @@ def commercial_opportunity_edit(request, opportunity_id):
         'title': f'Editar oportunidade - {opportunity.title}',
         'submit_label': 'Salvar alterações',
         'opportunity': opportunity,
+        'follow_up_events': opportunity.follow_up_events.select_related('actor')[:20],
         'is_admin': True,
     })
 

@@ -4,9 +4,9 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
 from .models import (
-    ActivityLog, CommercialFunnel, CommercialOpportunity, FunnelModel,
-    FunnelModelField, FunnelStage, FunnelType, OpportunityOrigin, Position,
-    UserProfile,
+    ActivityLog, CommercialFunnel, CommercialOpportunity,
+    CommercialOpportunityFollowUp, FunnelModel, FunnelModelField, FunnelStage,
+    FunnelType, OpportunityOrigin, Position, UserProfile,
 )
 
 
@@ -92,7 +92,7 @@ class CommercialFunnelAdmin(admin.ModelAdmin):
 
 @admin.register(CommercialOpportunity)
 class CommercialOpportunityAdmin(admin.ModelAdmin):
-    list_display = ('title', 'commercial_funnel', 'funnel_type', 'stage', 'origin', 'contact_name', 'contact_phone', 'active')
+    list_display = ('title', 'commercial_funnel', 'funnel_type', 'stage', 'origin', 'contact_name', 'contact_phone', 'next_follow_up_date', 'active')
     search_fields = (
         'title', 'contact_name', 'contact_phone', 'commercial_funnel__name',
         'funnel_type__name', 'stage__name', 'origin__name',
@@ -104,6 +104,17 @@ class CommercialOpportunityAdmin(admin.ModelAdmin):
         'origin',
         'commercial_funnel',
     )
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(CommercialOpportunityFollowUp)
+class CommercialOpportunityFollowUpAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'opportunity', 'previous_date', 'scheduled_date', 'actor')
+    list_filter = ('created_at', 'scheduled_date', 'actor')
+    search_fields = ('opportunity__title', 'note', 'actor__username')
+    readonly_fields = ('created_at',)
 
     def has_delete_permission(self, request, obj=None):
         return False

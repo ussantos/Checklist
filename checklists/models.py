@@ -277,6 +277,7 @@ class CommercialOpportunity(models.Model):
     origin = models.ForeignKey(OpportunityOrigin, on_delete=models.PROTECT, related_name='opportunities', verbose_name='Origem', null=True, blank=True)
     contact_name = models.CharField('Nome do responsável', max_length=120)
     contact_phone = models.CharField('Telefone do responsável', max_length=30)
+    next_follow_up_date = models.DateField('Data próx. Follow-Up')
     field_values = models.JSONField('Campos adicionais preenchidos', default=dict, blank=True)
     notes = models.TextField('Observações', blank=True)
     active = models.BooleanField('Ativa', default=True)
@@ -299,6 +300,26 @@ class CommercialOpportunity(models.Model):
     @property
     def funnel_model(self):
         return self.commercial_funnel.funnel_model
+
+
+class CommercialOpportunityFollowUp(models.Model):
+    """Histórico de alterações da próxima data de follow-up da oportunidade."""
+
+    opportunity = models.ForeignKey(CommercialOpportunity, on_delete=models.CASCADE, related_name='follow_up_events', verbose_name='Oportunidade')
+    previous_date = models.DateField('Data anterior', null=True, blank=True)
+    scheduled_date = models.DateField('Nova data de follow-up')
+    note = models.TextField('Observação', blank=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='commercial_follow_up_events', verbose_name='Usuário')
+    created_at = models.DateTimeField('Registrado em', auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        verbose_name = 'Histórico de follow-up comercial'
+        verbose_name_plural = 'Históricos de follow-up comercial'
+
+    def __str__(self):
+        return f'{self.opportunity} - {self.scheduled_date}'
+
 
 class UserProfile(models.Model):
     """Perfil local do usuário autenticado.

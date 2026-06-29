@@ -27,7 +27,7 @@
     {% for model in funnel_models %}
     <tr>
       <td>{{ model.name }}</td>
-      <td>Tipo, etapa, origem, responsável, telefone e status</td>
+      <td>Tipo, etapa, origem, responsável, telefone, data próx. Follow-Up e status</td>
       <td>
         {% if model.fields.all %}
           {{ model.fields.all|length }}

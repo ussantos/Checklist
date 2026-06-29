@@ -50,9 +50,19 @@
         {{ form.contact_phone.errors }}
       </p>
       <p>
+        {{ form.next_follow_up_date.label_tag }}
+        {{ form.next_follow_up_date }}
+        {{ form.next_follow_up_date.errors }}
+      </p>
+      <p>
         {{ form.status.label_tag }}
         {{ form.status }}
         {{ form.status.errors }}
+      </p>
+      <p>
+        {{ form.follow_up_note.label_tag }}
+        {{ form.follow_up_note }}
+        {{ form.follow_up_note.errors }}
       </p>
       <p>
         {{ form.notes.label_tag }}
@@ -90,6 +100,34 @@
     <button class="btn primary" type="submit">{{ submit_label }}</button>
   </div>
 </form>
+
+{% if follow_up_events %}
+<section class="panel">
+  <h2>Histórico de Follow-Ups</h2>
+  <table class="panel-table">
+    <thead>
+      <tr>
+        <th>Registrado em</th>
+        <th>Usuário</th>
+        <th>Data anterior</th>
+        <th>Nova data</th>
+        <th>Observação</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for event in follow_up_events %}
+      <tr>
+        <td>{{ event.created_at|date:"d/m/Y H:i" }}</td>
+        <td>{% if event.actor %}{{ event.actor.get_username }}{% else %}-{% endif %}</td>
+        <td>{% if event.previous_date %}{{ event.previous_date|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+        <td>{{ event.scheduled_date|date:"d/m/Y" }}</td>
+        <td>{{ event.note|default:"-" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
 
 {% if not opportunity %}
 <script>

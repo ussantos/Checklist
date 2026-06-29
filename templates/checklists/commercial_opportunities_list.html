@@ -66,6 +66,7 @@
           <th>Funil</th>
           <th>Origem</th>
           <th>Responsável</th>
+          <th>Próx. Follow-Up</th>
           <th>Campos adicionais</th>
           <th>Status</th>
           <th>Ações</th>
@@ -81,6 +82,7 @@
             {{ opportunity.contact_name }}<br>
             <span class="muted">{{ opportunity.contact_phone }}</span>
           </td>
+          <td>{{ opportunity.next_follow_up_date|date:"d/m/Y" }}</td>
           <td>
             {% if opportunity.custom_values %}
               {% for item in opportunity.custom_values %}
