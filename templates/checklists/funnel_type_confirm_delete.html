@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Excluir tipo de funil</h1>
+    <p class="muted">Esta ação só é permitida para tipos que nunca foram usados em funis.</p>
+  </div>
+  <a class="btn" href="{% url 'commercial_funnel_types' %}">Voltar</a>
+</div>
+
+<section class="panel">
+  <p>Confirma a exclusão do tipo de funil <strong>{{ funnel_type.name }}</strong>?</p>
+  <p class="muted">Se este tipo estiver vinculado a qualquer funil, ativo ou desativado, a exclusão será bloqueada.</p>
+  <form method="post" class="actions">
+    {% csrf_token %}
+    <a class="btn" href="{% url 'commercial_funnel_types' %}">Cancelar</a>
+    <button class="btn danger" type="submit">Excluir definitivamente</button>
+  </form>
+</section>
+{% endblock %}

@@ -3,7 +3,7 @@ from django.contrib.admin.sites import NotRegistered
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-from .models import ActivityLog, Position, UserProfile
+from .models import ActivityLog, FunnelType, Position, UserProfile
 
 
 User = get_user_model()
@@ -22,6 +22,16 @@ class ChecklistUserAdmin(DjangoUserAdmin):
 
 @admin.register(Position)
 class PositionAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'active')
+    search_fields = ('name', 'code')
+    list_filter = ('active',)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(FunnelType)
+class FunnelTypeAdmin(admin.ModelAdmin):
     list_display = ('name', 'code', 'active')
     search_fields = ('name', 'code')
     list_filter = ('active',)

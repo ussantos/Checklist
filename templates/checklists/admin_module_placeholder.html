@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>{{ title }}</h1>
+    <p class="muted">{{ section }}</p>
+  </div>
+  <a class="btn small" href="{% url 'dashboard' %}">Voltar ao dashboard</a>
+</div>
+
+<section class="panel">
+  <h2>Módulo em preparação</h2>
+  <p class="muted">
+    A estrutura de navegação já está criada. As regras e telas deste módulo serão implementadas na próxima etapa.
+  </p>
+</section>
+{% endblock %}

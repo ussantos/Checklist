@@ -22,6 +22,31 @@
   <nav>
     {% if is_admin or user.is_staff %}
       <a href="{% url 'dashboard' %}">Dashboard</a>
+      <details class="nav-menu">
+        <summary>Gestão Comercial</summary>
+        <div class="nav-submenu nav-submenu-groups">
+          <div class="nav-group">
+            <span class="nav-group-title">Funis</span>
+            <a href="{% url 'commercial_funnel_types' %}">Tipos</a>
+            <a href="{% url 'commercial_funnel_stages' %}">Etapas</a>
+            <a href="{% url 'commercial_funnel_models' %}">Modelos</a>
+          </div>
+          <div class="nav-group">
+            <a href="{% url 'commercial_indicators' %}">Indicadores</a>
+            <a href="{% url 'commercial_goals' %}">Metas</a>
+          </div>
+        </div>
+      </details>
+      <details class="nav-menu">
+        <summary>Gestão Pedagógica</summary>
+        <div class="nav-submenu nav-submenu-groups">
+          <div class="nav-group">
+            <span class="nav-group-title">Aulas</span>
+            <a href="{% url 'pedagogical_class_schedule' %}">Agenda</a>
+            <a href="{% url 'pedagogical_feedback_models' %}">Modelos de Feedback</a>
+          </div>
+        </div>
+      </details>
       <a href="{% url 'history' %}">Histórico</a>
       <a href="{% url 'admin_activity_history' %}">Auditoria</a>
       <a href="{% url 'backups' %}">Backups</a>

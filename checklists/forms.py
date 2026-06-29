@@ -6,7 +6,7 @@ from django.utils.text import slugify
 from .backup import build_remote_path, split_remote_path
 from .models import (
     ActivitySuggestion, BackupConfiguration, ChecklistOccurrence, DailyNote,
-    EmployeeAbsence, MetricRecord, MetricType, Position, TaskTemplate,
+    EmployeeAbsence, FunnelType, MetricRecord, MetricType, Position, TaskTemplate,
     UserProfile,
 )
 from .security import generate_temporary_password, should_force_password_change_on_first_login
@@ -269,6 +269,56 @@ class PositionForm(forms.ModelForm):
         if qs.exists():
             raise forms.ValidationError('Já existe um tipo/cargo com este código.')
         return code
+
+
+class FunnelTypeForm(forms.ModelForm):
+    code = forms.CharField(
+        label='Código/slug',
+        max_length=80,
+        required=False,
+        help_text='Opcional. Se ficar em branco, será gerado a partir do nome.',
+        widget=forms.TextInput(attrs={'class': 'input'}),
+    )
+
+    class Meta:
+        model = FunnelType
+        fields = ['name', 'code', 'active']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'input'}),
+            'active': forms.CheckboxInput(),
+        }
+        labels = {
+            'name': 'Nome do tipo de funil',
+            'active': 'Ativo',
+        }
+        help_texts = {
+            'active': 'Desmarque para impedir uso em novos funis sem apagar o tipo.',
+        }
+
+    def clean_name(self):
+        name = (self.cleaned_data.get('name') or '').strip()
+        if not name:
+            raise forms.ValidationError('Informe o nome do tipo de funil.')
+        qs = FunnelType.objects.filter(name__iexact=name)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError('Já existe um tipo de funil com este nome.')
+        return name
+
+    def clean(self):
+        cleaned = super().clean()
+        name = cleaned.get('name') or ''
+        code = slugify(cleaned.get('code') or name)
+        if not code:
+            raise forms.ValidationError('Informe um nome ou código válido.')
+        qs = FunnelType.objects.filter(code=code)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError('Já existe um tipo de funil com este código.')
+        cleaned['code'] = code
+        return cleaned
 
 
 class EmployeeAbsenceForm(forms.ModelForm):

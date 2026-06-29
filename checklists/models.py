@@ -1,6 +1,7 @@
 from datetime import time
 
 from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.utils import timezone
 
@@ -25,6 +26,51 @@ class Position(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class FunnelType(models.Model):
+    """Tipo comercial usado para classificar funis de atendimento."""
+
+    code = models.SlugField('Código', max_length=80, unique=True)
+    name = models.CharField('Tipo de funil', max_length=120, unique=True)
+    active = models.BooleanField('Ativo', default=True)
+    created_at = models.DateTimeField('Criado em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizado em', auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Tipo de funil'
+        verbose_name_plural = 'Tipos de funis'
+
+    def __str__(self):
+        return self.name
+
+    def has_funnel_usage(self):
+        for relation in self._meta.related_objects:
+            accessor_name = relation.get_accessor_name()
+            related_name = relation.related_model.__name__.lower()
+            accessor_lower = accessor_name.lower()
+            if (
+                'funnel' not in accessor_lower
+                and 'funil' not in accessor_lower
+                and 'funnel' not in related_name
+                and 'funil' not in related_name
+            ):
+                continue
+            try:
+                related = getattr(self, accessor_name, None)
+            except ObjectDoesNotExist:
+                continue
+            if related is None:
+                continue
+            if hasattr(related, 'exists') and related.exists():
+                return True
+            if not hasattr(related, 'exists'):
+                return True
+        return False
+
+    def can_be_deleted(self):
+        return not self.has_funnel_usage()
 
 
 class UserProfile(models.Model):

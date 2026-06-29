@@ -188,6 +188,68 @@ def operational_home(request):
     })
 
 
+def _admin_module_placeholder(request, *, title, section):
+    return render(request, 'checklists/admin_module_placeholder.html', {
+        'title': title,
+        'section': section,
+        'is_admin': True,
+    })
+
+
+@user_passes_test(_admin_check)
+def commercial_funnel_stages(request):
+    return _admin_module_placeholder(
+        request,
+        title='Etapas de Funis',
+        section='Gestão Comercial > Funis',
+    )
+
+
+@user_passes_test(_admin_check)
+def commercial_funnel_models(request):
+    return _admin_module_placeholder(
+        request,
+        title='Modelos de Funis',
+        section='Gestão Comercial > Funis',
+    )
+
+
+@user_passes_test(_admin_check)
+def commercial_indicators(request):
+    return _admin_module_placeholder(
+        request,
+        title='Indicadores',
+        section='Gestão Comercial',
+    )
+
+
+@user_passes_test(_admin_check)
+def commercial_goals(request):
+    return _admin_module_placeholder(
+        request,
+        title='Metas',
+        section='Gestão Comercial',
+    )
+
+
+@user_passes_test(_admin_check)
+def pedagogical_class_schedule(request):
+    return _admin_module_placeholder(
+        request,
+        title='Agenda de Aulas',
+        section='Gestão Pedagógica > Aulas',
+    )
+
+
+@user_passes_test(_admin_check)
+def pedagogical_feedback_models(request):
+    return _admin_module_placeholder(
+        request,
+        title='Modelos de Feedback de Aula',
+        section='Gestão Pedagógica > Aulas',
+    )
+
+
 @login_required
 def activities(request):
     if is_admin_user(request.user):

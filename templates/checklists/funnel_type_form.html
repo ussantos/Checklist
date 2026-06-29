@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>{{ title }}</h1>
+    <p class="muted">Cadastre apenas tipos de funis que façam sentido para a operação comercial.</p>
+  </div>
+  <a class="btn" href="{% url 'commercial_funnel_types' %}">Voltar</a>
+</div>
+
+<section class="panel">
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn primary" type="submit">{{ submit_label }}</button>
+  </form>
+</section>
+
+{% if funnel_type %}
+<section class="panel info-light">
+  <strong>Ativar ou desativar</strong>
+  <p class="muted">Tipos inativos deixam de ser usados em novos funis, mas permanecem disponíveis para histórico e auditoria.</p>
+</section>
+{% endif %}
+{% endblock %}
