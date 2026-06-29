@@ -3,6 +3,7 @@ from datetime import time
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
+from django.db.models.deletion import ProtectedError
 from django.utils import timezone
 
 
@@ -248,6 +249,21 @@ class FunnelModelField(models.Model):
     def __str__(self):
         return f'{self.funnel_model_id} - {self.name}'
 
+    def has_opportunity_usage(self):
+        if not self.pk or not self.funnel_model_id:
+            return False
+        return CommercialOpportunity.objects.filter(
+            commercial_funnel__funnel_model_id=self.funnel_model_id,
+        ).exists()
+
+    def delete(self, *args, **kwargs):
+        if self.has_opportunity_usage():
+            raise ProtectedError(
+                'Campos adicionais de modelos que ja possuem oportunidades nao podem ser removidos.',
+                [self],
+            )
+        return super().delete(*args, **kwargs)
+
 
 class CommercialFunnel(models.Model):
     """Funil comercial criado a partir de um modelo de funil."""
@@ -281,7 +297,7 @@ class CommercialOpportunity(models.Model):
     field_values = models.JSONField('Campos adicionais preenchidos', default=dict, blank=True)
     notes = models.TextField('Observações', blank=True)
     active = models.BooleanField('Ativa', default=True)
-    created_at = models.DateTimeField('Criada em', auto_now_add=True)
+    created_at = models.DateTimeField('Data de criação da oportunidade', auto_now_add=True)
     updated_at = models.DateTimeField('Atualizada em', auto_now=True)
 
     class Meta:
@@ -319,6 +335,31 @@ class CommercialOpportunityFollowUp(models.Model):
 
     def __str__(self):
         return f'{self.opportunity} - {self.scheduled_date}'
+
+
+class CommercialOpportunityStageEvent(models.Model):
+    """Histórico de alterações de etapa da oportunidade comercial."""
+
+    opportunity = models.ForeignKey(CommercialOpportunity, on_delete=models.CASCADE, related_name='stage_events', verbose_name='Oportunidade')
+    previous_stage = models.ForeignKey(FunnelStage, on_delete=models.SET_NULL, null=True, blank=True, related_name='commercial_stage_events_from', verbose_name='Etapa anterior')
+    new_stage = models.ForeignKey(FunnelStage, on_delete=models.SET_NULL, null=True, blank=True, related_name='commercial_stage_events_to', verbose_name='Nova etapa')
+    previous_stage_label = models.CharField('Nome da etapa anterior', max_length=120, blank=True)
+    new_stage_label = models.CharField('Nome da nova etapa', max_length=120, blank=True)
+    note = models.TextField('Observação', blank=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='commercial_stage_events', verbose_name='Usuário')
+    created_at = models.DateTimeField('Registrado em', auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        indexes = [
+            models.Index(fields=['opportunity', 'created_at'], name='chk_stageevt_opp_created_idx'),
+            models.Index(fields=['new_stage', 'created_at'], name='chk_stageevt_new_created_idx'),
+        ]
+        verbose_name = 'Histórico de etapa comercial'
+        verbose_name_plural = 'Históricos de etapas comerciais'
+
+    def __str__(self):
+        return f'{self.opportunity} - {self.previous_stage_label or "-"} -> {self.new_stage_label or "-"}'
 
 
 class UserProfile(models.Model):

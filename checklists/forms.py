@@ -4,6 +4,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.forms import inlineformset_factory
 from django.forms.models import BaseInlineFormSet
+from django.forms.formsets import DELETION_FIELD_NAME
 from django.utils.text import slugify
 from .backup import build_remote_path, split_remote_path
 from .models import (
@@ -520,11 +521,32 @@ class FunnelModelFieldForm(forms.ModelForm):
 
 
 class BaseFunnelModelFieldFormSet(BaseInlineFormSet):
+    def add_fields(self, form, index):
+        super().add_fields(form, index)
+        form.field_in_use = False
+        if not form.instance or not form.instance.pk:
+            return
+        if not form.instance.has_opportunity_usage():
+            return
+        form.field_in_use = True
+        delete_field = form.fields.get(DELETION_FIELD_NAME)
+        if delete_field:
+            delete_field.disabled = True
+            delete_field.help_text = 'Este campo ja esta vinculado a oportunidades e nao pode ser removido.'
+
     def clean(self):
         super().clean()
         names = set()
         for form in self.forms:
-            if not hasattr(form, 'cleaned_data') or form.cleaned_data.get('DELETE'):
+            if not hasattr(form, 'cleaned_data'):
+                continue
+            if form.cleaned_data.get('DELETE'):
+                if form.instance and form.instance.pk and form.instance.has_opportunity_usage():
+                    form.add_error(
+                        DELETION_FIELD_NAME,
+                        'Este campo nao pode ser removido porque o modelo ja possui oportunidades vinculadas.',
+                    )
+                    raise forms.ValidationError('Campos adicionais ja usados por oportunidades nao podem ser removidos.')
                 continue
             name = form.cleaned_data.get('name')
             if not name:

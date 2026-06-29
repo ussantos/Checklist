@@ -20,8 +20,9 @@
 
   <section class="panel info-light">
     <h2>Campos padrão de todo funil</h2>
-    <p class="muted">Estes campos sempre farão parte das oportunidades criadas a partir deste modelo. Os valores serão preenchidos no cadastro da oportunidade.</p>
+    <p class="muted">Estes campos sempre farão parte das oportunidades criadas a partir deste modelo. A data de criação é preenchida automaticamente pelo sistema; os demais valores serão preenchidos no cadastro da oportunidade.</p>
     <div class="standard-field-list">
+      <span>Data de criação da oportunidade</span>
       <span>Tipo</span>
       <span>Etapa</span>
       <span>Origem</span>
@@ -55,8 +56,11 @@
         <label>{{ field_form.options_text.label }}{{ field_form.options_text }}{{ field_form.options_text.errors }}</label>
         <div class="row-actions">
           <label class="checkbox-line">{{ field_form.required }} {{ field_form.required.label }}</label>
-          {% if field_form.instance.pk %}
+          {% if field_form.field_in_use %}
+            <span class="muted">Remoção bloqueada: o modelo já possui oportunidades vinculadas.</span>
+          {% elif field_form.instance.pk %}
             <label class="checkbox-line danger-text">{{ field_form.DELETE }} Remover campo</label>
+            {{ field_form.DELETE.errors }}
           {% endif %}
         </div>
       </article>

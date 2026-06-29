@@ -20,6 +20,16 @@
         {{ form.title.errors }}
       </p>
       <p>
+        <label>Data de criação da oportunidade</label>
+        <span class="readonly-field">
+          {% if opportunity %}
+            {{ opportunity.created_at|date:"d/m/Y" }}
+          {% else %}
+            Preenchida automaticamente ao criar
+          {% endif %}
+        </span>
+      </p>
+      <p>
         {{ form.commercial_funnel.label_tag }}
         {{ form.commercial_funnel }}
         {{ form.commercial_funnel.errors }}
@@ -100,6 +110,34 @@
     <button class="btn primary" type="submit">{{ submit_label }}</button>
   </div>
 </form>
+
+{% if stage_events %}
+<section class="panel">
+  <h2>Histórico de Etapas</h2>
+  <table class="panel-table">
+    <thead>
+      <tr>
+        <th>Registrado em</th>
+        <th>Usuário</th>
+        <th>Etapa anterior</th>
+        <th>Nova etapa</th>
+        <th>Observação</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for event in stage_events %}
+      <tr>
+        <td>{{ event.created_at|date:"d/m/Y H:i" }}</td>
+        <td>{% if event.actor %}{{ event.actor.get_username }}{% else %}-{% endif %}</td>
+        <td>{{ event.previous_stage_label|default:"-" }}</td>
+        <td>{{ event.new_stage_label|default:"-" }}</td>
+        <td>{{ event.note|default:"-" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
 
 {% if follow_up_events %}
 <section class="panel">

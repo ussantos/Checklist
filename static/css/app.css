@@ -802,6 +802,17 @@ th {
   margin-bottom: 6px;
 }
 
+.readonly-field {
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  display: block;
+  min-height: 42px;
+  padding: 10px 12px;
+  width: 100%;
+}
+
 .checkline {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

@@ -63,6 +63,7 @@
       <thead>
         <tr>
           <th>Oportunidade</th>
+          <th>Criada em</th>
           <th>Funil</th>
           <th>Origem</th>
           <th>Responsável</th>
@@ -76,6 +77,7 @@
         {% for opportunity in stage_group.list %}
         <tr>
           <td>{{ opportunity.title }}</td>
+          <td>{{ opportunity.created_at|date:"d/m/Y" }}</td>
           <td>{{ opportunity.commercial_funnel.name }}</td>
           <td>{{ opportunity.origin.name|default:"-" }}</td>
           <td>
