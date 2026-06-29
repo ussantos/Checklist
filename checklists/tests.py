@@ -6,8 +6,14 @@ from django.test import TestCase
 
 from .forms import CommercialOpportunityForm
 from .models import (
-    CommercialFunnel, Course, FunnelModel, FunnelStage, FunnelType, Lesson,
-    OpportunityOrigin, PedagogicalStudent, Room, SchoolHoliday, TimeSlot,
+    CommercialFunnel, CommercialOpportunity, Course, FunnelModel, FunnelStage,
+    FunnelType, Lesson, OpportunityOrigin, PedagogicalStudent, Room,
+    SchoolHoliday, TimeSlot,
+)
+from .sponte import (
+    import_sponte_free_class_records, import_sponte_student_records,
+    parse_sponte_free_class_schedule, parse_sponte_students,
+    sync_sponte_free_class_schedule,
 )
 
 
@@ -20,6 +26,16 @@ class PedagogicalSchedulingRulesTests(TestCase):
         self.room = Room.objects.create(name='Sala Maker', capacity=2, active=True)
         self.student = PedagogicalStudent.objects.create(name='Aluno Um', responsible_name='Responsável Um', whatsapp='21999990001')
         self.other_student = PedagogicalStudent.objects.create(name='Aluno Dois', responsible_name='Responsável Dois', whatsapp='21999990002')
+        self.funnel_model = FunnelModel.objects.create(name='Modelo teste', active=True)
+        self.funnel = CommercialFunnel.objects.create(name='Funil teste', funnel_model=self.funnel_model, active=True)
+        self.opportunity = CommercialOpportunity.objects.create(
+            title='Interessado Teste',
+            commercial_funnel=self.funnel,
+            contact_name='Responsável Teste',
+            contact_phone='21999990003',
+            next_follow_up_date=self.day,
+            active=True,
+        )
 
     def _lesson(self, **kwargs):
         data = {
@@ -45,6 +61,8 @@ class PedagogicalSchedulingRulesTests(TestCase):
     def test_trial_lessons_count_for_course_kits(self):
         self._lesson(
             lesson_type=Lesson.TYPE_TRIAL,
+            trial_kind=Lesson.TRIAL_KIND_EXPERIMENTAL,
+            commercial_opportunity=self.opportunity,
             student=None,
             student_name_snapshot='Interessado Teste',
         ).save()
@@ -116,6 +134,183 @@ class PedagogicalSchedulingRulesTests(TestCase):
         with self.assertRaises(ValidationError) as ctx:
             slot.save()
         self.assertIn('end_time', ctx.exception.message_dict)
+
+    def test_trial_or_play_lesson_requires_kind_and_opportunity(self):
+        lesson = self._lesson(
+            lesson_type=Lesson.TYPE_TRIAL,
+            student=None,
+            student_name_snapshot='Interessado sem vínculo',
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            lesson.save()
+        self.assertIn('trial_kind', ctx.exception.message_dict)
+        self.assertIn('commercial_opportunity', ctx.exception.message_dict)
+
+    def test_opportunity_can_have_multiple_trial_or_play_lessons(self):
+        self.course.kit_quantity = 5
+        self.course.save(update_fields=['kit_quantity'])
+        self.room.capacity = 5
+        self.room.save(update_fields=['capacity'])
+
+        self._lesson(
+            lesson_type=Lesson.TYPE_TRIAL,
+            trial_kind=Lesson.TRIAL_KIND_EXPERIMENTAL,
+            commercial_opportunity=self.opportunity,
+            student=None,
+            student_name_snapshot='Interessado Teste',
+        ).save()
+        self._lesson(
+            lesson_type=Lesson.TYPE_TRIAL,
+            trial_kind=Lesson.TRIAL_KIND_PLAY,
+            commercial_opportunity=self.opportunity,
+            student=None,
+            student_name_snapshot='Interessado Teste',
+            start_time=time(16, 0),
+            end_time=time(17, 0),
+        ).save()
+
+        self.assertEqual(self.opportunity.trial_lessons.count(), 2)
+
+
+class SponteStudentImportTests(TestCase):
+    SAMPLE_XML = '''<?xml version="1.0" encoding="utf-8"?>
+    <ArrayOfWsAluno xmlns="http://api.sponteeducacional.net.br/">
+      <wsAluno>
+        <AlunoID>123</AlunoID>
+        <Nome>Aluno Sponte</Nome>
+        <Celular>21999990000</Celular>
+        <NumeroMatricula>M123</NumeroMatricula>
+        <Situacao>Ativo</Situacao>
+        <Responsaveis>
+          <wsResponsaveis>
+            <ResponsavelID>10</ResponsavelID>
+            <Nome>Responsável Sponte</Nome>
+            <Parentesco>Mãe</Parentesco>
+          </wsResponsaveis>
+        </Responsaveis>
+      </wsAluno>
+    </ArrayOfWsAluno>
+    '''
+
+    def test_import_creates_student_from_sponte_xml(self):
+        records = parse_sponte_students(self.SAMPLE_XML)
+        result = import_sponte_student_records(records)
+
+        student = PedagogicalStudent.objects.get(external_id='123')
+        self.assertEqual(result.created, 1)
+        self.assertEqual(student.source, 'Sponte')
+        self.assertEqual(student.name, 'Aluno Sponte')
+        self.assertEqual(student.enrollment_number, 'M123')
+        self.assertEqual(student.responsible_name, 'Responsável Sponte')
+        self.assertEqual(student.whatsapp, '21999990000')
+        self.assertTrue(student.active)
+
+    def test_import_updates_existing_student_by_external_id(self):
+        PedagogicalStudent.objects.create(
+            name='Nome antigo',
+            enrollment_number='M123',
+            source='Sponte',
+            external_id='123',
+        )
+
+        records = parse_sponte_students(self.SAMPLE_XML)
+        result = import_sponte_student_records(records)
+
+        student = PedagogicalStudent.objects.get(external_id='123')
+        self.assertEqual(result.updated, 1)
+        self.assertEqual(PedagogicalStudent.objects.count(), 1)
+        self.assertEqual(student.name, 'Aluno Sponte')
+
+    def test_import_reuses_existing_student_by_enrollment_number(self):
+        PedagogicalStudent.objects.create(name='Aluno local', enrollment_number='M123')
+
+        records = parse_sponte_students(self.SAMPLE_XML)
+        result = import_sponte_student_records(records)
+
+        student = PedagogicalStudent.objects.get(enrollment_number='M123')
+        self.assertEqual(result.updated, 1)
+        self.assertEqual(PedagogicalStudent.objects.count(), 1)
+        self.assertEqual(student.source, 'Sponte')
+        self.assertEqual(student.external_id, '123')
+
+
+class SponteFreeClassScheduleSyncTests(TestCase):
+    SAMPLE_XML = '''<?xml version="1.0" encoding="utf-8"?>
+    <ArrayOfWsAgendaAluno xmlns="http://api.sponteeducacional.net.br/">
+      <wsAgendaAluno>
+        <AlunoID>123</AlunoID>
+        <AulasLivres>
+          <wsAulasLivresAluno>
+            <AulaLivreID>900</AulaLivreID>
+            <DataAula>07/07/2026</DataAula>
+            <HorarioInicial>14:00</HorarioInicial>
+            <HorarioFinal>16:00</HorarioFinal>
+            <CursoID>77</CursoID>
+            <NomeCurso>Techbot</NomeCurso>
+            <DisciplinaID>88</DisciplinaID>
+            <NomeDisciplina>Robótica</NomeDisciplina>
+            <ProfessorID>99</ProfessorID>
+            <NomeProfessor>Professor Sponte</NomeProfessor>
+            <Sala>Sala Maker</Sala>
+          </wsAulasLivresAluno>
+        </AulasLivres>
+      </wsAgendaAluno>
+    </ArrayOfWsAgendaAluno>
+    '''
+    EMPTY_XML = '''<?xml version="1.0" encoding="utf-8"?>
+    <ArrayOfWsAgendaAluno xmlns="http://api.sponteeducacional.net.br/">
+      <wsAgendaAluno>
+        <AlunoID>123</AlunoID>
+        <AulasLivres />
+      </wsAgendaAluno>
+    </ArrayOfWsAgendaAluno>
+    '''
+
+    def setUp(self):
+        self.student = PedagogicalStudent.objects.create(
+            name='Aluno Sponte',
+            responsible_name='Responsável',
+            whatsapp='21999990000',
+            source='Sponte',
+            external_id='123',
+        )
+
+    def test_import_creates_regular_read_only_sponte_lesson(self):
+        records = parse_sponte_free_class_schedule(self.SAMPLE_XML, student_external_id='123')
+        result = import_sponte_free_class_records(
+            self.student,
+            records,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+        )
+
+        lesson = Lesson.objects.get(external_id='aula_livre:123:900:2026-07-07')
+        self.assertEqual(result.created, 1)
+        self.assertEqual(lesson.source, Lesson.SOURCE_SPONTE)
+        self.assertEqual(lesson.lesson_type, Lesson.TYPE_REGULAR)
+        self.assertEqual(lesson.student, self.student)
+        self.assertEqual(lesson.course.name, 'Techbot')
+        self.assertEqual(lesson.room.name, 'Sala Maker')
+        self.assertTrue(lesson.is_sponte_synced)
+
+    def test_sync_cancels_stale_sponte_lesson_without_deleting(self):
+        records = parse_sponte_free_class_schedule(self.SAMPLE_XML, student_external_id='123')
+        import_sponte_free_class_records(
+            self.student,
+            records,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+        )
+
+        result = sync_sponte_free_class_schedule(
+            date(2026, 7, 1),
+            date(2026, 7, 31),
+            fetcher=lambda student_id, start, end: self.EMPTY_XML,
+        )
+
+        lesson = Lesson.objects.get(external_id='aula_livre:123:900:2026-07-07')
+        self.assertEqual(result.cancelled, 1)
+        self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
 
 
 class CommercialOpportunityInterestFormTests(TestCase):

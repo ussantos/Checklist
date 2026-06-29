@@ -259,6 +259,14 @@ img {
   flex-wrap: wrap;
 }
 
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
 .form-stack {
   display: grid;
   gap: 16px;

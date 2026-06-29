@@ -3,15 +3,20 @@
 <div class="page-title">
   <div>
     <h1>{{ title }}</h1>
-    <p class="muted">Aulas regulares e experimentais ocupam kits e vagas de sala no mesmo calendário.</p>
+    <p class="muted">Aulas regulares de Aulas Livres vêm do Sponte; Aulas Experimentais ou Play são agendadas no Checklist.</p>
   </div>
   <div class="row-actions">
     {% if trial_only %}
-      <a class="btn primary" href="{% url 'pedagogical_lesson_create' %}?tipo=trial">Nova aula experimental</a>
+      <a class="btn primary" href="{% url 'pedagogical_lesson_create' %}?tipo=trial">Nova aula Experimental ou Play</a>
       <a class="btn small" href="{% url 'pedagogical_class_schedule' %}">Ver agenda</a>
     {% else %}
-      <a class="btn primary" href="{% url 'pedagogical_lesson_create' %}">Nova aula</a>
-      <a class="btn small" href="{% url 'pedagogical_trial_lessons' %}">Aulas experimentais</a>
+      <form method="post" action="{% url 'pedagogical_lessons_sync_sponte' %}" class="inline-form">
+        {% csrf_token %}
+        <input type="hidden" name="data" value="{{ target_date|date:'Y-m-d' }}">
+        <button class="btn" type="submit">Sincronizar Sponte</button>
+      </form>
+      <a class="btn primary" href="{% url 'pedagogical_lesson_create' %}?tipo=trial">Nova aula Experimental ou Play</a>
+      <a class="btn small" href="{% url 'pedagogical_trial_lessons' %}">Aulas Experimentais ou Play</a>
     {% endif %}
   </div>
 </div>
@@ -63,6 +68,7 @@
       <th>Horário</th>
       <th>Aluno/Interessado</th>
       <th>Tipo</th>
+      <th>Origem</th>
       <th>Curso</th>
       <th>Sala</th>
       <th>Status</th>
@@ -77,8 +83,24 @@
       <td>
         {{ lesson.student_name_snapshot }}<br>
         <span class="muted">{{ lesson.responsible_name_snapshot|default:"-" }}{% if lesson.whatsapp_snapshot %} · {{ lesson.whatsapp_snapshot }}{% endif %}</span>
+        {% if lesson.commercial_opportunity %}
+          <br><span class="muted">Oportunidade: {{ lesson.commercial_opportunity.title }}</span>
+        {% endif %}
       </td>
-      <td>{{ lesson.get_lesson_type_display }}</td>
+      <td>
+        {% if lesson.lesson_type == "trial" and lesson.trial_kind %}
+          {{ lesson.get_trial_kind_display }}
+        {% else %}
+          {{ lesson.get_lesson_type_display }}
+        {% endif %}
+      </td>
+      <td>
+        {% if lesson.is_sponte_synced %}
+          <span class="badge neutral">Sponte</span>
+        {% else %}
+          <span class="badge pending">Checklist</span>
+        {% endif %}
+      </td>
       <td>{{ lesson.course.name }}</td>
       <td>{{ lesson.room.name }}</td>
       <td><span class="badge {% if lesson.status == 'scheduled' %}pending{% elif lesson.status == 'done' %}done{% elif lesson.status == 'cancelled' %}blocked{% else %}neutral{% endif %}">{{ lesson.get_status_display }}</span></td>
@@ -89,10 +111,16 @@
           <span class="muted">-</span>
         {% endif %}
       </td>
-      <td><a class="btn small" href="{% url 'pedagogical_lesson_edit' lesson.id %}">Editar</a></td>
+      <td>
+        {% if lesson.lesson_type == "regular" %}
+          <span class="muted">Somente leitura</span>
+        {% else %}
+          <a class="btn small" href="{% url 'pedagogical_lesson_edit' lesson.id %}">Editar</a>
+        {% endif %}
+      </td>
     </tr>
     {% empty %}
-    <tr><td colspan="8">Nenhuma aula encontrada para a data selecionada.</td></tr>
+    <tr><td colspan="9">Nenhuma aula encontrada para a data selecionada.</td></tr>
     {% endfor %}
   </tbody>
 </table>

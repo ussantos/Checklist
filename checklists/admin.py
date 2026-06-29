@@ -193,10 +193,16 @@ class PedagogicalStudentAdmin(admin.ModelAdmin):
 
 @admin.register(Lesson)
 class LessonAdmin(admin.ModelAdmin):
-    list_display = ('date', 'start_time', 'end_time', 'student_name_snapshot', 'lesson_type', 'course', 'room', 'status')
-    search_fields = ('student_name_snapshot', 'responsible_name_snapshot', 'whatsapp_snapshot')
-    list_filter = ('lesson_type', 'status', 'course', 'room', 'date')
-    readonly_fields = ('created_at', 'updated_at')
+    list_display = (
+        'date', 'start_time', 'end_time', 'student_name_snapshot', 'lesson_type',
+        'trial_kind', 'commercial_opportunity', 'source', 'course', 'room', 'status',
+    )
+    search_fields = (
+        'student_name_snapshot', 'responsible_name_snapshot', 'whatsapp_snapshot',
+        'commercial_opportunity__title', 'external_id',
+    )
+    list_filter = ('lesson_type', 'trial_kind', 'source', 'status', 'course', 'room', 'date')
+    readonly_fields = ('created_at', 'updated_at', 'synced_at')
 
     def has_delete_permission(self, request, obj=None):
         return False

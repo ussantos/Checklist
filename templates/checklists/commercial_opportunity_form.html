@@ -121,6 +121,46 @@
   </div>
 </form>
 
+{% if opportunity %}
+<section class="panel">
+  <div class="section-heading">
+    <div>
+      <h2>Aulas Experimentais ou Play</h2>
+      <p class="muted">Aulas locais vinculadas a esta oportunidade comercial.</p>
+    </div>
+    <a class="btn small" href="{% url 'pedagogical_lesson_create' %}?tipo=trial&oportunidade={{ opportunity.id }}">Agendar aula</a>
+  </div>
+  <table class="panel-table">
+    <thead>
+      <tr>
+        <th>Data</th>
+        <th>Horário</th>
+        <th>Tipo</th>
+        <th>Curso</th>
+        <th>Sala</th>
+        <th>Status</th>
+        <th>Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for lesson in trial_lessons %}
+      <tr>
+        <td>{{ lesson.date|date:"d/m/Y" }}</td>
+        <td>{{ lesson.start_time|time:"H:i" }} - {{ lesson.end_time|time:"H:i" }}</td>
+        <td>{{ lesson.get_trial_kind_display|default:"-" }}</td>
+        <td>{{ lesson.course.name }}</td>
+        <td>{{ lesson.room.name }}</td>
+        <td>{{ lesson.get_status_display }}</td>
+        <td><a class="btn small" href="{% url 'pedagogical_lesson_edit' lesson.id %}">Editar</a></td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7">Nenhuma Aula Experimental ou Play vinculada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
 {% if stage_events %}
 <section class="panel">
   <h2>Histórico de Etapas</h2>

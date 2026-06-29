@@ -908,6 +908,7 @@ def commercial_opportunity_edit(request, opportunity_id):
         'opportunity': opportunity,
         'follow_up_events': opportunity.follow_up_events.select_related('actor')[:20],
         'stage_events': opportunity.stage_events.select_related('actor', 'previous_stage', 'new_stage')[:20],
+        'trial_lessons': opportunity.trial_lessons.select_related('course', 'room').order_by('-date', '-start_time')[:20],
         'is_admin': True,
     })
 

@@ -4,7 +4,10 @@ from datetime import date, time, timedelta
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from checklists.models import Course, Position, Room, SchoolHoliday, TimeSlot
+from checklists.models import (
+    CommercialFunnel, Course, FunnelModel, FunnelModelField, FunnelStage,
+    FunnelType, OpportunityOrigin, Position, Room, SchoolHoliday, TimeSlot,
+)
 
 
 ROLE_POSITIONS = [
@@ -160,6 +163,80 @@ YEAR_END_RECESSES = [
 ]
 
 
+COMMERCIAL_FUNNEL_TYPES = [
+    {'code': 'interessados', 'name': 'Interessados', 'active': True},
+    {'code': 'qualificados', 'name': 'Qualificados', 'active': True},
+    {'code': 'parcerias', 'name': 'Parcerias', 'active': True},
+    {'code': 'posvenda', 'name': 'Pós-Venda', 'active': True},
+]
+
+COMMERCIAL_FUNNEL_STAGES = [
+    {'code': '1-contato', 'name': '1 - Contato', 'order': 0, 'active': True},
+    {'code': '2-negociando', 'name': '2 - Negociando', 'order': 0, 'active': True},
+    {'code': '3-aula-experimental', 'name': '3 - Aula Experimental', 'order': 0, 'active': True},
+    {'code': '4-follow-up', 'name': '4 - Follow-Up', 'order': 0, 'active': True},
+    {'code': '5-matricula', 'name': '5 - Matricula', 'order': 0, 'active': True},
+    {'code': '5-perdido', 'name': '5 - Perdido', 'order': 0, 'active': True},
+    {'code': '6-pos-venda', 'name': '6 - Pós-Venda', 'order': 0, 'active': True},
+]
+
+COMMERCIAL_OPPORTUNITY_ORIGINS = [
+    {'code': 'whatsapp', 'name': 'WhatsApp', 'active': True},
+    {'code': 'telefone', 'name': 'Telefone', 'active': True},
+    {'code': 'google', 'name': 'Google', 'active': True},
+    {'code': 'instagram', 'name': 'Instagram', 'active': True},
+    {'code': 'facebook', 'name': 'Facebook', 'active': True},
+    {'code': 'presencial', 'name': 'Presencial', 'active': True},
+    {'code': 'evento', 'name': 'Evento', 'active': True},
+    {'code': 'indicacao', 'name': 'Indicação', 'active': True},
+    {'code': 'site', 'name': 'Site', 'active': True},
+    {'code': 'youtube', 'name': 'YouTube', 'active': True},
+    {'code': 'tiktok', 'name': 'TikTok', 'active': True},
+]
+
+COMMERCIAL_FUNNEL_MODELS = [
+    {
+        'name': 'Modelo Cursos e Aulas Avulsas',
+        'active': True,
+        'fields': [
+            {
+                'name': 'Faixa Etária',
+                'field_type': FunnelModelField.TYPE_SELECT,
+                'required': False,
+                'options': ['3-4', '5-6', '7-8', '9-10', '11-12', '13-14', '15-16', '17-18', '18+'],
+                'order': 0,
+            },
+            {
+                'name': 'Observações',
+                'field_type': FunnelModelField.TYPE_TEXT,
+                'required': True,
+                'options': [],
+                'order': 1,
+            },
+        ],
+    },
+    {
+        'name': 'Modelo Parcerias',
+        'active': True,
+        'fields': [
+            {
+                'name': 'Observações',
+                'field_type': FunnelModelField.TYPE_TEXT,
+                'required': True,
+                'options': [],
+                'order': 0,
+            },
+        ],
+    },
+]
+
+COMMERCIAL_FUNNELS = [
+    {'name': 'Interessados', 'model_name': 'Modelo Cursos e Aulas Avulsas', 'active': True},
+    {'name': 'Qualificados', 'model_name': 'Modelo Cursos e Aulas Avulsas', 'active': True},
+    {'name': 'Parcerias', 'model_name': 'Modelo Parcerias', 'active': True},
+]
+
+
 class Command(BaseCommand):
     help = 'Cria/atualiza apenas cargos operacionais base, sem recriar atividades ou indicadores removidos.'
 
@@ -292,6 +369,77 @@ class Command(BaseCommand):
             if created:
                 recesses_created += 1
 
+        funnel_types_created = 0
+        for data in COMMERCIAL_FUNNEL_TYPES:
+            _, created = FunnelType.objects.get_or_create(
+                code=data['code'],
+                defaults={'name': data['name'], 'active': data['active']},
+            )
+            if created:
+                funnel_types_created += 1
+
+        funnel_stages_created = 0
+        for data in COMMERCIAL_FUNNEL_STAGES:
+            _, created = FunnelStage.objects.get_or_create(
+                code=data['code'],
+                defaults={
+                    'name': data['name'],
+                    'description': data.get('description', ''),
+                    'order': data['order'],
+                    'active': data['active'],
+                },
+            )
+            if created:
+                funnel_stages_created += 1
+
+        opportunity_origins_created = 0
+        for data in COMMERCIAL_OPPORTUNITY_ORIGINS:
+            _, created = OpportunityOrigin.objects.get_or_create(
+                code=data['code'],
+                defaults={
+                    'name': data['name'],
+                    'description': data.get('description', ''),
+                    'active': data['active'],
+                },
+            )
+            if created:
+                opportunity_origins_created += 1
+
+        funnel_models_created = 0
+        funnel_model_fields_created = 0
+        for data in COMMERCIAL_FUNNEL_MODELS:
+            funnel_model, created = FunnelModel.objects.get_or_create(
+                name=data['name'],
+                defaults={'active': data['active']},
+            )
+            if created:
+                funnel_models_created += 1
+            for field_data in data['fields']:
+                _, field_created = FunnelModelField.objects.get_or_create(
+                    funnel_model=funnel_model,
+                    name=field_data['name'],
+                    defaults={
+                        'field_type': field_data['field_type'],
+                        'required': field_data['required'],
+                        'options': field_data['options'],
+                        'order': field_data['order'],
+                    },
+                )
+                if field_created:
+                    funnel_model_fields_created += 1
+
+        commercial_funnels_created = 0
+        for data in COMMERCIAL_FUNNELS:
+            funnel_model = FunnelModel.objects.filter(name=data['model_name']).first()
+            if not funnel_model:
+                continue
+            _, created = CommercialFunnel.objects.get_or_create(
+                name=data['name'],
+                defaults={'funnel_model': funnel_model, 'active': data['active']},
+            )
+            if created:
+                commercial_funnels_created += 1
+
         self.stdout.write(
             self.style.SUCCESS(
                 'Seed operacional concluído. '
@@ -303,6 +451,12 @@ class Command(BaseCommand):
                 f'Feriados locais novos: {holidays_created}. '
                 f'Feriados nacionais novos: {national_holidays_created}. '
                 f'Feriados nacionais atualizados: {national_holidays_updated}. '
-                f'Recessos novos: {recesses_created}.'
+                f'Recessos novos: {recesses_created}. '
+                f'Tipos de funis novos: {funnel_types_created}. '
+                f'Etapas de funis novas: {funnel_stages_created}. '
+                f'Origens novas: {opportunity_origins_created}. '
+                f'Modelos de funis novos: {funnel_models_created}. '
+                f'Campos de modelos novos: {funnel_model_fields_created}. '
+                f'Funis novos: {commercial_funnels_created}.'
             )
         )

@@ -562,11 +562,25 @@ class PedagogicalStudent(models.Model):
 class Lesson(models.Model):
     """Aula regular ou experimental na agenda pedagógica."""
 
+    SOURCE_LOCAL = 'local'
+    SOURCE_SPONTE = 'sponte'
+    SOURCE_CHOICES = [
+        (SOURCE_LOCAL, 'Checklist'),
+        (SOURCE_SPONTE, 'Sponte'),
+    ]
+
     TYPE_REGULAR = 'regular'
     TYPE_TRIAL = 'trial'
     TYPE_CHOICES = [
         (TYPE_REGULAR, 'Matriculado'),
-        (TYPE_TRIAL, 'Experimental'),
+        (TYPE_TRIAL, 'Experimental ou Play'),
+    ]
+
+    TRIAL_KIND_EXPERIMENTAL = 'experimental'
+    TRIAL_KIND_PLAY = 'play'
+    TRIAL_KIND_CHOICES = [
+        (TRIAL_KIND_EXPERIMENTAL, 'Experimental'),
+        (TRIAL_KIND_PLAY, 'Play'),
     ]
 
     STATUS_SCHEDULED = 'scheduled'
@@ -588,6 +602,8 @@ class Lesson(models.Model):
     responsible_name_snapshot = models.CharField('Responsável', max_length=160, blank=True)
     whatsapp_snapshot = models.CharField('WhatsApp', max_length=30, blank=True)
     lesson_type = models.CharField('Tipo', max_length=20, choices=TYPE_CHOICES, default=TYPE_REGULAR)
+    trial_kind = models.CharField('Tipo de aula experimental ou Play', max_length=20, choices=TRIAL_KIND_CHOICES, blank=True)
+    commercial_opportunity = models.ForeignKey(CommercialOpportunity, on_delete=models.PROTECT, related_name='trial_lessons', verbose_name='Oportunidade', null=True, blank=True)
     course = models.ForeignKey(Course, on_delete=models.PROTECT, related_name='lessons', verbose_name='Curso')
     room = models.ForeignKey(Room, on_delete=models.PROTECT, related_name='lessons', verbose_name='Sala')
     date = models.DateField('Data')
@@ -595,6 +611,9 @@ class Lesson(models.Model):
     end_time = models.TimeField('Fim')
     status = models.CharField('Status', max_length=20, choices=STATUS_CHOICES, default=STATUS_SCHEDULED)
     notes = models.TextField('Observação', blank=True)
+    source = models.CharField('Origem', max_length=30, choices=SOURCE_CHOICES, default=SOURCE_LOCAL)
+    external_id = models.CharField('ID externo', max_length=160, blank=True)
+    synced_at = models.DateTimeField('Sincronizada em', null=True, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='pedagogical_lessons_created', verbose_name='Criado por')
     created_at = models.DateTimeField('Criado em', auto_now_add=True)
     updated_at = models.DateTimeField('Atualizado em', auto_now=True)
@@ -605,6 +624,15 @@ class Lesson(models.Model):
             models.Index(fields=['date', 'start_time', 'end_time'], name='lesson_date_time_idx'),
             models.Index(fields=['course', 'date', 'start_time'], name='lesson_course_date_idx'),
             models.Index(fields=['room', 'date', 'start_time'], name='lesson_room_date_idx'),
+            models.Index(fields=['source', 'external_id'], name='lesson_source_external_idx'),
+            models.Index(fields=['commercial_opportunity', 'date'], name='lesson_opp_date_idx'),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['source', 'external_id'],
+                condition=~models.Q(external_id=''),
+                name='unique_lesson_source_external',
+            ),
         ]
         verbose_name = 'Aula'
         verbose_name_plural = 'Aulas'
@@ -632,6 +660,10 @@ class Lesson(models.Model):
             lessons = lessons.exclude(pk=self.pk)
         return lessons
 
+    @property
+    def is_sponte_synced(self):
+        return self.source == self.SOURCE_SPONTE
+
     def assistant_warning_message(self):
         if self.status not in self.OCCUPYING_STATUSES:
             return ''
@@ -643,22 +675,28 @@ class Lesson(models.Model):
     def clean(self):
         errors = {}
         if self.start_time and self.end_time:
-            errors.update(lunch_boundary_errors(self.start_time, self.end_time))
+            if not self.is_sponte_synced:
+                errors.update(lunch_boundary_errors(self.start_time, self.end_time))
             if self.start_time >= self.end_time:
                 errors['end_time'] = 'A hora fim deve ser maior que a hora de início.'
-            elif self._duration_hours() is not None and self._duration_hours() > 2:
+            elif not self.is_sponte_synced and self._duration_hours() is not None and self._duration_hours() > 2:
                 errors['end_time'] = 'A aula pode durar no máximo 2 horas.'
 
         if self.lesson_type == self.TYPE_REGULAR and not self.student_id:
             errors['student'] = 'Selecione um aluno para aula de matriculado.'
-        if self.lesson_type == self.TYPE_TRIAL and not (self.student_name_snapshot or '').strip():
-            errors['student_name_snapshot'] = 'Informe o nome do interessado experimental.'
+        if self.lesson_type == self.TYPE_TRIAL:
+            if not self.trial_kind:
+                errors['trial_kind'] = 'Informe se a aula é Experimental ou Play.'
+            if not self.commercial_opportunity_id:
+                errors['commercial_opportunity'] = 'Vincule a aula a uma oportunidade comercial.'
+            if not (self.student_name_snapshot or '').strip() and not self.commercial_opportunity_id:
+                errors['student_name_snapshot'] = 'Informe o nome do interessado.'
 
         if errors:
             raise ValidationError(errors)
 
         overlapping = self._overlapping_lessons()
-        if self.status in self.OCCUPYING_STATUSES:
+        if self.status in self.OCCUPYING_STATUSES and not self.is_sponte_synced:
             if SchoolHoliday.objects.filter(active=True, start_date__lte=self.date, end_date__gte=self.date).exists():
                 errors['date'] = 'Não é permitido agendar aulas em feriado ou recesso.'
 
@@ -679,6 +717,13 @@ class Lesson(models.Model):
             self.student_name_snapshot = self.student.name
             self.responsible_name_snapshot = self.student.responsible_name
             self.whatsapp_snapshot = self.student.whatsapp
+        elif self.commercial_opportunity_id:
+            if not self.student_name_snapshot:
+                self.student_name_snapshot = self.commercial_opportunity.title
+            if not self.responsible_name_snapshot:
+                self.responsible_name_snapshot = self.commercial_opportunity.contact_name
+            if not self.whatsapp_snapshot:
+                self.whatsapp_snapshot = self.commercial_opportunity.contact_phone
         self.full_clean()
         return super().save(*args, **kwargs)
 

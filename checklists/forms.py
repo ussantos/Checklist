@@ -905,12 +905,15 @@ class LessonForm(forms.ModelForm):
     class Meta:
         model = Lesson
         fields = [
-            'lesson_type', 'student', 'student_name_snapshot', 'responsible_name_snapshot',
+            'lesson_type', 'trial_kind', 'commercial_opportunity',
+            'student', 'student_name_snapshot', 'responsible_name_snapshot',
             'whatsapp_snapshot', 'course', 'room', 'date', 'start_time', 'end_time',
             'status', 'notes',
         ]
         widgets = {
             'lesson_type': forms.Select(attrs={'class': 'input'}),
+            'trial_kind': forms.Select(attrs={'class': 'input'}),
+            'commercial_opportunity': forms.Select(attrs={'class': 'input'}),
             'student': forms.Select(attrs={'class': 'input'}),
             'student_name_snapshot': forms.TextInput(attrs={'class': 'input'}),
             'responsible_name_snapshot': forms.TextInput(attrs={'class': 'input'}),
@@ -925,8 +928,10 @@ class LessonForm(forms.ModelForm):
         }
         labels = {
             'lesson_type': 'Tipo',
+            'trial_kind': 'Experimental ou Play',
+            'commercial_opportunity': 'Oportunidade',
             'student': 'Aluno matriculado',
-            'student_name_snapshot': 'Nome do interessado experimental',
+            'student_name_snapshot': 'Nome do interessado',
             'responsible_name_snapshot': 'Responsável',
             'whatsapp_snapshot': 'WhatsApp',
             'course': 'Curso',
@@ -939,10 +944,16 @@ class LessonForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        self.trial_only = kwargs.pop('trial_only', False)
         super().__init__(*args, **kwargs)
+        if self.trial_only:
+            self.fields['lesson_type'].initial = Lesson.TYPE_TRIAL
+            self.fields['lesson_type'].widget = forms.HiddenInput()
+            self.fields['student'].widget = forms.HiddenInput()
         courses = Course.objects.filter(active=True).order_by('name')
         rooms = Room.objects.filter(active=True).order_by('name')
         students = PedagogicalStudent.objects.filter(status=PedagogicalStudent.STATUS_ACTIVE).order_by('name')
+        opportunities = CommercialOpportunity.objects.filter(active=True).order_by('title')
         if self.instance and self.instance.pk:
             if self.instance.course_id:
                 courses = Course.objects.filter(pk__in=list(courses.values_list('pk', flat=True)) + [self.instance.course_id]).order_by('name')
@@ -950,24 +961,40 @@ class LessonForm(forms.ModelForm):
                 rooms = Room.objects.filter(pk__in=list(rooms.values_list('pk', flat=True)) + [self.instance.room_id]).order_by('name')
             if self.instance.student_id:
                 students = PedagogicalStudent.objects.filter(pk__in=list(students.values_list('pk', flat=True)) + [self.instance.student_id]).order_by('name')
+            if self.instance.commercial_opportunity_id:
+                opportunities = CommercialOpportunity.objects.filter(pk__in=list(opportunities.values_list('pk', flat=True)) + [self.instance.commercial_opportunity_id]).order_by('title')
         self.fields['course'].queryset = courses
         self.fields['room'].queryset = rooms
         self.fields['student'].queryset = students
+        self.fields['commercial_opportunity'].queryset = opportunities
         self.fields['student'].required = False
         self.fields['student_name_snapshot'].required = False
         self.fields['responsible_name_snapshot'].required = False
         self.fields['whatsapp_snapshot'].required = False
         self.fields['notes'].required = False
+        self.fields['commercial_opportunity'].required = self.trial_only
+        self.fields['trial_kind'].required = self.trial_only
+        if self.trial_only and not self.fields['trial_kind'].initial and not self.initial.get('trial_kind'):
+            self.fields['trial_kind'].initial = Lesson.TRIAL_KIND_EXPERIMENTAL
 
     def clean(self):
         cleaned = super().clean()
+        if self.trial_only:
+            cleaned['lesson_type'] = Lesson.TYPE_TRIAL
         lesson_type = cleaned.get('lesson_type')
         student = cleaned.get('student')
+        opportunity = cleaned.get('commercial_opportunity')
+        trial_kind = cleaned.get('trial_kind')
         student_name = (cleaned.get('student_name_snapshot') or '').strip()
         if lesson_type == Lesson.TYPE_REGULAR and not student:
             self.add_error('student', 'Selecione um aluno para aula de matriculado.')
-        if lesson_type == Lesson.TYPE_TRIAL and not student_name:
-            self.add_error('student_name_snapshot', 'Informe o nome do interessado experimental.')
+        if lesson_type == Lesson.TYPE_TRIAL:
+            if not trial_kind:
+                self.add_error('trial_kind', 'Informe se a aula é Experimental ou Play.')
+            if not opportunity:
+                self.add_error('commercial_opportunity', 'Vincule a aula a uma oportunidade comercial.')
+            if not student_name and not opportunity:
+                self.add_error('student_name_snapshot', 'Informe o nome do interessado.')
         return cleaned
 
 

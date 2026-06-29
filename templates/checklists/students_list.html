@@ -5,7 +5,13 @@
     <h1>Alunos</h1>
     <p class="muted">Alunos matriculados disponíveis para aulas regulares na agenda.</p>
   </div>
-  <a class="btn primary" href="{% url 'pedagogical_student_create' %}">Inserir aluno</a>
+  <div class="row-actions">
+    <form method="post" action="{% url 'pedagogical_students_import_sponte' %}" class="inline-form">
+      {% csrf_token %}
+      <button class="btn" type="submit">Importar do Sponte</button>
+    </form>
+    <a class="btn primary" href="{% url 'pedagogical_student_create' %}">Inserir aluno</a>
+  </div>
 </div>
 
 <form method="get" class="filters panel">

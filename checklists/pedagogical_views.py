@@ -12,8 +12,12 @@ from .forms import (
     CourseForm, LessonForm, PedagogicalStudentForm, RoomForm, SchoolHolidayForm,
     TimeSlotForm,
 )
-from .models import Course, Lesson, PedagogicalStudent, Room, SchoolHoliday, TimeSlot
+from .models import CommercialOpportunity, Course, Lesson, PedagogicalStudent, Room, SchoolHoliday, TimeSlot
 from .services import is_admin_user
+from .sponte import (
+    SponteClientError, SponteConfigurationError, default_sponte_schedule_window,
+    import_sponte_students, sync_sponte_free_class_schedule,
+)
 
 
 COURSE_AUDIT_FIELDS = ['name', 'description', 'value', 'kit_quantity', 'max_students_per_slot', 'active']
@@ -22,9 +26,9 @@ TIME_SLOT_AUDIT_FIELDS = ['weekday', 'start_time', 'end_time', 'active']
 HOLIDAY_AUDIT_FIELDS = ['description', 'kind', 'start_date', 'end_date', 'active']
 STUDENT_AUDIT_FIELDS = ['name', 'enrollment_number', 'responsible_name', 'whatsapp', 'status', 'source', 'external_id']
 LESSON_AUDIT_FIELDS = [
-    'lesson_type', 'student', 'student_name_snapshot', 'responsible_name_snapshot',
+    'lesson_type', 'trial_kind', 'commercial_opportunity', 'student', 'student_name_snapshot', 'responsible_name_snapshot',
     'whatsapp_snapshot', 'course', 'room', 'date', 'start_time', 'end_time',
-    'status', 'notes', 'created_by',
+    'status', 'notes', 'source', 'external_id', 'synced_at', 'created_by',
 ]
 
 
@@ -379,6 +383,51 @@ def students_list(request):
     })
 
 
+@require_POST
+@user_passes_test(_admin_check)
+def students_import_sponte(request):
+    try:
+        result = import_sponte_students()
+    except SponteConfigurationError as exc:
+        messages.error(request, str(exc))
+        return redirect('pedagogical_students')
+    except SponteClientError as exc:
+        messages.error(request, f'Importação do Sponte não concluída: {exc}')
+        return redirect('pedagogical_students')
+
+    if result.total_processed:
+        messages.success(
+            request,
+            'Importação do Sponte concluída: '
+            f'{result.created} criado(s), {result.updated} atualizado(s), '
+            f'{result.unchanged} sem alteração.'
+        )
+    else:
+        messages.warning(request, 'Importação do Sponte concluída sem alunos processados.')
+    if result.skipped:
+        messages.warning(request, f'{result.skipped} aluno(s) foram ignorados por dados incompletos.')
+    for error in result.errors[:5]:
+        messages.warning(request, error)
+
+    log_activity(
+        actor=request.user,
+        action='Importação de alunos Sponte',
+        object_type='PedagogicalStudent',
+        object_label='Importação de alunos Sponte',
+        details=(
+            f'Alunos criados: {result.created}; atualizados: {result.updated}; '
+            f'sem alteração: {result.unchanged}; ignorados: {result.skipped}.'
+        ),
+        new_values={
+            'created': result.created,
+            'updated': result.updated,
+            'unchanged': result.unchanged,
+            'skipped': result.skipped,
+        },
+    )
+    return redirect('pedagogical_students')
+
+
 @user_passes_test(_admin_check)
 def student_create(request):
     if request.method == 'POST':
@@ -426,7 +475,9 @@ def student_toggle(request, student_id):
 
 
 def _lesson_queryset():
-    return Lesson.objects.select_related('student', 'course', 'room', 'created_by').order_by('date', 'start_time', 'room__name')
+    return Lesson.objects.select_related(
+        'student', 'commercial_opportunity', 'course', 'room', 'created_by',
+    ).order_by('date', 'start_time', 'room__name')
 
 
 def _apply_lesson_filters(request, lessons):
@@ -480,6 +531,58 @@ def lesson_agenda(request):
     })
 
 
+@require_POST
+@user_passes_test(_admin_check)
+def lessons_sync_sponte(request):
+    target_date = _parse_date(request.POST.get('data'))
+    start_date, end_date = default_sponte_schedule_window(target_date)
+    try:
+        result = sync_sponte_free_class_schedule(start_date, end_date)
+    except SponteConfigurationError as exc:
+        messages.error(request, str(exc))
+        return redirect(f'{reverse("pedagogical_class_schedule")}?data={target_date.isoformat()}')
+
+    if result.errors:
+        messages.warning(request, f'Sincronização do Sponte concluída com {len(result.errors)} aviso(s).')
+        for error in result.errors[:5]:
+            messages.warning(request, error)
+    if result.students_synced:
+        messages.success(
+            request,
+            'Agenda Sponte sincronizada: '
+            f'{result.created} criada(s), {result.updated} atualizada(s), '
+            f'{result.unchanged} sem alteração e {result.cancelled} cancelada(s). '
+            f'Período: {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}.'
+        )
+    else:
+        messages.warning(request, 'Nenhum aluno ativo importado do Sponte foi encontrado para sincronizar agenda.')
+
+    log_activity(
+        actor=request.user,
+        action='Sincronização de agenda Sponte',
+        object_type='Lesson',
+        object_label='Agenda Sponte - Aulas Livres',
+        details=(
+            f'Período: {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}; '
+            f'alunos: {result.students_synced}; criadas: {result.created}; '
+            f'atualizadas: {result.updated}; sem alteração: {result.unchanged}; '
+            f'canceladas: {result.cancelled}; ignoradas: {result.skipped}.'
+        ),
+        new_values={
+            'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat(),
+            'students_synced': result.students_synced,
+            'created': result.created,
+            'updated': result.updated,
+            'unchanged': result.unchanged,
+            'cancelled': result.cancelled,
+            'skipped': result.skipped,
+            'errors': result.errors[:10],
+        },
+    )
+    return redirect(f'{reverse("pedagogical_class_schedule")}?data={target_date.isoformat()}')
+
+
 @user_passes_test(_admin_check)
 def trial_lessons(request):
     target_date = _parse_date(request.GET.get('data'))
@@ -489,7 +592,7 @@ def trial_lessons(request):
     for lesson in lessons:
         lesson.assistant_warning = lesson.assistant_warning_message()
     return render(request, 'checklists/lesson_agenda.html', {
-        'title': 'Aulas Experimentais',
+        'title': 'Aulas Experimentais ou Play',
         'lessons': lessons,
         'target_date': target_date,
         'selected': selected,
@@ -504,13 +607,23 @@ def trial_lessons(request):
 
 @user_passes_test(_admin_check)
 def lesson_create(request):
-    initial = {}
-    if request.GET.get('tipo') == Lesson.TYPE_TRIAL:
-        initial['lesson_type'] = Lesson.TYPE_TRIAL
+    initial = {'lesson_type': Lesson.TYPE_TRIAL}
+    opportunity_id = request.GET.get('oportunidade', '')
+    if opportunity_id.isdigit():
+        opportunity = CommercialOpportunity.objects.filter(pk=opportunity_id).first()
+        if opportunity:
+            initial.update({
+                'commercial_opportunity': opportunity.pk,
+                'student_name_snapshot': opportunity.title,
+                'responsible_name_snapshot': opportunity.contact_name,
+                'whatsapp_snapshot': opportunity.contact_phone,
+                'course': opportunity.interest_course_id,
+            })
     if request.method == 'POST':
-        form = LessonForm(request.POST)
+        form = LessonForm(request.POST, trial_only=True)
         if form.is_valid():
             lesson = form.save(commit=False)
+            lesson.lesson_type = Lesson.TYPE_TRIAL
             lesson.created_by = request.user
             lesson.save()
             _log_change(
@@ -526,10 +639,10 @@ def lesson_create(request):
             messages.success(request, 'Aula agendada.')
             return redirect(f'{reverse("pedagogical_class_schedule")}?data={lesson.date.isoformat()}')
     else:
-        form = LessonForm(initial=initial)
+        form = LessonForm(initial=initial, trial_only=True)
     return render(request, 'checklists/lesson_form.html', {
         'form': form,
-        'title': 'Agendar aula',
+        'title': 'Agendar Aula Experimental ou Play',
         'submit_label': 'Salvar aula',
         'lesson': None,
         'is_admin': True,
@@ -539,9 +652,12 @@ def lesson_create(request):
 @user_passes_test(_admin_check)
 def lesson_edit(request, lesson_id):
     lesson = get_object_or_404(_lesson_queryset(), pk=lesson_id)
+    if lesson.lesson_type == Lesson.TYPE_REGULAR:
+        messages.error(request, 'Aulas regulares são gerenciadas pelo Sponte e ficam somente leitura no Checklist.')
+        return redirect(f'{reverse("pedagogical_class_schedule")}?data={lesson.date.isoformat()}')
     previous_values_full = snapshot_instance(lesson, LESSON_AUDIT_FIELDS)
     if request.method == 'POST':
-        form = LessonForm(request.POST, instance=lesson)
+        form = LessonForm(request.POST, instance=lesson, trial_only=True)
         if form.is_valid():
             lesson = form.save()
             _log_change(
@@ -558,7 +674,7 @@ def lesson_edit(request, lesson_id):
             messages.success(request, 'Aula atualizada.')
             return redirect(f'{reverse("pedagogical_class_schedule")}?data={lesson.date.isoformat()}')
     else:
-        form = LessonForm(instance=lesson)
+        form = LessonForm(instance=lesson, trial_only=True)
     return render(request, 'checklists/lesson_form.html', {
         'form': form,
         'title': f'Editar aula - {lesson.student_name_snapshot}',
