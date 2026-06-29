@@ -213,6 +213,24 @@ class FunnelModelField(models.Model):
         return f'{self.funnel_model_id} - {self.name}'
 
 
+class CommercialFunnel(models.Model):
+    """Funil comercial criado a partir de um modelo de funil."""
+
+    name = models.CharField('Nome do funil', max_length=160, unique=True)
+    funnel_model = models.ForeignKey(FunnelModel, on_delete=models.PROTECT, related_name='funnels', verbose_name='Modelo de funil')
+    active = models.BooleanField('Ativo', default=True)
+    created_at = models.DateTimeField('Criado em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizado em', auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Funil comercial'
+        verbose_name_plural = 'Funis comerciais'
+
+    def __str__(self):
+        return self.name
+
+
 class UserProfile(models.Model):
     """Perfil local do usuário autenticado.
 

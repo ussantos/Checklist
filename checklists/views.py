@@ -201,7 +201,7 @@ def commercial_indicators(request):
     return _admin_module_placeholder(
         request,
         title='Indicadores',
-        section='Gestão Comercial',
+        section='Acompanhamento',
     )
 
 
@@ -210,7 +210,7 @@ def commercial_goals(request):
     return _admin_module_placeholder(
         request,
         title='Metas',
-        section='Gestão Comercial',
+        section='Acompanhamento',
     )
 
 

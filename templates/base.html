@@ -26,14 +26,23 @@
         <summary>Gestão Comercial</summary>
         <div class="nav-submenu nav-submenu-groups">
           <div class="nav-group">
-            <span class="nav-group-title">Funis</span>
-            <a href="{% url 'commercial_funnel_types' %}">Tipos</a>
+            <span class="nav-group-title">Tipos de Entradas</span>
+            <a href="{% url 'commercial_funnel_types' %}">Funis</a>
             <a href="{% url 'commercial_funnel_stages' %}">Etapas</a>
-            <span class="nav-subgroup-title">Oportunidades</span>
-            <a class="nav-nested-link" href="{% url 'commercial_opportunity_origins' %}">Origens</a>
-            <a href="{% url 'commercial_funnel_models' %}">Modelos</a>
+            <a href="{% url 'commercial_opportunity_origins' %}">Origens</a>
           </div>
           <div class="nav-group">
+            <span class="nav-group-title">Funis</span>
+            <a href="{% url 'commercial_funnel_models' %}">Gestão de Modelos</a>
+            <a href="{% url 'commercial_funnels' %}">Gestão de Funis</a>
+          </div>
+        </div>
+      </details>
+      <details class="nav-menu">
+        <summary>Acompanhamento</summary>
+        <div class="nav-submenu nav-submenu-groups">
+          <div class="nav-group">
+            <a href="{% url 'commercial_opportunities' %}">Oportunidades</a>
             <a href="{% url 'commercial_indicators' %}">Indicadores</a>
             <a href="{% url 'commercial_goals' %}">Metas</a>
           </div>

@@ -199,17 +199,6 @@ img {
   text-transform: uppercase;
 }
 
-.nav-subgroup-title {
-  color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 700;
-  padding: 6px 10px 2px;
-}
-
-.nav-submenu a.nav-nested-link {
-  padding-left: 22px;
-}
-
 .muted {
   color: var(--muted);
   font-size: 0.92rem;
@@ -480,6 +469,29 @@ th {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px;
+}
+
+.opportunity-groups {
+  display: grid;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.opportunity-group {
+  display: grid;
+  gap: 12px;
+}
+
+.opportunity-group h2 {
+  color: var(--secondary);
+  font-size: 1.2rem;
+  margin: 0;
+}
+
+.opportunity-stage-title {
+  color: var(--text);
+  font-size: 1rem;
+  margin: 6px 0 0;
 }
 
 .restore-form {

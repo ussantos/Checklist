@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Oportunidades</h1>
+    <p class="muted">Entradas dos funis classificadas por tipo e etapa.</p>
+  </div>
+  <a class="btn small" href="{% url 'commercial_funnels' %}">Gestão de Funis</a>
+</div>
+
+<form method="get" class="filters panel">
+  <label>Status
+    <select class="input" name="status">
+      <option value="ativos" {% if status == "ativos" %}selected{% endif %}>Ativas</option>
+      <option value="inativos" {% if status == "inativos" %}selected{% endif %}>Inativas</option>
+      <option value="todos" {% if status == "todos" %}selected{% endif %}>Todas</option>
+    </select>
+  </label>
+  <label>Tipo de funil
+    <select class="input" name="tipo">
+      <option value="">Todos</option>
+      {% for funnel_type in funnel_types %}
+        <option value="{{ funnel_type.id }}" {% if funnel_type_id == funnel_type.id|stringformat:"s" %}selected{% endif %}>{{ funnel_type.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Etapa
+    <select class="input" name="etapa">
+      <option value="">Todas</option>
+      {% for stage in stages %}
+        <option value="{{ stage.id }}" {% if stage_id == stage.id|stringformat:"s" %}selected{% endif %}>{{ stage.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button class="btn">Filtrar</button>
+</form>
+
+<section class="panel">
+  <strong>Total de oportunidades</strong>
+  <p class="muted">{{ opportunity_count }} registro{{ opportunity_count|pluralize }} encontrado{{ opportunity_count|pluralize }}.</p>
+</section>
+
+{% regroup opportunities by funnel_model.funnel_type.name as type_groups %}
+<div class="opportunity-groups">
+{% for type_group in type_groups %}
+<section class="opportunity-group">
+  <h2>{{ type_group.grouper }}</h2>
+  {% regroup type_group.list by funnel_model.stage.name as stage_groups %}
+  {% for stage_group in stage_groups %}
+    <h3 class="opportunity-stage-title">{{ stage_group.grouper }}</h3>
+    <table class="panel-table">
+      <thead>
+        <tr>
+          <th>Oportunidade</th>
+          <th>Modelo</th>
+          <th>Origem</th>
+          <th>Responsável</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for opportunity in stage_group.list %}
+        <tr>
+          <td>{{ opportunity.name }}</td>
+          <td>{{ opportunity.funnel_model }}</td>
+          <td>{{ opportunity.funnel_model.origin.name }}</td>
+          <td>
+            {{ opportunity.funnel_model.responsible_name }}<br>
+            <span class="muted">{{ opportunity.funnel_model.responsible_phone }}</span>
+          </td>
+          <td>{% if opportunity.active %}<span class="badge done">Ativa</span>{% else %}<span class="badge blocked">Inativa</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endfor %}
+</section>
+{% empty %}
+<section class="panel empty-state">
+  Nenhuma oportunidade encontrada.
+</section>
+{% endfor %}
+</div>
+{% endblock %}

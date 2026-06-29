@@ -7,7 +7,7 @@ from django.forms.models import BaseInlineFormSet
 from django.utils.text import slugify
 from .backup import build_remote_path, split_remote_path
 from .models import (
-    ActivitySuggestion, BackupConfiguration, ChecklistOccurrence, DailyNote,
+    ActivitySuggestion, BackupConfiguration, ChecklistOccurrence, CommercialFunnel, DailyNote,
     EmployeeAbsence, FunnelModel, FunnelModelField, FunnelStage, FunnelType,
     MetricRecord, MetricType, OpportunityOrigin, Position, TaskTemplate, UserProfile,
 )
@@ -602,6 +602,69 @@ FunnelModelFieldFormSet = inlineformset_factory(
     extra=1,
     can_delete=True,
 )
+
+
+class CommercialFunnelForm(forms.ModelForm):
+    STATUS_ACTIVE = 'active'
+    STATUS_INACTIVE = 'inactive'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Ativado'),
+        (STATUS_INACTIVE, 'Desativado'),
+    ]
+
+    status = forms.ChoiceField(
+        label='Status',
+        choices=STATUS_CHOICES,
+        widget=forms.Select(attrs={'class': 'input'}),
+    )
+
+    class Meta:
+        model = CommercialFunnel
+        fields = ['name', 'funnel_model']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'input'}),
+            'funnel_model': forms.Select(attrs={'class': 'input'}),
+        }
+        labels = {
+            'name': 'Nome do funil',
+            'funnel_model': 'Modelo de funil',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['status'].initial = self.STATUS_ACTIVE if self.instance.active else self.STATUS_INACTIVE
+        models = (
+            FunnelModel.objects.filter(active=True)
+            .select_related('funnel_type', 'stage', 'origin')
+            .order_by('funnel_type__name', 'stage__order', 'stage__name', 'responsible_name')
+        )
+        if self.instance and self.instance.pk and self.instance.funnel_model_id:
+            models = (
+                FunnelModel.objects.filter(
+                    pk__in=list(models.values_list('pk', flat=True)) + [self.instance.funnel_model_id]
+                )
+                .select_related('funnel_type', 'stage', 'origin')
+                .order_by('funnel_type__name', 'stage__order', 'stage__name', 'responsible_name')
+            )
+        self.fields['funnel_model'].queryset = models
+
+    def clean_name(self):
+        value = (self.cleaned_data.get('name') or '').strip()
+        if not value:
+            raise forms.ValidationError('Informe o nome do funil.')
+        qs = CommercialFunnel.objects.filter(name__iexact=value)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError('Já existe um funil com este nome.')
+        return value
+
+    def save(self, commit=True):
+        funnel = super().save(commit=False)
+        funnel.active = self.cleaned_data.get('status') == self.STATUS_ACTIVE
+        if commit:
+            funnel.save()
+        return funnel
 
 
 class EmployeeAbsenceForm(forms.ModelForm):

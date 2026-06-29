@@ -7,10 +7,10 @@ from django.views.decorators.http import require_POST
 
 from .audit import changed_values, log_activity, snapshot_instance
 from .forms import (
-    FunnelModelFieldFormSet, FunnelModelForm, FunnelStageForm, FunnelTypeForm,
-    OpportunityOriginForm,
+    CommercialFunnelForm, FunnelModelFieldFormSet, FunnelModelForm, FunnelStageForm,
+    FunnelTypeForm, OpportunityOriginForm,
 )
-from .models import FunnelModel, FunnelStage, FunnelType, OpportunityOrigin
+from .models import CommercialFunnel, FunnelModel, FunnelStage, FunnelType, OpportunityOrigin
 from .services import is_admin_user
 
 
@@ -18,6 +18,7 @@ FUNNEL_TYPE_AUDIT_FIELDS = ['name', 'code', 'active']
 FUNNEL_STAGE_AUDIT_FIELDS = ['name', 'code', 'description', 'order', 'active']
 OPPORTUNITY_ORIGIN_AUDIT_FIELDS = ['name', 'code', 'description', 'active']
 FUNNEL_MODEL_AUDIT_FIELDS = ['funnel_type', 'stage', 'origin', 'responsible_name', 'responsible_phone', 'active']
+COMMERCIAL_FUNNEL_AUDIT_FIELDS = ['name', 'funnel_model', 'active']
 
 
 def _admin_check(user):
@@ -692,3 +693,185 @@ def funnel_model_delete(request, model_id):
         warning='A exclusão só é permitida se não houver funis instanciados usando este modelo.',
         cancel_url='commercial_funnel_models',
     )
+
+
+@user_passes_test(_admin_check)
+def commercial_opportunities_list(request):
+    status = request.GET.get('status', 'ativos')
+    funnel_type_id = request.GET.get('tipo', '')
+    stage_id = request.GET.get('etapa', '')
+    opportunities = (
+        CommercialFunnel.objects.select_related(
+            'funnel_model',
+            'funnel_model__funnel_type',
+            'funnel_model__stage',
+            'funnel_model__origin',
+        )
+        .order_by(
+            'funnel_model__funnel_type__name',
+            'funnel_model__stage__order',
+            'funnel_model__stage__name',
+            'name',
+        )
+    )
+
+    if status == 'inativos':
+        opportunities = opportunities.filter(active=False)
+    elif status != 'todos':
+        status = 'ativos'
+        opportunities = opportunities.filter(active=True)
+
+    if funnel_type_id and funnel_type_id.isdigit():
+        opportunities = opportunities.filter(funnel_model__funnel_type_id=funnel_type_id)
+    else:
+        funnel_type_id = ''
+
+    if stage_id and stage_id.isdigit():
+        opportunities = opportunities.filter(funnel_model__stage_id=stage_id)
+    else:
+        stage_id = ''
+
+    return render(request, 'checklists/commercial_opportunities_list.html', {
+        'opportunities': opportunities,
+        'opportunity_count': opportunities.count(),
+        'funnel_types': FunnelType.objects.all().order_by('name'),
+        'stages': FunnelStage.objects.all().order_by('order', 'name'),
+        'status': status,
+        'funnel_type_id': funnel_type_id,
+        'stage_id': stage_id,
+        'is_admin': True,
+    })
+
+
+@user_passes_test(_admin_check)
+def commercial_funnels_list(request):
+    status = request.GET.get('status', 'ativos')
+    model_id = request.GET.get('modelo')
+    funnels = (
+        CommercialFunnel.objects.select_related(
+            'funnel_model',
+            'funnel_model__funnel_type',
+            'funnel_model__stage',
+            'funnel_model__origin',
+        )
+        .order_by('name')
+    )
+    if status == 'inativos':
+        funnels = funnels.filter(active=False)
+    elif status != 'todos':
+        status = 'ativos'
+        funnels = funnels.filter(active=True)
+    if model_id and model_id.isdigit():
+        funnels = funnels.filter(funnel_model_id=model_id)
+
+    return render(request, 'checklists/commercial_funnels_list.html', {
+        'funnels': funnels,
+        'models': FunnelModel.objects.select_related('funnel_type', 'stage', 'origin').order_by(
+            'funnel_type__name', 'stage__order', 'stage__name', 'responsible_name'
+        ),
+        'status': status,
+        'model_id': model_id or '',
+        'is_admin': True,
+    })
+
+
+@user_passes_test(_admin_check)
+def commercial_funnel_create(request):
+    if request.method == 'POST':
+        form = CommercialFunnelForm(request.POST)
+        if form.is_valid():
+            funnel = form.save()
+            log_activity(
+                actor=request.user,
+                obj=funnel,
+                action='Funil comercial criado',
+                object_label=funnel.name,
+                details=f'Funil: {funnel.name}; modelo: {funnel.funnel_model}; ativo: {funnel.active}',
+                new_values=snapshot_instance(funnel, COMMERCIAL_FUNNEL_AUDIT_FIELDS),
+            )
+            messages.success(request, 'Funil criado.')
+            return redirect('commercial_funnels')
+    else:
+        form = CommercialFunnelForm()
+
+    return render(request, 'checklists/commercial_funnel_form.html', {
+        'form': form,
+        'title': 'Criar funil',
+        'submit_label': 'Criar funil',
+        'is_admin': True,
+    })
+
+
+@user_passes_test(_admin_check)
+def commercial_funnel_edit(request, funnel_id):
+    funnel = get_object_or_404(
+        CommercialFunnel.objects.select_related(
+            'funnel_model',
+            'funnel_model__funnel_type',
+            'funnel_model__stage',
+            'funnel_model__origin',
+        ),
+        pk=funnel_id,
+    )
+    previous_active = funnel.active
+    previous_values_full = snapshot_instance(funnel, COMMERCIAL_FUNNEL_AUDIT_FIELDS)
+    if request.method == 'POST':
+        form = CommercialFunnelForm(request.POST, instance=funnel)
+        if form.is_valid():
+            funnel = form.save()
+            previous_values, new_values = changed_values(
+                previous_values_full,
+                snapshot_instance(funnel, COMMERCIAL_FUNNEL_AUDIT_FIELDS),
+            )
+            if previous_active and not funnel.active:
+                action = 'Funil comercial desativado'
+            elif not previous_active and funnel.active:
+                action = 'Funil comercial ativado'
+            else:
+                action = 'Funil comercial atualizado'
+            log_activity(
+                actor=request.user,
+                obj=funnel,
+                action=action,
+                object_label=funnel.name,
+                details=f'Funil: {funnel.name}; modelo: {funnel.funnel_model}; ativo: {funnel.active}',
+                previous_values=previous_values,
+                new_values=new_values,
+            )
+            messages.success(request, 'Funil atualizado.')
+            return redirect('commercial_funnels')
+    else:
+        form = CommercialFunnelForm(instance=funnel)
+
+    return render(request, 'checklists/commercial_funnel_form.html', {
+        'form': form,
+        'title': f'Editar funil - {funnel.name}',
+        'submit_label': 'Salvar alterações',
+        'funnel': funnel,
+        'is_admin': True,
+    })
+
+
+@require_POST
+@user_passes_test(_admin_check)
+def commercial_funnel_toggle(request, funnel_id):
+    funnel = get_object_or_404(CommercialFunnel.objects.select_related('funnel_model'), pk=funnel_id)
+    previous_values_full = snapshot_instance(funnel, COMMERCIAL_FUNNEL_AUDIT_FIELDS)
+    funnel.active = not funnel.active
+    funnel.save(update_fields=['active', 'updated_at'])
+    previous_values, new_values = changed_values(
+        previous_values_full,
+        snapshot_instance(funnel, COMMERCIAL_FUNNEL_AUDIT_FIELDS),
+    )
+    action = 'Funil comercial ativado' if funnel.active else 'Funil comercial desativado'
+    log_activity(
+        actor=request.user,
+        obj=funnel,
+        action=action,
+        object_label=funnel.name,
+        details=f'Funil: {funnel.name}; modelo: {funnel.funnel_model}; ativo: {funnel.active}',
+        previous_values=previous_values,
+        new_values=new_values,
+    )
+    messages.success(request, f'Funil {"ativado" if funnel.active else "desativado"}.')
+    return redirect('commercial_funnels')

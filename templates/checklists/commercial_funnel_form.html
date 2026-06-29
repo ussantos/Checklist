@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>{{ title }}</h1>
+    <p class="muted">Selecione um modelo ativado e defina o status do funil.</p>
+  </div>
+  <a class="btn" href="{% url 'commercial_funnels' %}">Voltar</a>
+</div>
+
+<section class="panel">
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn primary" type="submit">{{ submit_label }}</button>
+  </form>
+</section>
+
+{% if funnel %}
+<section class="panel info-light">
+  <strong>Modelo vinculado</strong>
+  <p class="muted">
+    Se o modelo deste funil for desativado depois, este funil continuará funcionando com o vínculo atual.
+  </p>
+</section>
+{% endif %}
+{% endblock %}
