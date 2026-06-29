@@ -66,6 +66,8 @@
           <th>Criada em</th>
           <th>Funil</th>
           <th>Origem</th>
+          <th>Interesse</th>
+          <th>Valor</th>
           <th>Responsável</th>
           <th>Próx. Follow-Up</th>
           <th>Campos adicionais</th>
@@ -80,6 +82,8 @@
           <td>{{ opportunity.created_at|date:"d/m/Y" }}</td>
           <td>{{ opportunity.commercial_funnel.name }}</td>
           <td>{{ opportunity.origin.name|default:"-" }}</td>
+          <td>{{ opportunity.interest_label|default:"-" }}</td>
+          <td>{% if opportunity.value is not None %}R$ {{ opportunity.value|floatformat:2 }}{% else %}-{% endif %}</td>
           <td>
             {{ opportunity.contact_name }}<br>
             <span class="muted">{{ opportunity.contact_phone }}</span>

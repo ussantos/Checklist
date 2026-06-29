@@ -1,9 +1,14 @@
+from decimal import Decimal
 from datetime import date, time
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 
-from .models import Course, Lesson, PedagogicalStudent, Room, SchoolHoliday, TimeSlot
+from .forms import CommercialOpportunityForm
+from .models import (
+    CommercialFunnel, Course, FunnelModel, FunnelStage, FunnelType, Lesson,
+    OpportunityOrigin, PedagogicalStudent, Room, SchoolHoliday, TimeSlot,
+)
 
 
 class PedagogicalSchedulingRulesTests(TestCase):
@@ -111,3 +116,104 @@ class PedagogicalSchedulingRulesTests(TestCase):
         with self.assertRaises(ValidationError) as ctx:
             slot.save()
         self.assertIn('end_time', ctx.exception.message_dict)
+
+
+class CommercialOpportunityInterestFormTests(TestCase):
+    def setUp(self):
+        self.course = Course.objects.create(
+            name='Inteligência Artificial',
+            value=Decimal('4190.00'),
+            kit_quantity=4,
+            active=True,
+        )
+        self.funnel_type, _ = FunnelType.objects.get_or_create(
+            code='interessados',
+            defaults={'name': 'Interessados', 'active': True},
+        )
+        self.stage, _ = FunnelStage.objects.get_or_create(
+            code='novo-teste',
+            defaults={'name': 'Novo teste', 'active': True, 'order': 1},
+        )
+        self.origin, _ = OpportunityOrigin.objects.get_or_create(
+            code='whatsapp-teste',
+            defaults={'name': 'WhatsApp teste', 'active': True},
+        )
+        self.funnel_model = FunnelModel.objects.create(name='Modelo comercial', active=True)
+        self.funnel = CommercialFunnel.objects.create(
+            name='Funil comercial',
+            funnel_model=self.funnel_model,
+            active=True,
+        )
+
+    def _form_data(self, **kwargs):
+        data = {
+            'title': 'Oportunidade teste',
+            'commercial_funnel': str(self.funnel.pk),
+            'funnel_type': str(self.funnel_type.pk),
+            'stage': str(self.stage.pk),
+            'origin': str(self.origin.pk),
+            'interest': '',
+            'value': '',
+            'contact_name': 'Responsável',
+            'contact_phone': '21999990000',
+            'next_follow_up_date': '2026-07-10',
+            'status': CommercialOpportunityForm.STATUS_ACTIVE,
+            'follow_up_note': '',
+            'notes': '',
+        }
+        data.update(kwargs)
+        return data
+
+    def test_course_interest_defaults_value_from_course(self):
+        form = CommercialOpportunityForm(data=self._form_data(interest=f'course:{self.course.pk}'))
+        self.assertTrue(form.is_valid(), form.errors)
+
+        opportunity = form.save()
+
+        self.assertEqual(opportunity.interest_course, self.course)
+        self.assertEqual(opportunity.interest_type, '')
+        self.assertEqual(opportunity.value, Decimal('4190.00'))
+
+    def test_course_interest_allows_manual_value_override(self):
+        form = CommercialOpportunityForm(data=self._form_data(
+            interest=f'course:{self.course.pk}',
+            value='3990.00',
+        ))
+        self.assertTrue(form.is_valid(), form.errors)
+
+        opportunity = form.save()
+
+        self.assertEqual(opportunity.interest_course, self.course)
+        self.assertEqual(opportunity.value, Decimal('3990.00'))
+
+    def test_blank_interest_clears_value(self):
+        form = CommercialOpportunityForm(data=self._form_data(value='1200.00'))
+        self.assertTrue(form.is_valid(), form.errors)
+
+        opportunity = form.save()
+
+        self.assertIsNone(opportunity.interest_course)
+        self.assertEqual(opportunity.interest_type, '')
+        self.assertIsNone(opportunity.value)
+
+    def test_course_price_change_does_not_update_existing_opportunity(self):
+        form = CommercialOpportunityForm(data=self._form_data(interest=f'course:{self.course.pk}'))
+        self.assertTrue(form.is_valid(), form.errors)
+        opportunity = form.save()
+
+        self.course.value = Decimal('5000.00')
+        self.course.save(update_fields=['value'])
+        edit_form = CommercialOpportunityForm(
+            data=self._form_data(
+                title=opportunity.title,
+                interest=f'course:{self.course.pk}',
+                value='4190.00',
+            ),
+            instance=opportunity,
+        )
+        self.assertTrue(edit_form.is_valid(), edit_form.errors)
+
+        opportunity = edit_form.save()
+
+        self.assertEqual(opportunity.interest_course, self.course)
+        self.assertEqual(opportunity.value, Decimal('4190.00'))

@@ -303,11 +303,25 @@ class CommercialFunnel(models.Model):
 class CommercialOpportunity(models.Model):
     """Entrada/lead acompanhado dentro de um funil comercial."""
 
+    INTEREST_PARTNERSHIP = 'partnership'
+    INTEREST_PRODUCT = 'product'
+    INTEREST_EVENT = 'event'
+    INTEREST_OTHER = 'other'
+    INTEREST_TYPE_CHOICES = [
+        (INTEREST_PARTNERSHIP, 'Parceria'),
+        (INTEREST_PRODUCT, 'Produto'),
+        (INTEREST_EVENT, 'Evento'),
+        (INTEREST_OTHER, 'Outros'),
+    ]
+
     title = models.CharField('Oportunidade', max_length=160)
     commercial_funnel = models.ForeignKey(CommercialFunnel, on_delete=models.PROTECT, related_name='opportunities', verbose_name='Funil')
     funnel_type = models.ForeignKey(FunnelType, on_delete=models.PROTECT, related_name='opportunities', verbose_name='Tipo', null=True, blank=True)
     stage = models.ForeignKey(FunnelStage, on_delete=models.PROTECT, related_name='opportunities', verbose_name='Etapa', null=True, blank=True)
     origin = models.ForeignKey(OpportunityOrigin, on_delete=models.PROTECT, related_name='opportunities', verbose_name='Origem', null=True, blank=True)
+    interest_course = models.ForeignKey('Course', on_delete=models.PROTECT, related_name='commercial_opportunities', verbose_name='Interesse em curso', null=True, blank=True)
+    interest_type = models.CharField('Tipo de interesse', max_length=30, choices=INTEREST_TYPE_CHOICES, blank=True)
+    value = models.DecimalField('Valor', max_digits=10, decimal_places=2, null=True, blank=True)
     contact_name = models.CharField('Nome do responsável', max_length=120)
     contact_phone = models.CharField('Telefone do responsável', max_length=30)
     next_follow_up_date = models.DateField('Data próx. Follow-Up')
@@ -333,6 +347,14 @@ class CommercialOpportunity(models.Model):
     @property
     def funnel_model(self):
         return self.commercial_funnel.funnel_model
+
+    @property
+    def interest_label(self):
+        if self.interest_course_id:
+            return self.interest_course.name
+        if self.interest_type:
+            return self.get_interest_type_display()
+        return ''
 
 
 class CommercialOpportunityFollowUp(models.Model):

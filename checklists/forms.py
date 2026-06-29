@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from pathlib import Path
 from django import forms
@@ -971,6 +972,9 @@ class LessonForm(forms.ModelForm):
 
 
 class CommercialOpportunityForm(forms.ModelForm):
+    INTEREST_COURSE_PREFIX = 'course:'
+    INTEREST_TYPE_PREFIX = 'type:'
+
     STATUS_ACTIVE = 'active'
     STATUS_INACTIVE = 'inactive'
     STATUS_CHOICES = [
@@ -983,6 +987,12 @@ class CommercialOpportunityForm(forms.ModelForm):
         choices=STATUS_CHOICES,
         widget=forms.Select(attrs={'class': 'input'}),
     )
+    interest = forms.ChoiceField(
+        label='Interesse',
+        required=False,
+        choices=[],
+        widget=forms.Select(attrs={'class': 'input', 'data-interest-select': '1'}),
+    )
     follow_up_note = forms.CharField(
         label='Observação do follow-up',
         required=False,
@@ -994,7 +1004,7 @@ class CommercialOpportunityForm(forms.ModelForm):
         model = CommercialOpportunity
         fields = [
             'title', 'commercial_funnel', 'funnel_type', 'stage', 'origin',
-            'contact_name', 'contact_phone', 'next_follow_up_date', 'notes',
+            'interest', 'value', 'contact_name', 'contact_phone', 'next_follow_up_date', 'notes',
         ]
         widgets = {
             'title': forms.TextInput(attrs={'class': 'input'}),
@@ -1002,6 +1012,7 @@ class CommercialOpportunityForm(forms.ModelForm):
             'funnel_type': forms.Select(attrs={'class': 'input'}),
             'stage': forms.Select(attrs={'class': 'input'}),
             'origin': forms.Select(attrs={'class': 'input'}),
+            'value': forms.NumberInput(attrs={'class': 'input', 'min': '0', 'step': '0.01', 'data-opportunity-value': '1'}),
             'contact_name': forms.TextInput(attrs={'class': 'input'}),
             'contact_phone': forms.TextInput(attrs={'class': 'input'}),
             'next_follow_up_date': forms.DateInput(attrs={'class': 'input', 'type': 'date'}),
@@ -1013,6 +1024,7 @@ class CommercialOpportunityForm(forms.ModelForm):
             'funnel_type': 'Tipo',
             'stage': 'Etapa',
             'origin': 'Origem',
+            'value': 'Valor',
             'contact_name': 'Nome do responsável',
             'contact_phone': 'Telefone do responsável',
             'next_follow_up_date': 'Data próx. Follow-Up',
@@ -1023,7 +1035,9 @@ class CommercialOpportunityForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.dynamic_field_names = []
         self.selected_funnel = None
+        self.interest_value_map = {}
         self.fields['status'].initial = self.STATUS_ACTIVE if self.instance.active else self.STATUS_INACTIVE
+        self._configure_interest_choices()
 
         funnels = (
             CommercialFunnel.objects.filter(active=True)
@@ -1051,6 +1065,40 @@ class CommercialOpportunityForm(forms.ModelForm):
             )
         if self.selected_funnel:
             self._add_model_fields()
+
+    @property
+    def interest_value_map_json(self):
+        return json.dumps(self.interest_value_map, ensure_ascii=False)
+
+    def _configure_interest_choices(self):
+        courses = Course.objects.all().order_by('name')
+        course_choices = []
+        for course in courses:
+            choice_value = f'{self.INTEREST_COURSE_PREFIX}{course.pk}'
+            course_choices.append((choice_value, course.name))
+            self.interest_value_map[choice_value] = f'{course.value:.2f}'
+
+        choices = [('', 'Selecione')]
+        if course_choices:
+            choices.append(('Cursos', course_choices))
+        choices.append((
+            'Outras opções',
+            [
+                (f'{self.INTEREST_TYPE_PREFIX}{value}', label)
+                for value, label in CommercialOpportunity.INTEREST_TYPE_CHOICES
+            ],
+        ))
+        self.fields['interest'].choices = choices
+        if not self.is_bound:
+            self.fields['interest'].initial = self._interest_initial()
+
+    def _interest_initial(self):
+        if self.instance and self.instance.pk:
+            if self.instance.interest_course_id:
+                return f'{self.INTEREST_COURSE_PREFIX}{self.instance.interest_course_id}'
+            if self.instance.interest_type:
+                return f'{self.INTEREST_TYPE_PREFIX}{self.instance.interest_type}'
+        return ''
 
     def _configure_standard_field_querysets(self):
         funnel_types = FunnelType.objects.filter(active=True).order_by('name')
@@ -1173,9 +1221,53 @@ class CommercialOpportunityForm(forms.ModelForm):
             raise forms.ValidationError('Informe o telefone do responsável.')
         return value
 
+    def clean(self):
+        cleaned = super().clean()
+        interest = cleaned.get('interest') or ''
+        value = cleaned.get('value')
+        cleaned['_interest_course'] = None
+        cleaned['_interest_type'] = ''
+
+        if not interest:
+            cleaned['value'] = None
+            return cleaned
+
+        if value is not None and value < 0:
+            self.add_error('value', 'O valor não pode ser negativo.')
+
+        if interest.startswith(self.INTEREST_COURSE_PREFIX):
+            course_id = interest.removeprefix(self.INTEREST_COURSE_PREFIX)
+            try:
+                course = Course.objects.get(pk=course_id)
+            except (Course.DoesNotExist, ValueError):
+                self.add_error('interest', 'Selecione um curso válido.')
+                return cleaned
+            cleaned['_interest_course'] = course
+            if value is None:
+                cleaned['value'] = course.value
+            return cleaned
+
+        if interest.startswith(self.INTEREST_TYPE_PREFIX):
+            interest_type = interest.removeprefix(self.INTEREST_TYPE_PREFIX)
+            valid_types = {value for value, _ in CommercialOpportunity.INTEREST_TYPE_CHOICES}
+            if interest_type not in valid_types:
+                self.add_error('interest', 'Selecione uma opção de interesse válida.')
+                return cleaned
+            cleaned['_interest_type'] = interest_type
+            return cleaned
+
+        self.add_error('interest', 'Selecione uma opção de interesse válida.')
+        return cleaned
+
     def save(self, commit=True):
         opportunity = super().save(commit=False)
         opportunity.active = self.cleaned_data.get('status') == self.STATUS_ACTIVE
+        opportunity.interest_course = self.cleaned_data.get('_interest_course')
+        opportunity.interest_type = self.cleaned_data.get('_interest_type') or ''
+        if not self.cleaned_data.get('interest'):
+            opportunity.value = None
+        elif opportunity.interest_course_id and opportunity.value is None:
+            opportunity.value = opportunity.interest_course.value
         values = {}
         if self.selected_funnel:
             for model_field in self.selected_funnel.funnel_model.fields.all().order_by('order', 'id'):

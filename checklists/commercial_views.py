@@ -25,7 +25,7 @@ FUNNEL_MODEL_AUDIT_FIELDS = ['name', 'active']
 COMMERCIAL_FUNNEL_AUDIT_FIELDS = ['name', 'funnel_model', 'active']
 COMMERCIAL_OPPORTUNITY_AUDIT_FIELDS = [
     'title', 'commercial_funnel', 'funnel_type', 'stage', 'origin', 'contact_name', 'contact_phone',
-    'next_follow_up_date', 'field_values', 'notes', 'active', 'created_at',
+    'interest_course', 'interest_type', 'value', 'next_follow_up_date', 'field_values', 'notes', 'active', 'created_at',
 ]
 
 
@@ -55,6 +55,7 @@ def _commercial_opportunity_queryset():
         'funnel_type',
         'stage',
         'origin',
+        'interest_course',
     ).prefetch_related('commercial_funnel__funnel_model__fields')
 
 
