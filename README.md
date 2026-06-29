@@ -177,13 +177,13 @@ Configure as credenciais apenas no `.env` do servidor:
 SPONTE_API_URL=https://api.sponteeducacional.net.br/WSAPIEdu.asmx
 SPONTE_CODIGO_CLIENTE=
 SPONTE_TOKEN=
-SPONTE_STUDENT_SEARCH_PARAMS=Situacao=1
+SPONTE_STUDENT_SEARCH_PARAMS=Nome=%
 SPONTE_TIMEOUT_SECONDS=30
 SPONTE_SCHEDULE_SYNC_DAYS_BACK=7
 SPONTE_SCHEDULE_SYNC_DAYS_AHEAD=90
 ```
 
-O sistema importa nome, matrícula, responsável, WhatsApp, status, origem e ID externo. A importação cria alunos ausentes e atualiza alunos já existentes pelo par `source=Sponte`/`external_id` ou pela matrícula. O token não é gravado em logs nem no histórico.
+O sistema importa alunos ativos e inativos retornados pelo Sponte, incluindo nome, matrícula, responsável, WhatsApp, status, origem e ID externo. A importação cria alunos ausentes e atualiza alunos já existentes pelo par `source=Sponte`/`external_id` ou pela matrícula. O token não é gravado em logs nem no histórico.
 
 Na tela **Gestão Pedagógica > Agenda**, o botão **Sincronizar Sponte** busca a agenda de cada aluno ativo importado do Sponte pelo endpoint `GetAgendaAluno` e aproveita somente a seção **AulasLivres**. Essas aulas regulares são exibidas no Checklist como somente leitura. O Checklist continua criando localmente apenas **Aulas Experimentais ou Play**.
 
@@ -501,13 +501,13 @@ Configure credentials only in the server `.env` file:
 SPONTE_API_URL=https://api.sponteeducacional.net.br/WSAPIEdu.asmx
 SPONTE_CODIGO_CLIENTE=
 SPONTE_TOKEN=
-SPONTE_STUDENT_SEARCH_PARAMS=Situacao=1
+SPONTE_STUDENT_SEARCH_PARAMS=Nome=%
 SPONTE_TIMEOUT_SECONDS=30
 SPONTE_SCHEDULE_SYNC_DAYS_BACK=7
 SPONTE_SCHEDULE_SYNC_DAYS_AHEAD=90
 ```
 
-The system imports name, enrollment number, guardian, WhatsApp, status, source, and external ID. The import creates missing students and updates existing students by `source=Sponte`/`external_id` or by enrollment number. The token is not stored in logs or history.
+The system imports active and inactive students returned by Sponte, including name, enrollment number, guardian, WhatsApp, status, source, and external ID. The import creates missing students and updates existing students by `source=Sponte`/`external_id` or by enrollment number. The token is not stored in logs or history.
 
 On **Pedagogical Management > Schedule**, the **Sync Sponte** button fetches each active Sponte-imported student's schedule through `GetAgendaAluno` and uses only the **AulasLivres** section. These regular lessons are displayed in Checklist as read-only records. Checklist continues to create only **Trial or Play Lessons** locally.
 

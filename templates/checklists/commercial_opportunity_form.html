@@ -1,15 +1,20 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-title">
+  <div class="page-title">
   <div>
     <h1>{{ title }}</h1>
     <p class="muted">Registre a entrada no funil e preencha os campos definidos no modelo selecionado.</p>
   </div>
-  <a class="btn" href="{% url 'commercial_opportunities' %}">Voltar</a>
+  {% if is_commercial_operator %}
+    <a class="btn" href="{% url 'commercial_dashboard' %}">Voltar</a>
+  {% else %}
+    <a class="btn" href="{% url 'commercial_opportunities' %}">Voltar</a>
+  {% endif %}
 </div>
 
 <form method="post" class="form-stack" id="commercial-opportunity-form">
   {% csrf_token %}
+  <input type="hidden" name="trial_lesson_week" value="{{ week_start|date:'Y-m-d' }}">
   <section class="panel">
     <h2>Dados da oportunidade</h2>
     {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
@@ -114,6 +119,62 @@
     {% else %}
       <p class="muted">Selecione um funil para carregar os campos adicionais do modelo.</p>
     {% endif %}
+  </section>
+
+  <section class="panel">
+    <div class="section-heading">
+      <div>
+        <h2>Agenda da semana</h2>
+        <p class="muted">Horários livres para Aula Experimental ou Play.</p>
+      </div>
+      <div class="row-actions">
+        <a class="btn small" href="?semana={{ previous_week|date:'Y-m-d' }}{% if form.selected_funnel %}&funil={{ form.selected_funnel.id }}{% endif %}">Semana anterior</a>
+        <a class="btn small" href="?semana={{ next_week|date:'Y-m-d' }}{% if form.selected_funnel %}&funil={{ form.selected_funnel.id }}{% endif %}">Próxima semana</a>
+      </div>
+    </div>
+    {% if selected_stage_requires_trial_lesson %}
+      <div class="message warning">A etapa selecionada exige agendamento de Aula Experimental ou Play.</div>
+    {% endif %}
+    <div class="form-grid">
+      <p>
+        {{ form.trial_lesson_kind.label_tag }}
+        {{ form.trial_lesson_kind }}
+        {{ form.trial_lesson_kind.errors }}
+      </p>
+      <p>
+        {{ form.trial_lesson_course.label_tag }}
+        {{ form.trial_lesson_course }}
+        {{ form.trial_lesson_course.errors }}
+      </p>
+      <p>
+        {{ form.trial_lesson_notes.label_tag }}
+        {{ form.trial_lesson_notes }}
+        {{ form.trial_lesson_notes.errors }}
+      </p>
+    </div>
+    {{ form.trial_lesson_slot.errors }}
+    <div class="trial-slot-grid">
+      <label class="trial-slot-card trial-slot-card-empty">
+        <input type="radio" name="{{ form.trial_lesson_slot.html_name }}" value="" {% if not selected_trial_lesson_slot %}checked{% endif %}>
+        <span>Não agendar agora</span>
+      </label>
+      {% for day in available_trial_slots_by_day %}
+        <div class="trial-slot-day">
+          <h3>{{ day.date|date:"l, d/m" }}</h3>
+          <div class="trial-slot-options">
+            {% for slot in day.slots %}
+              <label class="trial-slot-card">
+                <input type="radio" name="{{ form.trial_lesson_slot.html_name }}" value="{{ slot.value }}" {% if selected_trial_lesson_slot == slot.value %}checked{% endif %}>
+                <span>{{ slot.start_time|time:"H:i" }} - {{ slot.end_time|time:"H:i" }}</span>
+                <small>{{ slot.room.name }}</small>
+              </label>
+            {% endfor %}
+          </div>
+        </div>
+      {% empty %}
+        <p class="muted">Nenhum horário livre encontrado nesta semana.</p>
+      {% endfor %}
+    </div>
   </section>
 
   <div class="form-actions">
@@ -226,6 +287,10 @@
       if (!select.value) return;
       const url = new URL("{% url 'commercial_opportunity_create' %}", window.location.origin);
       url.searchParams.set('funil', select.value);
+      const weekInput = document.querySelector('[name="trial_lesson_week"]');
+      if (weekInput && weekInput.value) {
+        url.searchParams.set('semana', weekInput.value);
+      }
       window.location.href = url.toString();
     });
   })();

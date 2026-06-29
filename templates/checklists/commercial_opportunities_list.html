@@ -7,7 +7,12 @@
   </div>
   <div class="row-actions">
     <a class="btn primary" href="{% url 'commercial_opportunity_create' %}">Nova oportunidade</a>
-    <a class="btn small" href="{% url 'commercial_funnels' %}">Gestão de Funis</a>
+    {% if is_commercial_operator %}
+      <a class="btn small" href="{% url 'commercial_dashboard' %}">Painel comercial</a>
+    {% endif %}
+    {% if is_admin %}
+      <a class="btn small" href="{% url 'commercial_funnels' %}">Gestão de Funis</a>
+    {% endif %}
   </div>
 </div>
 
@@ -68,7 +73,8 @@
           <th>Origem</th>
           <th>Interesse</th>
           <th>Valor</th>
-          <th>Responsável</th>
+          <th>Atendente</th>
+          <th>Contato</th>
           <th>Próx. Follow-Up</th>
           <th>Campos adicionais</th>
           <th>Status</th>
@@ -84,6 +90,13 @@
           <td>{{ opportunity.origin.name|default:"-" }}</td>
           <td>{{ opportunity.interest_label|default:"-" }}</td>
           <td>{% if opportunity.value is not None %}R$ {{ opportunity.value|floatformat:2 }}{% else %}-{% endif %}</td>
+          <td>
+            {% if opportunity.owner %}
+              {{ opportunity.owner.get_full_name|default:opportunity.owner.username }}
+            {% else %}
+              <span class="muted">-</span>
+            {% endif %}
+          </td>
           <td>
             {{ opportunity.contact_name }}<br>
             <span class="muted">{{ opportunity.contact_phone }}</span>

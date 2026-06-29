@@ -181,9 +181,12 @@ def operational_home(request):
     if is_admin_user(request.user):
         return redirect('dashboard')
     profile = getattr(request.user, 'userprofile', None)
+    position = get_user_position(request.user)
+    if position and position.code == 'atendente-comercial':
+        return redirect('commercial_dashboard')
     return render(request, 'checklists/operational_home.html', {
         'profile': profile,
-        'position': get_user_position(request.user),
+        'position': position,
         'is_admin': False,
     })
 

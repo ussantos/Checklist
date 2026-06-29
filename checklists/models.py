@@ -6,6 +6,7 @@ from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db import models
 from django.db.models.deletion import ProtectedError
 from django.utils import timezone
+from django.utils.text import slugify
 
 
 LUNCH_START = time(12, 0)
@@ -116,6 +117,13 @@ class FunnelStage(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def requires_trial_lesson(self):
+        text = slugify(f'{self.code} {self.name}')
+        has_trial = 'experimental' in text or 'experiental' in text
+        has_scheduled = 'agendada' in text or 'agendado' in text
+        return 'aula' in text and has_trial and has_scheduled
 
     def has_usage(self):
         return self.legacy_funnel_models.exists() or self.opportunities.exists()
@@ -325,6 +333,7 @@ class CommercialOpportunity(models.Model):
     value = models.DecimalField('Valor', max_digits=10, decimal_places=2, null=True, blank=True)
     contact_name = models.CharField('Nome do responsável', max_length=120)
     contact_phone = models.CharField('Telefone do responsável', max_length=30)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_commercial_opportunities', verbose_name='Atendente responsável')
     next_follow_up_date = models.DateField('Data próx. Follow-Up')
     field_values = models.JSONField('Campos adicionais preenchidos', default=dict, blank=True)
     notes = models.TextField('Observações', blank=True)

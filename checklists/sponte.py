@@ -18,6 +18,8 @@ from .models import Course, Lesson, PedagogicalStudent, Room
 
 SPONTE_SOURCE = 'Sponte'
 DEFAULT_API_URL = 'https://api.sponteeducacional.net.br/WSAPIEdu.asmx'
+DEFAULT_STUDENT_SEARCH_PARAMS = 'Nome=%'
+LEGACY_STUDENT_SEARCH_PARAMS = {'Situacao=1'}
 
 
 class SponteConfigurationError(Exception):
@@ -93,6 +95,14 @@ def _status_from_sponte(value):
     return PedagogicalStudent.STATUS_ACTIVE
 
 
+def _is_success_message(value):
+    return (value or '').strip().startswith('01')
+
+
+def _is_not_found_message(value):
+    return (value or '').strip().startswith('43')
+
+
 def _responsible_name(student_element):
     for container in student_element.iter():
         if _local_name(container.tag) != 'wsResponsaveis':
@@ -116,8 +126,10 @@ def parse_sponte_students(xml_text):
             continue
 
         operation_return = _child_text(item, 'RetornoOperacao')
-        if operation_return:
+        if operation_return and not _is_success_message(operation_return):
             api_messages.append(operation_return)
+            if not _child_text(item, 'Nome'):
+                continue
 
         name = _child_text(item, 'Nome')
         external_id = _child_text(item, 'AlunoID')
@@ -133,7 +145,9 @@ def parse_sponte_students(xml_text):
         })
 
     if not records and api_messages:
-        raise SponteClientError('; '.join(sorted(set(api_messages))))
+        unique_messages = sorted(set(api_messages))
+        if not any(_is_not_found_message(message) for message in unique_messages):
+            raise SponteClientError('; '.join(unique_messages))
     return records
 
 
@@ -156,7 +170,9 @@ def _sponte_auth_config():
 
 def _sponte_config():
     api_url, client_code, token, timeout = _sponte_auth_config()
-    search_params = str(_sponte_setting('SPONTE_STUDENT_SEARCH_PARAMS', 'Situacao=1') or '').strip()
+    search_params = str(_sponte_setting('SPONTE_STUDENT_SEARCH_PARAMS', DEFAULT_STUDENT_SEARCH_PARAMS) or '').strip()
+    if search_params in LEGACY_STUDENT_SEARCH_PARAMS:
+        search_params = DEFAULT_STUDENT_SEARCH_PARAMS
     return api_url, client_code, token, search_params, timeout
 
 

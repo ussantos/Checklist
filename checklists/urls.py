@@ -37,6 +37,7 @@ urlpatterns = [
     path('gestao-comercial/funis/gestao/novo/', commercial_views.commercial_funnel_create, name='commercial_funnel_create'),
     path('gestao-comercial/funis/gestao/<int:funnel_id>/editar/', commercial_views.commercial_funnel_edit, name='commercial_funnel_edit'),
     path('gestao-comercial/funis/gestao/<int:funnel_id>/alternar-status/', commercial_views.commercial_funnel_toggle, name='commercial_funnel_toggle'),
+    path('acompanhamento/comercial/', commercial_views.commercial_dashboard, name='commercial_dashboard'),
     path('acompanhamento/oportunidades/', commercial_views.commercial_opportunities_list, name='commercial_opportunities'),
     path('acompanhamento/oportunidades/nova/', commercial_views.commercial_opportunity_create, name='commercial_opportunity_create'),
     path('acompanhamento/oportunidades/<int:opportunity_id>/editar/', commercial_views.commercial_opportunity_edit, name='commercial_opportunity_edit'),

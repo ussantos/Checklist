@@ -517,6 +517,139 @@ th {
   margin: 6px 0 0;
 }
 
+.commercial-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+  margin: 18px 0;
+}
+
+.commercial-kpi-card {
+  display: grid;
+  gap: 6px;
+  min-height: 132px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--sky);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+
+.commercial-kpi-card span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.commercial-kpi-card strong {
+  color: var(--dark);
+  font-size: 2.25rem;
+  line-height: 1;
+}
+
+.commercial-kpi-card small {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.commercial-kpi-card.kpi-today {
+  border-left-color: var(--sky);
+}
+
+.commercial-kpi-card.kpi-tomorrow {
+  border-left-color: #22c55e;
+}
+
+.commercial-kpi-card.kpi-overdue {
+  border-left-color: #f97316;
+}
+
+.commercial-kpi-card.kpi-critical {
+  border-left-color: #ef4444;
+}
+
+.commercial-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
+}
+
+.compact-table th,
+.compact-table td {
+  padding: 9px;
+}
+
+.trial-slot-grid {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.trial-slot-day {
+  display: grid;
+  gap: 8px;
+}
+
+.trial-slot-day h3 {
+  color: var(--dark);
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.trial-slot-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.trial-slot-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 10px;
+  align-items: center;
+  min-height: 64px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+}
+
+.trial-slot-card:hover,
+.trial-slot-card:has(input:checked) {
+  border-color: var(--primary);
+  background: #fff8f1;
+}
+
+.trial-slot-card input {
+  width: auto;
+  min-width: auto;
+  margin: 0;
+}
+
+.trial-slot-card span,
+.trial-slot-card small {
+  display: block;
+}
+
+.trial-slot-card span {
+  color: var(--dark);
+  font-weight: 800;
+}
+
+.trial-slot-card small {
+  grid-column: 2;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.trial-slot-card-empty {
+  max-width: 260px;
+  min-height: 48px;
+}
+
 .standard-field-list {
   display: flex;
   flex-wrap: wrap;

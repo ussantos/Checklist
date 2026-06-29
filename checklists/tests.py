@@ -1,20 +1,26 @@
 from decimal import Decimal
-from datetime import date, time
+from datetime import date, timedelta, time
 
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import TestCase, override_settings
+from django.urls import reverse
+from django.utils import timezone
 
 from .forms import CommercialOpportunityForm
 from .models import (
     CommercialFunnel, CommercialOpportunity, Course, FunnelModel, FunnelStage,
-    FunnelType, Lesson, LessonFeedback, OpportunityOrigin, PedagogicalStudent, Room,
-    SchoolHoliday, TimeSlot,
+    FunnelType, Lesson, LessonFeedback, OpportunityOrigin, PedagogicalStudent, Position,
+    Room, SchoolHoliday, TimeSlot, UserProfile,
 )
 from .sponte import (
-    import_sponte_free_class_records, import_sponte_student_records,
+    _sponte_config, import_sponte_free_class_records, import_sponte_student_records,
     parse_sponte_free_class_schedule, parse_sponte_students,
     sync_sponte_free_class_schedule,
 )
+
+
+User = get_user_model()
 
 
 class PedagogicalSchedulingRulesTests(TestCase):
@@ -275,6 +281,27 @@ class SponteStudentImportTests(TestCase):
       </wsAluno>
     </ArrayOfWsAluno>
     '''
+    NO_RECORDS_XML = '''<?xml version="1.0" encoding="utf-8"?>
+    <ArrayOfWsAluno xmlns="http://api.sponteeducacional.net.br/">
+      <wsAluno>
+        <RetornoOperacao>43 - Nenhum registro foi encontrado para os parâmetros de busca informados.</RetornoOperacao>
+        <AlunoID>0</AlunoID>
+        <ResponsavelFinanceiroID>0</ResponsavelFinanceiroID>
+        <ResponsavelDidaticoID>0</ResponsavelDidaticoID>
+      </wsAluno>
+    </ArrayOfWsAluno>
+    '''
+    INACTIVE_XML = '''<?xml version="1.0" encoding="utf-8"?>
+    <ArrayOfWsAluno xmlns="http://api.sponteeducacional.net.br/">
+      <wsAluno>
+        <RetornoOperacao>01 - Operação Realizada com Sucesso.</RetornoOperacao>
+        <AlunoID>456</AlunoID>
+        <Nome>Aluno Inativo Sponte</Nome>
+        <NumeroMatricula>M456</NumeroMatricula>
+        <Situacao>Inativo</Situacao>
+      </wsAluno>
+    </ArrayOfWsAluno>
+    '''
 
     def test_import_creates_student_from_sponte_xml(self):
         records = parse_sponte_students(self.SAMPLE_XML)
@@ -316,6 +343,35 @@ class SponteStudentImportTests(TestCase):
         self.assertEqual(PedagogicalStudent.objects.count(), 1)
         self.assertEqual(student.source, 'Sponte')
         self.assertEqual(student.external_id, '123')
+
+    def test_no_records_response_does_not_create_nameless_student(self):
+        records = parse_sponte_students(self.NO_RECORDS_XML)
+        result = import_sponte_student_records(records)
+
+        self.assertEqual(records, [])
+        self.assertEqual(result.skipped, 0)
+        self.assertEqual(PedagogicalStudent.objects.count(), 0)
+
+    def test_import_keeps_inactive_sponte_students(self):
+        records = parse_sponte_students(self.INACTIVE_XML)
+        result = import_sponte_student_records(records)
+
+        student = PedagogicalStudent.objects.get(external_id='456')
+        self.assertEqual(result.created, 1)
+        self.assertEqual(student.name, 'Aluno Inativo Sponte')
+        self.assertEqual(student.status, PedagogicalStudent.STATUS_INACTIVE)
+
+    @override_settings(
+        SPONTE_API_URL='https://api.sponteeducacional.net.br/WSAPIEdu.asmx',
+        SPONTE_CODIGO_CLIENTE='123',
+        SPONTE_TOKEN='token',
+        SPONTE_STUDENT_SEARCH_PARAMS='Situacao=1',
+        SPONTE_TIMEOUT_SECONDS=30,
+    )
+    def test_legacy_student_search_param_uses_wildcard_name_filter(self):
+        *_, search_params, _timeout = _sponte_config()
+
+        self.assertEqual(search_params, 'Nome=%')
 
 
 class SponteFreeClassScheduleSyncTests(TestCase):
@@ -417,6 +473,7 @@ class CommercialOpportunityInterestFormTests(TestCase):
             code='whatsapp-teste',
             defaults={'name': 'WhatsApp teste', 'active': True},
         )
+        self.room = Room.objects.create(name='Sala Comercial', capacity=3, active=True)
         self.funnel_model = FunnelModel.objects.create(name='Modelo comercial', active=True)
         self.funnel = CommercialFunnel.objects.create(
             name='Funil comercial',
@@ -496,3 +553,136 @@ class CommercialOpportunityInterestFormTests(TestCase):
 
         self.assertEqual(opportunity.interest_course, self.course)
         self.assertEqual(opportunity.value, Decimal('4190.00'))
+
+    def test_stage_aula_experimental_agendada_requires_trial_lesson(self):
+        stage = FunnelStage.objects.create(
+            code='aula-experimental-agendada',
+            name='Aula Experimental Agendada',
+            active=True,
+            order=2,
+        )
+        form = CommercialOpportunityForm(data=self._form_data(stage=str(stage.pk)))
+
+        self.assertFalse(form.is_valid())
+        self.assertIn('trial_lesson_slot', form.errors)
+
+    def test_trial_lesson_payload_is_prepared_from_available_slot(self):
+        stage = FunnelStage.objects.create(
+            code='aula-experimental-agendada-form',
+            name='Aula Experimental Agendada Form',
+            active=True,
+            order=3,
+        )
+        selected_date = date(2026, 7, 14)
+        slot = {
+            'value': f'{selected_date.isoformat()}|09:00|11:00|{self.room.pk}',
+            'label': '14/07 09:00-11:00 · Sala Comercial',
+            'date': selected_date,
+            'start_time': time(9, 0),
+            'end_time': time(11, 0),
+            'room': self.room,
+        }
+        form = CommercialOpportunityForm(
+            data=self._form_data(
+                stage=str(stage.pk),
+                trial_lesson_kind=Lesson.TRIAL_KIND_EXPERIMENTAL,
+                trial_lesson_course=str(self.course.pk),
+                trial_lesson_slot=slot['value'],
+                trial_lesson_notes='Cliente prefere conhecer o curso.',
+            ),
+            available_trial_slots=[slot],
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.trial_lesson_payload['trial_kind'], Lesson.TRIAL_KIND_EXPERIMENTAL)
+        self.assertEqual(form.trial_lesson_payload['course'], self.course)
+        self.assertEqual(form.trial_lesson_payload['room'], self.room)
+
+
+class CommercialDashboardTests(TestCase):
+    def setUp(self):
+        self.position = Position.objects.create(
+            name='Atendente Comercial',
+            code='atendente-comercial',
+            active=True,
+        )
+        self.user = User.objects.create_user(username='atendente', password='teste123')
+        UserProfile.objects.create(
+            user=self.user,
+            display_name='Atendente Comercial',
+            system_role=UserProfile.ROLE_OPERATOR,
+            position=self.position,
+            active=True,
+        )
+        self.other_user = User.objects.create_user(username='outro-atendente', password='teste123')
+        UserProfile.objects.create(
+            user=self.other_user,
+            display_name='Outro Atendente',
+            system_role=UserProfile.ROLE_OPERATOR,
+            position=self.position,
+            active=True,
+        )
+        self.funnel_model = FunnelModel.objects.create(name='Modelo comercial', active=True)
+        self.funnel = CommercialFunnel.objects.create(
+            name='Funil comercial',
+            funnel_model=self.funnel_model,
+            active=True,
+        )
+        self.stage = FunnelStage.objects.create(code='novo-dashboard', name='Novo', active=True, order=1)
+        self.origin = OpportunityOrigin.objects.create(code='whatsapp-dashboard', name='WhatsApp', active=True)
+
+    def _opportunity(self, *, title, owner, next_follow_up_date, updated_at=None):
+        opportunity = CommercialOpportunity.objects.create(
+            title=title,
+            commercial_funnel=self.funnel,
+            stage=self.stage,
+            origin=self.origin,
+            contact_name='Responsável',
+            contact_phone='21999990000',
+            owner=owner,
+            next_follow_up_date=next_follow_up_date,
+            active=True,
+        )
+        if updated_at:
+            CommercialOpportunity.objects.filter(pk=opportunity.pk).update(updated_at=updated_at)
+            opportunity.refresh_from_db()
+        return opportunity
+
+    def test_operational_home_redirects_commercial_operator_to_dashboard(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('operational_home'))
+
+        self.assertRedirects(response, reverse('commercial_dashboard'))
+
+    def test_commercial_dashboard_is_scoped_to_logged_operator(self):
+        today = timezone.localdate()
+        self._opportunity(title='Lead hoje', owner=self.user, next_follow_up_date=today)
+        self._opportunity(title='Lead amanhã', owner=self.user, next_follow_up_date=today + timedelta(days=1))
+        self._opportunity(
+            title='Lead crítico',
+            owner=self.user,
+            next_follow_up_date=today - timedelta(days=1),
+            updated_at=timezone.now() - timedelta(days=4),
+        )
+        self._opportunity(title='Lead de outro atendente', owner=self.other_user, next_follow_up_date=today)
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('commercial_dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['follow_up_today_count'], 1)
+        self.assertEqual(response.context['follow_up_tomorrow_count'], 1)
+        self.assertEqual(response.context['overdue_count'], 1)
+        self.assertEqual(response.context['critical_count'], 1)
+        self.assertContains(response, 'Lead crítico')
+        self.assertNotContains(response, 'Lead de outro atendente')
+
+    def test_operator_can_open_opportunity_create_form(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('commercial_opportunity_create'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Criar oportunidade')
+        self.assertContains(response, 'Agenda da semana')

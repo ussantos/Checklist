@@ -23,6 +23,9 @@
     {% if position.code == "instrutor-aula-livre" %}
       <a class="btn primary" href="{% url 'pedagogical_lesson_feedbacks' %}">Feedback de Aula</a>
     {% endif %}
+    {% if position.code == "atendente-comercial" %}
+      <a class="btn primary" href="{% url 'commercial_dashboard' %}">Painel comercial</a>
+    {% endif %}
     <a class="btn" href="{% url 'password_change' %}">Trocar senha</a>
   </div>
 </section>

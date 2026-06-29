@@ -1080,6 +1080,29 @@ class CommercialOpportunityForm(forms.ModelForm):
         choices=[],
         widget=forms.Select(attrs={'class': 'input', 'data-interest-select': '1'}),
     )
+    trial_lesson_kind = forms.ChoiceField(
+        label='Tipo da aula',
+        required=False,
+        choices=[('', 'Selecione'), *Lesson.TRIAL_KIND_CHOICES],
+        widget=forms.Select(attrs={'class': 'input'}),
+    )
+    trial_lesson_course = forms.ModelChoiceField(
+        label='Curso da aula',
+        required=False,
+        queryset=Course.objects.none(),
+        widget=forms.Select(attrs={'class': 'input'}),
+    )
+    trial_lesson_slot = forms.ChoiceField(
+        label='Horário livre',
+        required=False,
+        choices=[],
+        widget=forms.RadioSelect(),
+    )
+    trial_lesson_notes = forms.CharField(
+        label='Observação da aula',
+        required=False,
+        widget=forms.Textarea(attrs={'class': 'input', 'rows': 2}),
+    )
     follow_up_note = forms.CharField(
         label='Observação do follow-up',
         required=False,
@@ -1119,12 +1142,16 @@ class CommercialOpportunityForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        self.available_trial_slots = kwargs.pop('available_trial_slots', [])
+        self.has_existing_trial_lesson = kwargs.pop('has_existing_trial_lesson', False)
         super().__init__(*args, **kwargs)
         self.dynamic_field_names = []
         self.selected_funnel = None
         self.interest_value_map = {}
+        self.trial_lesson_payload = None
         self.fields['status'].initial = self.STATUS_ACTIVE if self.instance.active else self.STATUS_INACTIVE
         self._configure_interest_choices()
+        self._configure_trial_lesson_fields()
 
         funnels = (
             CommercialFunnel.objects.filter(active=True)
@@ -1157,6 +1184,11 @@ class CommercialOpportunityForm(forms.ModelForm):
     def interest_value_map_json(self):
         return json.dumps(self.interest_value_map, ensure_ascii=False)
 
+    @property
+    def selected_stage_requires_trial_lesson(self):
+        stage = self._selected_stage()
+        return bool(stage and stage.requires_trial_lesson)
+
     def _configure_interest_choices(self):
         courses = Course.objects.all().order_by('name')
         course_choices = []
@@ -1178,6 +1210,34 @@ class CommercialOpportunityForm(forms.ModelForm):
         self.fields['interest'].choices = choices
         if not self.is_bound:
             self.fields['interest'].initial = self._interest_initial()
+
+    def _configure_trial_lesson_fields(self):
+        courses = Course.objects.filter(active=True).order_by('name')
+        if self.instance and self.instance.pk and self.instance.interest_course_id:
+            courses = Course.objects.filter(
+                pk__in=list(courses.values_list('pk', flat=True)) + [self.instance.interest_course_id]
+            ).order_by('name')
+        self.fields['trial_lesson_course'].queryset = courses
+        if not self.is_bound and self.instance and self.instance.interest_course_id:
+            self.fields['trial_lesson_course'].initial = self.instance.interest_course_id
+
+        choices = [('', 'Não agendar agora')]
+        choices.extend((slot['value'], slot['label']) for slot in self.available_trial_slots)
+        self.fields['trial_lesson_slot'].choices = choices
+
+    def _selected_stage(self):
+        if self.is_bound:
+            value = self.data.get(self.add_prefix('stage'))
+        elif self.instance and self.instance.pk:
+            value = self.instance.stage_id
+        else:
+            value = self.initial.get('stage')
+            if isinstance(value, FunnelStage):
+                value = value.pk
+        try:
+            return FunnelStage.objects.filter(pk=int(value)).first() if value else None
+        except (TypeError, ValueError):
+            return None
 
     def _interest_initial(self):
         if self.instance and self.instance.pk:
@@ -1317,9 +1377,7 @@ class CommercialOpportunityForm(forms.ModelForm):
 
         if not interest:
             cleaned['value'] = None
-            return cleaned
-
-        if value is not None and value < 0:
+        elif value is not None and value < 0:
             self.add_error('value', 'O valor não pode ser negativo.')
 
         if interest.startswith(self.INTEREST_COURSE_PREFIX):
@@ -1332,19 +1390,57 @@ class CommercialOpportunityForm(forms.ModelForm):
             cleaned['_interest_course'] = course
             if value is None:
                 cleaned['value'] = course.value
-            return cleaned
-
-        if interest.startswith(self.INTEREST_TYPE_PREFIX):
+        elif interest.startswith(self.INTEREST_TYPE_PREFIX):
             interest_type = interest.removeprefix(self.INTEREST_TYPE_PREFIX)
             valid_types = {value for value, _ in CommercialOpportunity.INTEREST_TYPE_CHOICES}
             if interest_type not in valid_types:
                 self.add_error('interest', 'Selecione uma opção de interesse válida.')
-                return cleaned
-            cleaned['_interest_type'] = interest_type
-            return cleaned
+            else:
+                cleaned['_interest_type'] = interest_type
+        elif interest:
+            self.add_error('interest', 'Selecione uma opção de interesse válida.')
 
-        self.add_error('interest', 'Selecione uma opção de interesse válida.')
+        self._clean_trial_lesson(cleaned)
         return cleaned
+
+    def _clean_trial_lesson(self, cleaned):
+        stage = cleaned.get('stage')
+        requires_trial_lesson = bool(stage and stage.requires_trial_lesson)
+        slot_value = cleaned.get('trial_lesson_slot') or ''
+        lesson_kind = cleaned.get('trial_lesson_kind') or ''
+        course = cleaned.get('trial_lesson_course')
+        notes = (cleaned.get('trial_lesson_notes') or '').strip()
+
+        if requires_trial_lesson and not self.has_existing_trial_lesson and not slot_value:
+            self.add_error('trial_lesson_slot', 'Esta etapa exige agendar uma Aula Experimental ou Play.')
+
+        if slot_value or lesson_kind or course:
+            if not lesson_kind:
+                self.add_error('trial_lesson_kind', 'Informe se a aula é Experimental ou Play.')
+            if not course:
+                self.add_error('trial_lesson_course', 'Selecione o curso da aula.')
+            if not slot_value:
+                self.add_error('trial_lesson_slot', 'Selecione um horário livre para a aula.')
+
+        if not slot_value:
+            return
+
+        slot_map = {slot['value']: slot for slot in self.available_trial_slots}
+        slot = slot_map.get(slot_value)
+        if not slot:
+            self.add_error('trial_lesson_slot', 'Selecione um horário livre válido.')
+            return
+
+        if lesson_kind and course:
+            self.trial_lesson_payload = {
+                'trial_kind': lesson_kind,
+                'course': course,
+                'room': slot['room'],
+                'date': slot['date'],
+                'start_time': slot['start_time'],
+                'end_time': slot['end_time'],
+                'notes': notes,
+            }
 
     def save(self, commit=True):
         opportunity = super().save(commit=False)

@@ -1,8 +1,13 @@
+from datetime import datetime, timedelta
+
 from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
+from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Count
 from django.db.models.deletion import ProtectedError
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .audit import changed_values, log_activity, snapshot_instance
@@ -13,9 +18,12 @@ from .forms import (
 from .models import (
     CommercialFunnel, CommercialOpportunity, CommercialOpportunityFollowUp,
     CommercialOpportunityStageEvent, FunnelModel, FunnelModelField, FunnelStage,
-    FunnelType, OpportunityOrigin,
+    FunnelType, Lesson, OpportunityOrigin, Room, SchoolHoliday, TimeSlot,
 )
-from .services import is_admin_user
+from .services import get_user_position, is_admin_user
+
+
+COMMERCIAL_POSITION_CODE = 'atendente-comercial'
 
 
 FUNNEL_TYPE_AUDIT_FIELDS = ['name', 'code', 'active']
@@ -25,12 +33,37 @@ FUNNEL_MODEL_AUDIT_FIELDS = ['name', 'active']
 COMMERCIAL_FUNNEL_AUDIT_FIELDS = ['name', 'funnel_model', 'active']
 COMMERCIAL_OPPORTUNITY_AUDIT_FIELDS = [
     'title', 'commercial_funnel', 'funnel_type', 'stage', 'origin', 'contact_name', 'contact_phone',
-    'interest_course', 'interest_type', 'value', 'next_follow_up_date', 'field_values', 'notes', 'active', 'created_at',
+    'interest_course', 'interest_type', 'value', 'owner', 'next_follow_up_date', 'field_values', 'notes', 'active',
+    'created_at',
 ]
 
 
 def _admin_check(user):
     return user.is_authenticated and is_admin_user(user)
+
+
+def _commercial_access_check(user):
+    if not user.is_authenticated:
+        return False
+    if is_admin_user(user):
+        return True
+    position = get_user_position(user)
+    return bool(position and position.code == COMMERCIAL_POSITION_CODE)
+
+
+def _is_commercial_operator(user):
+    position = get_user_position(user)
+    return bool(position and position.code == COMMERCIAL_POSITION_CODE and not is_admin_user(user))
+
+
+def _is_commercial_admin_context(user):
+    return is_admin_user(user)
+
+
+def _scope_commercial_opportunities(queryset, user):
+    if is_admin_user(user):
+        return queryset
+    return queryset.filter(owner=user)
 
 
 def _funnel_model_snapshot(funnel_model):
@@ -56,6 +89,7 @@ def _commercial_opportunity_queryset():
         'stage',
         'origin',
         'interest_course',
+        'owner',
     ).prefetch_related('commercial_funnel__funnel_model__fields')
 
 
@@ -104,6 +138,128 @@ def _record_stage_event(*, opportunity, actor, previous_stage=None, note=''):
     )
 
 
+def _parse_week_start(value):
+    today = timezone.localdate()
+    if value:
+        try:
+            target = datetime.fromisoformat(value).date()
+        except ValueError:
+            target = today
+    else:
+        target = today
+    return target - timedelta(days=target.weekday())
+
+
+def _slot_value(target_date, slot, room):
+    return f'{target_date.isoformat()}|{slot.start_time:%H:%M}|{slot.end_time:%H:%M}|{room.pk}'
+
+
+def _available_trial_slots(week_start):
+    today = timezone.localdate()
+    now_time = timezone.localtime().time()
+    rooms = list(Room.objects.filter(active=True).order_by('name'))
+    time_slots = list(TimeSlot.objects.filter(active=True).order_by('weekday', 'start_time', 'end_time'))
+    if not rooms or not time_slots:
+        return []
+
+    week_end = week_start + timedelta(days=5)
+    holidays = list(
+        SchoolHoliday.objects.filter(active=True, start_date__lte=week_end, end_date__gte=week_start)
+    )
+    lessons = list(
+        Lesson.objects.filter(
+            date__range=(week_start, week_end),
+            status__in=Lesson.OCCUPYING_STATUSES,
+        ).select_related('room')
+    )
+
+    slots = []
+    for day_offset in range(6):
+        target_date = week_start + timedelta(days=day_offset)
+        if target_date < today:
+            continue
+        if any(holiday.start_date <= target_date <= holiday.end_date for holiday in holidays):
+            continue
+        for slot in [item for item in time_slots if item.weekday == target_date.weekday()]:
+            if target_date == today and slot.start_time <= now_time:
+                continue
+            for room in rooms:
+                occupancy = sum(
+                    1
+                    for lesson in lessons
+                    if lesson.date == target_date
+                    and lesson.room_id == room.id
+                    and lesson.start_time < slot.end_time
+                    and lesson.end_time > slot.start_time
+                )
+                if occupancy >= room.capacity:
+                    continue
+                slots.append({
+                    'value': _slot_value(target_date, slot, room),
+                    'label': f'{target_date:%d/%m} {slot.start_time:%H:%M}-{slot.end_time:%H:%M} · {room.name}',
+                    'day_label': target_date.strftime('%A'),
+                    'date': target_date,
+                    'start_time': slot.start_time,
+                    'end_time': slot.end_time,
+                    'room': room,
+                })
+    return slots
+
+
+def _group_slots_by_day(slots):
+    grouped = []
+    current_key = None
+    for slot in slots:
+        key = slot['date']
+        if key != current_key:
+            grouped.append({'date': key, 'slots': []})
+            current_key = key
+        grouped[-1]['slots'].append(slot)
+    return grouped
+
+
+def _build_trial_lesson_from_form(*, opportunity, form, actor):
+    payload = form.trial_lesson_payload
+    if not payload:
+        return None
+    lesson = Lesson(
+        lesson_type=Lesson.TYPE_TRIAL,
+        trial_kind=payload['trial_kind'],
+        commercial_opportunity=opportunity,
+        student_name_snapshot=opportunity.title,
+        responsible_name_snapshot=opportunity.contact_name,
+        whatsapp_snapshot=opportunity.contact_phone,
+        course=payload['course'],
+        room=payload['room'],
+        date=payload['date'],
+        start_time=payload['start_time'],
+        end_time=payload['end_time'],
+        status=Lesson.STATUS_SCHEDULED,
+        notes=payload['notes'],
+        created_by=actor,
+    )
+    lesson.full_clean()
+    return lesson
+
+
+def _log_trial_lesson_created(*, actor, lesson):
+    log_activity(
+        actor=actor,
+        obj=lesson,
+        action='Aula Experimental ou Play criada pela oportunidade',
+        object_label=str(lesson),
+        details=(
+            f'Aula: {lesson}; oportunidade: {lesson.commercial_opportunity}; '
+            f'tipo: {lesson.get_trial_kind_display()}'
+        ),
+        new_values=snapshot_instance(lesson, [
+            'lesson_type', 'trial_kind', 'commercial_opportunity', 'student_name_snapshot',
+            'responsible_name_snapshot', 'whatsapp_snapshot', 'course', 'room', 'date',
+            'start_time', 'end_time', 'status', 'notes', 'created_by',
+        ]),
+    )
+
+
 def _confirm_delete(request, *, title, object_label, warning, cancel_url):
     return render(request, 'checklists/commercial_confirm_delete.html', {
         'title': title,
@@ -111,6 +267,73 @@ def _confirm_delete(request, *, title, object_label, warning, cancel_url):
         'warning': warning,
         'cancel_url': cancel_url,
         'is_admin': True,
+    })
+
+
+def _commercial_redirect_name(user):
+    return 'commercial_opportunities' if is_admin_user(user) else 'commercial_dashboard'
+
+
+def _commercial_form_context(request, *, form, title, submit_label, opportunity=None, week_start=None, slots=None, extra=None):
+    slots = slots or []
+    selected_slot = form['trial_lesson_slot'].value()
+    context = {
+        'form': form,
+        'title': title,
+        'submit_label': submit_label,
+        'opportunity': opportunity,
+        'is_admin': _is_commercial_admin_context(request.user),
+        'is_commercial_operator': _is_commercial_operator(request.user),
+        'week_start': week_start,
+        'previous_week': week_start - timedelta(days=7) if week_start else None,
+        'next_week': week_start + timedelta(days=7) if week_start else None,
+        'available_trial_slots': slots,
+        'available_trial_slots_by_day': _group_slots_by_day(slots),
+        'selected_trial_lesson_slot': selected_slot,
+        'selected_stage_requires_trial_lesson': form.selected_stage_requires_trial_lesson,
+    }
+    if extra:
+        context.update(extra)
+    return context
+
+
+@user_passes_test(_commercial_access_check)
+def commercial_dashboard(request):
+    today = timezone.localdate()
+    tomorrow = today + timedelta(days=1)
+    stale_threshold = timezone.now() - timedelta(days=3)
+    opportunities = _scope_commercial_opportunities(
+        _commercial_opportunity_queryset().filter(active=True),
+        request.user,
+    )
+
+    follow_up_today = opportunities.filter(next_follow_up_date=today).order_by('next_follow_up_date', 'title')
+    follow_up_tomorrow = opportunities.filter(next_follow_up_date=tomorrow).order_by('next_follow_up_date', 'title')
+    overdue = opportunities.filter(next_follow_up_date__lt=today).order_by('next_follow_up_date', 'title')
+    stale = opportunities.filter(updated_at__lt=stale_threshold).order_by('updated_at', 'title')
+    critical = stale.filter(next_follow_up_date__lt=today).order_by('next_follow_up_date', 'updated_at')
+
+    by_stage = (
+        opportunities.values('stage__name', 'stage__order')
+        .annotate(total=Count('id'))
+        .order_by('stage__order', 'stage__name')
+    )
+
+    return render(request, 'checklists/commercial_dashboard.html', {
+        'today': today,
+        'tomorrow': tomorrow,
+        'follow_up_today_count': follow_up_today.count(),
+        'follow_up_tomorrow_count': follow_up_tomorrow.count(),
+        'overdue_count': overdue.count(),
+        'critical_count': critical.count(),
+        'stale_count': stale.count(),
+        'by_stage': by_stage,
+        'follow_up_today': follow_up_today[:8],
+        'overdue': overdue[:10],
+        'critical_opportunities': critical[:10],
+        'stale_opportunities': stale[:10],
+        'is_admin': _is_commercial_admin_context(request.user),
+        'is_commercial_operator': _is_commercial_operator(request.user),
     })
 
 
@@ -749,14 +972,14 @@ def funnel_model_delete(request, model_id):
     )
 
 
-@user_passes_test(_admin_check)
+@user_passes_test(_commercial_access_check)
 def commercial_opportunities_list(request):
     status = request.GET.get('status', 'ativos')
     funnel_type_id = request.GET.get('tipo', '')
     stage_id = request.GET.get('etapa', '')
     funnel_id = request.GET.get('funil', '')
     opportunities = (
-        _commercial_opportunity_queryset()
+        _scope_commercial_opportunities(_commercial_opportunity_queryset(), request.user)
         .order_by(
             'funnel_type__name',
             'stage__order',
@@ -801,122 +1024,168 @@ def commercial_opportunities_list(request):
         'funnel_type_id': funnel_type_id,
         'stage_id': stage_id,
         'funnel_id': funnel_id,
-        'is_admin': True,
+        'is_admin': _is_commercial_admin_context(request.user),
+        'is_commercial_operator': _is_commercial_operator(request.user),
     })
 
 
-@user_passes_test(_admin_check)
+@user_passes_test(_commercial_access_check)
 def commercial_opportunity_create(request):
+    week_start = _parse_week_start(
+        request.POST.get('trial_lesson_week') if request.method == 'POST' else request.GET.get('semana')
+    )
+    slots = _available_trial_slots(week_start)
     if request.method == 'POST':
-        form = CommercialOpportunityForm(request.POST)
+        form = CommercialOpportunityForm(request.POST, available_trial_slots=slots)
         if form.is_valid():
-            opportunity = form.save()
-            opportunity = _commercial_opportunity_queryset().get(pk=opportunity.pk)
-            _record_stage_event(
-                opportunity=opportunity,
-                actor=request.user,
-                previous_stage=None,
-                note='Etapa inicial da oportunidade.',
-            )
-            _record_follow_up_event(
-                opportunity=opportunity,
-                actor=request.user,
-                previous_date=None,
-                note=form.cleaned_data.get('follow_up_note') or 'Follow-up inicial da oportunidade.',
-            )
-            log_activity(
-                actor=request.user,
-                obj=opportunity,
-                action='Oportunidade comercial criada',
-                object_label=opportunity.title,
-                details=f'Oportunidade: {opportunity.title}; funil: {opportunity.commercial_funnel}; ativa: {opportunity.active}',
-                new_values=_commercial_opportunity_snapshot(opportunity),
-            )
-            messages.success(request, 'Oportunidade criada.')
-            return redirect('commercial_opportunities')
+            try:
+                with transaction.atomic():
+                    opportunity = form.save(commit=False)
+                    opportunity.owner = request.user
+                    opportunity.save()
+                    opportunity = _commercial_opportunity_queryset().get(pk=opportunity.pk)
+                    lesson = _build_trial_lesson_from_form(opportunity=opportunity, form=form, actor=request.user)
+                    if lesson:
+                        lesson.save()
+                        _log_trial_lesson_created(actor=request.user, lesson=lesson)
+                    _record_stage_event(
+                        opportunity=opportunity,
+                        actor=request.user,
+                        previous_stage=None,
+                        note='Etapa inicial da oportunidade.',
+                    )
+                    _record_follow_up_event(
+                        opportunity=opportunity,
+                        actor=request.user,
+                        previous_date=None,
+                        note=form.cleaned_data.get('follow_up_note') or 'Follow-up inicial da oportunidade.',
+                    )
+                    log_activity(
+                        actor=request.user,
+                        obj=opportunity,
+                        action='Oportunidade comercial criada',
+                        object_label=opportunity.title,
+                        details=f'Oportunidade: {opportunity.title}; funil: {opportunity.commercial_funnel}; ativa: {opportunity.active}',
+                        new_values=_commercial_opportunity_snapshot(opportunity),
+                    )
+                messages.success(request, 'Oportunidade criada.')
+                return redirect(_commercial_redirect_name(request.user))
+            except ValidationError as exc:
+                form.add_error('trial_lesson_slot', '; '.join(exc.messages))
     else:
         initial = {}
         funnel_id = request.GET.get('funil')
         if funnel_id and funnel_id.isdigit():
             initial['commercial_funnel'] = funnel_id
-        form = CommercialOpportunityForm(initial=initial)
+        form = CommercialOpportunityForm(initial=initial, available_trial_slots=slots)
 
-    return render(request, 'checklists/commercial_opportunity_form.html', {
-        'form': form,
-        'title': 'Criar oportunidade',
-        'submit_label': 'Criar oportunidade',
-        'is_admin': True,
-    })
+    return render(request, 'checklists/commercial_opportunity_form.html', _commercial_form_context(
+        request,
+        form=form,
+        title='Criar oportunidade',
+        submit_label='Criar oportunidade',
+        week_start=week_start,
+        slots=slots,
+    ))
 
 
-@user_passes_test(_admin_check)
+@user_passes_test(_commercial_access_check)
 def commercial_opportunity_edit(request, opportunity_id):
-    opportunity = get_object_or_404(_commercial_opportunity_queryset(), pk=opportunity_id)
+    opportunity = get_object_or_404(_scope_commercial_opportunities(_commercial_opportunity_queryset(), request.user), pk=opportunity_id)
+    week_start = _parse_week_start(
+        request.POST.get('trial_lesson_week') if request.method == 'POST' else request.GET.get('semana')
+    )
+    slots = _available_trial_slots(week_start)
     previous_active = opportunity.active
     previous_stage = opportunity.stage
     previous_stage_id = opportunity.stage_id
     previous_follow_up_date = opportunity.next_follow_up_date
     previous_values_full = _commercial_opportunity_snapshot(opportunity)
+    has_existing_trial_lesson = opportunity.trial_lessons.exists()
     if request.method == 'POST':
-        form = CommercialOpportunityForm(request.POST, instance=opportunity)
+        form = CommercialOpportunityForm(
+            request.POST,
+            instance=opportunity,
+            available_trial_slots=slots,
+            has_existing_trial_lesson=has_existing_trial_lesson,
+        )
         if form.is_valid():
-            opportunity = form.save()
-            opportunity = _commercial_opportunity_queryset().get(pk=opportunity.pk)
-            if previous_stage_id != opportunity.stage_id:
-                _record_stage_event(
-                    opportunity=opportunity,
-                    actor=request.user,
-                    previous_stage=previous_stage,
-                    note='Etapa alterada na edição da oportunidade.',
-                )
-            follow_up_note = form.cleaned_data.get('follow_up_note') or ''
-            if previous_follow_up_date != opportunity.next_follow_up_date or follow_up_note.strip():
-                _record_follow_up_event(
-                    opportunity=opportunity,
-                    actor=request.user,
-                    previous_date=previous_follow_up_date,
-                    note=follow_up_note,
-                )
-            previous_values, new_values = changed_values(
-                previous_values_full,
-                _commercial_opportunity_snapshot(opportunity),
-            )
-            if previous_active and not opportunity.active:
-                action = 'Oportunidade comercial desativada'
-            elif not previous_active and opportunity.active:
-                action = 'Oportunidade comercial ativada'
-            else:
-                action = 'Oportunidade comercial atualizada'
-            log_activity(
-                actor=request.user,
-                obj=opportunity,
-                action=action,
-                object_label=opportunity.title,
-                details=f'Oportunidade: {opportunity.title}; funil: {opportunity.commercial_funnel}; ativa: {opportunity.active}',
-                previous_values=previous_values,
-                new_values=new_values,
-            )
-            messages.success(request, 'Oportunidade atualizada.')
-            return redirect('commercial_opportunities')
+            try:
+                with transaction.atomic():
+                    opportunity = form.save(commit=False)
+                    if not opportunity.owner_id:
+                        opportunity.owner = request.user
+                    opportunity.save()
+                    opportunity = _commercial_opportunity_queryset().get(pk=opportunity.pk)
+                    lesson = _build_trial_lesson_from_form(opportunity=opportunity, form=form, actor=request.user)
+                    if lesson:
+                        lesson.save()
+                        _log_trial_lesson_created(actor=request.user, lesson=lesson)
+                    if previous_stage_id != opportunity.stage_id:
+                        _record_stage_event(
+                            opportunity=opportunity,
+                            actor=request.user,
+                            previous_stage=previous_stage,
+                            note='Etapa alterada na edição da oportunidade.',
+                        )
+                    follow_up_note = form.cleaned_data.get('follow_up_note') or ''
+                    if previous_follow_up_date != opportunity.next_follow_up_date or follow_up_note.strip():
+                        _record_follow_up_event(
+                            opportunity=opportunity,
+                            actor=request.user,
+                            previous_date=previous_follow_up_date,
+                            note=follow_up_note,
+                        )
+                    previous_values, new_values = changed_values(
+                        previous_values_full,
+                        _commercial_opportunity_snapshot(opportunity),
+                    )
+                    if previous_active and not opportunity.active:
+                        action = 'Oportunidade comercial desativada'
+                    elif not previous_active and opportunity.active:
+                        action = 'Oportunidade comercial ativada'
+                    else:
+                        action = 'Oportunidade comercial atualizada'
+                    log_activity(
+                        actor=request.user,
+                        obj=opportunity,
+                        action=action,
+                        object_label=opportunity.title,
+                        details=f'Oportunidade: {opportunity.title}; funil: {opportunity.commercial_funnel}; ativa: {opportunity.active}',
+                        previous_values=previous_values,
+                        new_values=new_values,
+                    )
+                messages.success(request, 'Oportunidade atualizada.')
+                return redirect(_commercial_redirect_name(request.user))
+            except ValidationError as exc:
+                form.add_error('trial_lesson_slot', '; '.join(exc.messages))
     else:
-        form = CommercialOpportunityForm(instance=opportunity)
+        form = CommercialOpportunityForm(
+            instance=opportunity,
+            available_trial_slots=slots,
+            has_existing_trial_lesson=has_existing_trial_lesson,
+        )
 
-    return render(request, 'checklists/commercial_opportunity_form.html', {
-        'form': form,
-        'title': f'Editar oportunidade - {opportunity.title}',
-        'submit_label': 'Salvar alterações',
-        'opportunity': opportunity,
-        'follow_up_events': opportunity.follow_up_events.select_related('actor')[:20],
-        'stage_events': opportunity.stage_events.select_related('actor', 'previous_stage', 'new_stage')[:20],
-        'trial_lessons': opportunity.trial_lessons.select_related('course', 'room').order_by('-date', '-start_time')[:20],
-        'is_admin': True,
-    })
+    return render(request, 'checklists/commercial_opportunity_form.html', _commercial_form_context(
+        request,
+        form=form,
+        title=f'Editar oportunidade - {opportunity.title}',
+        submit_label='Salvar alterações',
+        opportunity=opportunity,
+        week_start=week_start,
+        slots=slots,
+        extra={
+            'follow_up_events': opportunity.follow_up_events.select_related('actor')[:20],
+            'stage_events': opportunity.stage_events.select_related('actor', 'previous_stage', 'new_stage')[:20],
+            'trial_lessons': opportunity.trial_lessons.select_related('course', 'room').order_by('-date', '-start_time')[:20],
+        },
+    ))
 
 
 @require_POST
-@user_passes_test(_admin_check)
+@user_passes_test(_commercial_access_check)
 def commercial_opportunity_toggle(request, opportunity_id):
-    opportunity = get_object_or_404(_commercial_opportunity_queryset(), pk=opportunity_id)
+    opportunity = get_object_or_404(_scope_commercial_opportunities(_commercial_opportunity_queryset(), request.user), pk=opportunity_id)
     previous_values_full = _commercial_opportunity_snapshot(opportunity)
     opportunity.active = not opportunity.active
     opportunity.save(update_fields=['active', 'updated_at'])
@@ -936,7 +1205,7 @@ def commercial_opportunity_toggle(request, opportunity_id):
         new_values=new_values,
     )
     messages.success(request, f'Oportunidade {"ativada" if opportunity.active else "desativada"}.')
-    return redirect('commercial_opportunities')
+    return redirect(_commercial_redirect_name(request.user))
 
 
 @user_passes_test(_admin_check)
