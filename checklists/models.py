@@ -1086,7 +1086,6 @@ class ChecklistOccurrence(models.Model):
         help_text='Preenchido automaticamente a partir do cadastro do usuário que atualizou a atividade.',
     )
     evidence_text = models.TextField('Evidência/observação', blank=True)
-    evidence_file = models.FileField('Arquivo de evidência legado', upload_to='evidencias/%Y/%m/', blank=True, null=True)
     blocked_reason = models.TextField('Motivo de pendência/bloqueio', blank=True)
     created_at = models.DateTimeField('Criado em', auto_now_add=True)
     updated_at = models.DateTimeField('Atualizado em', auto_now=True)
@@ -1157,28 +1156,6 @@ class ChecklistOccurrenceStatusEvent(models.Model):
         return ChecklistOccurrence.OPERATIONAL_STATUS_LABELS.get(self.new_status, self.get_new_status_display())
 
 
-class EvidenceAttachment(models.Model):
-    """Arquivo de evidência vinculado a uma execução de tarefa.
-
-    Permite mais de um anexo por atividade: PDF, imagem, print ou foto.
-    O texto da evidência continua no campo `evidence_text` da ocorrência.
-    """
-
-    occurrence = models.ForeignKey(ChecklistOccurrence, on_delete=models.CASCADE, related_name='attachments')
-    file = models.FileField('Arquivo', upload_to='evidencias/%Y/%m/')
-    original_name = models.CharField('Nome original', max_length=255, blank=True)
-    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
-    uploaded_at = models.DateTimeField('Enviado em', auto_now_add=True)
-
-    class Meta:
-        ordering = ['-uploaded_at']
-        verbose_name = 'Anexo de evidência'
-        verbose_name_plural = 'Anexos de evidência'
-
-    def __str__(self):
-        return self.original_name or self.file.name
-
-
 class DailyNote(models.Model):
     """Observação geral de um cargo em um dia."""
 
@@ -1241,7 +1218,6 @@ class MetricRecord(models.Model):
     executor_full_name = models.CharField('Nome completo do funcionário', max_length=180, blank=True)
     value = models.DecimalField('Valor', max_digits=10, decimal_places=2)
     notes = models.TextField('Observações', blank=True)
-    evidence_file = models.FileField('Arquivo de evidência', upload_to='metricas/%Y/%m/', blank=True, null=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField('Criado em', auto_now_add=True)
 

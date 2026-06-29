@@ -1,9 +1,7 @@
 import json
 from calendar import monthrange
-from datetime import datetime
-from pathlib import Path
+from datetime import datetime, timedelta
 from django import forms
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.forms import inlineformset_factory
 from django.forms.models import BaseInlineFormSet
@@ -22,11 +20,6 @@ from .security import generate_temporary_password, should_force_password_change_
 
 
 User = get_user_model()
-ALLOWED_EVIDENCE_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic'}
-ALLOWED_METRIC_EVIDENCE_EXTENSIONS = ALLOWED_EVIDENCE_EXTENSIONS | {
-    '.txt', '.csv', '.tsv', '.xls', '.xlsx', '.ods', '.doc', '.docx',
-    '.ppt', '.pptx', '.zip',
-}
 
 
 def add_months(value, months):
@@ -41,67 +34,8 @@ def is_lost_stage(stage):
     return bool(stage and 'perdido' in slugify(f'{stage.code} {stage.name}'))
 
 
-class MultipleFileInput(forms.ClearableFileInput):
-    """Widget para upload de múltiplos arquivos.
-
-    O Django não trata múltiplos arquivos em um FileField comum por padrão.
-    Este widget permite usar request.FILES.getlist('evidence_files') na view.
-    """
-
-    allow_multiple_selected = True
-
-
-class MultipleFileField(forms.FileField):
-    """Campo de múltiplos arquivos com validação simples de extensão e tamanho."""
-
-    widget = MultipleFileInput
-
-    def clean(self, data, initial=None):
-        if not data:
-            return []
-        files = data if isinstance(data, (list, tuple)) else [data]
-        max_mb = min(int(getattr(settings, 'MAX_EVIDENCE_FILE_SIZE_MB', 5)), 5)
-        max_bytes = max_mb * 1024 * 1024
-        cleaned = []
-        for uploaded in files:
-            ext = Path(uploaded.name).suffix.lower()
-            if ext not in ALLOWED_EVIDENCE_EXTENSIONS:
-                raise forms.ValidationError(
-                    f'Arquivo "{uploaded.name}" não permitido. Use PDF ou imagem: PDF, PNG, JPG, JPEG, WEBP, GIF ou HEIC.'
-                )
-            if uploaded.size > max_bytes:
-                raise forms.ValidationError(f'Arquivo "{uploaded.name}" excede {max_mb} MB.')
-            cleaned.append(uploaded)
-        return cleaned
-
-
-class MetricEvidenceFileField(forms.FileField):
-    """Arquivo único para comprovação de indicador operacional."""
-
-    def clean(self, data, initial=None):
-        uploaded = super().clean(data, initial)
-        if not uploaded:
-            return uploaded
-        ext = Path(uploaded.name).suffix.lower()
-        if ext not in ALLOWED_METRIC_EVIDENCE_EXTENSIONS:
-            raise forms.ValidationError(
-                f'Arquivo "{uploaded.name}" não permitido. Use TXT, planilha, PDF, imagem, documento Office ou ZIP.'
-            )
-        max_mb = min(int(getattr(settings, 'MAX_EVIDENCE_FILE_SIZE_MB', 5)), 5)
-        if uploaded.size > max_mb * 1024 * 1024:
-            raise forms.ValidationError(f'Arquivo "{uploaded.name}" excede {max_mb} MB.')
-        return uploaded
-
-
 class OccurrenceUpdateForm(forms.ModelForm):
     """Formulário para registrar a execução de uma atividade."""
-
-    evidence_files = MultipleFileField(
-        required=False,
-        label='Arquivos de evidência',
-        help_text='Anexe PDF ou imagem de até 5 MB. Você pode selecionar mais de um arquivo.',
-        widget=MultipleFileInput(attrs={'class': 'input', 'multiple': True, 'accept': '.pdf,image/*,.heic'}),
-    )
 
     class Meta:
         model = ChecklistOccurrence
@@ -113,7 +47,6 @@ class OccurrenceUpdateForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
-        self.has_existing_file = kwargs.pop('has_existing_file', False)
         self.requires_evidence = kwargs.pop('requires_evidence', True)
         super().__init__(*args, **kwargs)
         self.fields['status'].choices = ChecklistOccurrence.OPERATIONAL_STATUS_CHOICES
@@ -121,17 +54,15 @@ class OccurrenceUpdateForm(forms.ModelForm):
         self.fields['blocked_reason'].widget.attrs['placeholder'] = 'Obrigatório quando a atividade estiver atrasada.'
         if not self.requires_evidence:
             self.fields.pop('evidence_text', None)
-            self.fields.pop('evidence_files', None)
 
     def clean(self):
         cleaned = super().clean()
         status = cleaned.get('status')
         evidence_text = (cleaned.get('evidence_text') or '').strip()
         blocked_reason = (cleaned.get('blocked_reason') or '').strip()
-        new_files = cleaned.get('evidence_files') or []
 
-        if self.requires_evidence and status == ChecklistOccurrence.STATUS_DONE and not evidence_text and not new_files and not self.has_existing_file:
-            raise forms.ValidationError('Para concluir uma atividade, registre evidência textual ou anexe pelo menos um arquivo.')
+        if self.requires_evidence and status == ChecklistOccurrence.STATUS_DONE and not evidence_text:
+            raise forms.ValidationError('Para concluir uma atividade, registre evidência textual.')
         if status == ChecklistOccurrence.STATUS_BLOCKED and not blocked_reason:
             raise forms.ValidationError('Informe a observação operacional quando a atividade estiver atrasada.')
         return cleaned
@@ -147,19 +78,9 @@ class DailyNoteForm(forms.ModelForm):
 
 
 class MetricRecordForm(forms.ModelForm):
-    evidence_file = MetricEvidenceFileField(
-        label='Evidência',
-        required=False,
-        help_text='Aceita TXT, planilha, PDF, imagem, documento Office ou ZIP de até 5 MB.',
-        widget=forms.ClearableFileInput(attrs={
-            'class': 'input',
-            'accept': '.txt,.csv,.tsv,.xls,.xlsx,.ods,.pdf,image/*,.heic,.doc,.docx,.ppt,.pptx,.zip',
-        }),
-    )
-
     class Meta:
         model = MetricRecord
-        fields = ['metric', 'date', 'value', 'notes', 'evidence_file']
+        fields = ['metric', 'date', 'value', 'notes']
         widgets = {
             'metric': forms.Select(attrs={'class': 'input'}),
             'date': forms.DateInput(attrs={'class': 'input', 'type': 'date'}),
@@ -1125,6 +1046,7 @@ class CommercialOpportunityForm(forms.ModelForm):
         label='Horário livre',
         required=False,
         choices=[],
+        error_messages={'invalid_choice': 'Selecione um horário livre válido.'},
         widget=forms.RadioSelect(),
     )
     trial_lesson_notes = forms.CharField(
@@ -1146,7 +1068,7 @@ class CommercialOpportunityForm(forms.ModelForm):
             'value': forms.NumberInput(attrs={'class': 'input', 'min': '0', 'step': '0.01', 'data-opportunity-value': '1'}),
             'contact_name': forms.TextInput(attrs={'class': 'input'}),
             'contact_phone': forms.TextInput(attrs={'class': 'input'}),
-            'next_follow_up_date': forms.DateInput(attrs={'class': 'input', 'type': 'date'}),
+            'next_follow_up_date': forms.DateInput(format='%Y-%m-%d', attrs={'class': 'input', 'type': 'date'}),
             'notes': forms.Textarea(attrs={'class': 'input', 'rows': 4}),
         }
         labels = {
@@ -1172,6 +1094,8 @@ class CommercialOpportunityForm(forms.ModelForm):
         self.trial_lesson_payload = None
         if not self.is_bound and not (self.instance and self.instance.pk) and self.generated_title:
             self.fields['title'].initial = self.generated_title
+        if not self.is_bound and not (self.instance and self.instance.pk) and not self.initial.get('next_follow_up_date'):
+            self.initial['next_follow_up_date'] = timezone.localdate() + timedelta(days=1)
         self.fields['next_follow_up_date'].required = False
         self.fields['status'].initial = self.STATUS_ACTIVE if self.instance.active else self.STATUS_INACTIVE
         self._configure_interest_choices()

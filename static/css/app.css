@@ -1002,6 +1002,12 @@ th {
   margin-top: 14px;
 }
 
+.trial-slot-empty-filter {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+
 .trial-slot-day {
   display: grid;
   gap: 10px;
@@ -1074,10 +1080,26 @@ th {
   box-shadow: 0 8px 18px rgba(33, 31, 32, 0.08);
 }
 
+.trial-slot-card.is-disabled {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  cursor: not-allowed;
+  opacity: 0.95;
+}
+
+.trial-slot-card.is-disabled:hover {
+  border-color: #fca5a5;
+  box-shadow: none;
+}
+
 .trial-slot-card input {
   width: auto;
   min-width: auto;
   margin: 0;
+}
+
+.trial-slot-card input:disabled {
+  cursor: not-allowed;
 }
 
 .trial-slot-card span,
@@ -1094,6 +1116,15 @@ th {
   grid-column: 2;
   color: var(--muted);
   font-weight: 700;
+}
+
+.trial-slot-card.is-disabled span {
+  color: #991b1b;
+}
+
+.trial-slot-card .trial-slot-blocked-reason {
+  color: #b91c1c;
+  font-weight: 800;
 }
 
 .trial-slot-card-empty {
@@ -1907,6 +1938,192 @@ th {
   font-size: 0.88rem;
 }
 
+.lesson-agenda-filters {
+  align-items: flex-end;
+}
+
+.lesson-agenda-filters label {
+  display: grid;
+  gap: 6px;
+  font-weight: 700;
+}
+
+.lesson-calendar {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.lesson-calendar-weekdays,
+.lesson-calendar-row {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(7, minmax(150px, 1fr));
+}
+
+.lesson-calendar-row.single-day {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.lesson-calendar-weekdays span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 0 4px;
+  text-transform: uppercase;
+}
+
+.lesson-calendar-day {
+  align-content: start;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 10px;
+  min-height: 260px;
+  padding: 10px;
+}
+
+.lesson-calendar-row.single-day .lesson-calendar-day {
+  min-height: 320px;
+}
+
+.lesson-calendar-day.outside-period {
+  background: var(--field-soft);
+  box-shadow: none;
+  opacity: 0.72;
+}
+
+.lesson-calendar-day.today {
+  border-color: var(--sky);
+  box-shadow: 0 0 0 2px rgba(0, 173, 239, 0.14), var(--shadow);
+}
+
+.lesson-calendar-day-header {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding-bottom: 8px;
+}
+
+.lesson-calendar-day-header strong,
+.lesson-calendar-day-header span {
+  display: block;
+}
+
+.lesson-calendar-day-header strong {
+  color: var(--dark);
+  font-size: 1rem;
+}
+
+.lesson-calendar-day-header span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.lesson-count {
+  align-items: center;
+  background: var(--field-soft);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--dark) !important;
+  display: inline-flex !important;
+  font-size: 0.78rem !important;
+  justify-content: center;
+  min-width: 28px;
+  padding: 4px 8px;
+}
+
+.lesson-calendar-items {
+  display: grid;
+  gap: 8px;
+}
+
+.lesson-calendar-empty {
+  margin: 0;
+}
+
+.lesson-calendar-card {
+  background: var(--field-soft);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--sky);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.lesson-calendar-card.status-scheduled {
+  border-left-color: #fbbf24;
+}
+
+.lesson-calendar-card.status-done {
+  border-left-color: #93c5fd;
+}
+
+.lesson-calendar-card.status-cancelled {
+  border-left-color: #fca5a5;
+  opacity: 0.82;
+}
+
+.lesson-calendar-card.status-absent {
+  border-left-color: #fb923c;
+}
+
+.lesson-calendar-card.status-not_given,
+.lesson-calendar-card.status-rescheduled {
+  border-left-color: #94a3b8;
+}
+
+.lesson-card-time {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.lesson-card-time strong {
+  color: var(--dark);
+  font-size: 0.95rem;
+}
+
+.lesson-card-time span,
+.lesson-card-main span,
+.lesson-card-meta {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.lesson-card-main {
+  display: grid;
+  gap: 3px;
+}
+
+.lesson-card-main strong {
+  color: var(--text);
+  line-height: 1.25;
+}
+
+.lesson-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lesson-card-meta {
+  display: grid;
+  gap: 5px;
+}
+
+.lesson-card-actions {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
 .mini-task {
   display: grid;
   gap: 8px;
@@ -1997,27 +2214,6 @@ th {
   color: var(--muted);
   font-size: 0.82rem;
   margin-top: 4px;
-}
-
-.attachments {
-  margin: 12px 0;
-  padding: 10px;
-  border: 1px dashed #b7dff0;
-  border-radius: 8px;
-  background: #f8fdff;
-}
-
-.attachments ul {
-  margin: 8px 0 0 20px;
-  padding: 0;
-}
-
-.attachments li {
-  margin: 4px 0;
-}
-
-.attachment-link {
-  font-weight: 700;
 }
 
 .temporary-password {
@@ -2129,9 +2325,20 @@ html[data-theme="dark"] .trial-slot-card {
   background: var(--field-soft);
 }
 
+html[data-theme="dark"] .trial-slot-card.is-disabled {
+  background: #451a1a;
+  border-color: #7f1d1d;
+}
+
+html[data-theme="dark"] .trial-slot-card.is-disabled span,
+html[data-theme="dark"] .trial-slot-card .trial-slot-blocked-reason {
+  color: #fecaca;
+}
+
 html[data-theme="dark"] .mini-card,
 html[data-theme="dark"] .mini-task,
 html[data-theme="dark"] .checkbox-card,
+html[data-theme="dark"] .lesson-calendar-card,
 html[data-theme="dark"] .dashboard-stage-list a,
 html[data-theme="dark"] .followup-card,
 html[data-theme="dark"] .kanban-card {
@@ -2197,6 +2404,18 @@ html[data-theme="dark"] .kanban-card {
 
   .calendar-row {
     grid-template-columns: 1fr;
+  }
+
+  .lesson-calendar-weekdays {
+    display: none;
+  }
+
+  .lesson-calendar-row {
+    grid-template-columns: 1fr;
+  }
+
+  .lesson-calendar-day {
+    min-height: auto;
   }
 }
 

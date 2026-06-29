@@ -114,12 +114,78 @@ def _lesson_status_from_sponte(value):
     return Lesson.STATUS_SCHEDULED
 
 
-def _first_child_text(element, *names):
-    for name in names:
-        value = _child_text(element, name)
-        if value:
-            return value
+def _normalize_key(value):
+    return ''.join(char for char in _normalize(value) if char.isalnum())
+
+
+def _truthy_sponte_flag(value):
+    normalized = _normalize(str(value or '')).strip()
+    if not normalized:
+        return False
+    if normalized in {'0', 'false', 'falso', 'nao', 'n', 'no', 'unchecked', 'desmarcado'}:
+        return False
+    if normalized in {'1', 'true', 'verdadeiro', 'sim', 's', 'yes', 'y', 'checked', 'marcado', 'x'}:
+        return True
+    try:
+        return Decimal(normalized.replace(',', '.')) > 0
+    except Exception:
+        return False
+
+
+def _children_text_map(element):
+    return {_local_name(child.tag): (child.text or '').strip() for child in list(element)}
+
+
+def _lesson_status_choice_label(status):
+    return dict(Lesson.STATUS_CHOICES).get(status, '')
+
+
+def _lesson_status_from_sponte_flags(fields):
+    normalized_fields = {_normalize_key(key): value for key, value in fields.items()}
+
+    def marked(*keys):
+        wanted = {_normalize_key(key) for key in keys}
+        return any(
+            key in wanted and _truthy_sponte_flag(value)
+            for key, value in normalized_fields.items()
+        )
+
+    if marked('C', 'Cancelada', 'Cancelado', 'AulaCancelada', 'SituacaoCancelada'):
+        return Lesson.STATUS_CANCELLED
+    if marked('NaoDada', 'NaoDado', 'NaoMinistrada', 'NaoRealizada', 'AulaNaoDada'):
+        return Lesson.STATUS_NOT_GIVEN
+    if marked('F', 'Falta', 'Faltou', 'Ausente', 'Ausencia'):
+        return Lesson.STATUS_ABSENT
+    if marked('P', 'Presenca', 'Presente', 'Realizada', 'AulaRealizada'):
+        return Lesson.STATUS_DONE
+    if marked('Reagendada', 'Remarcada'):
+        return Lesson.STATUS_RESCHEDULED
     return ''
+
+
+def _lesson_status_label_from_sponte_fields(fields):
+    status_from_flags = _lesson_status_from_sponte_flags(fields)
+    if status_from_flags:
+        return _lesson_status_choice_label(status_from_flags)
+
+    status_text = ''
+    for key in (
+        'SituacaoAula',
+        'SituacaoDaAula',
+        'Situacao',
+        'NomeSituacao',
+        'DescricaoSituacao',
+        'StatusAula',
+        'StatusDaAula',
+        'Status',
+    ):
+        status_text = fields.get(key, '').strip()
+        if status_text:
+            break
+
+    if not status_text:
+        return ''
+    return _lesson_status_choice_label(_lesson_status_from_sponte(status_text)) or status_text
 
 
 def _is_success_message(value):
@@ -340,16 +406,8 @@ def parse_sponte_free_class_schedule(xml_text, *, student_external_id=''):
             end_time = _child_text(item, 'HorarioFinal')
             if not any([free_class_id, class_date, start_time, end_time]):
                 continue
-            lesson_status = _first_child_text(
-                item,
-                'SituacaoAula',
-                'SituacaoDaAula',
-                'Situacao',
-                'NomeSituacao',
-                'DescricaoSituacao',
-                'StatusAula',
-                'Status',
-            )
+            item_fields = _children_text_map(item)
+            lesson_status = _lesson_status_label_from_sponte_fields(item_fields)
             records.append({
                 'student_external_id': agenda_student_id,
                 'free_class_id': free_class_id,

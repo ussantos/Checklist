@@ -146,14 +146,24 @@
         <span>Não agendar agora</span>
       </label>
       {% for day in available_trial_slots_by_day %}
-        <div class="trial-slot-day weekday-{{ day.date|date:'w' }}">
+        <div class="trial-slot-day weekday-{{ day.date|date:'w' }}" data-trial-slot-day>
           <h3>{{ day.date|date:"l, d/m" }}</h3>
           <div class="trial-slot-options">
             {% for slot in day.slots %}
-              <label class="trial-slot-card">
+              <label
+                class="trial-slot-card"
+                data-trial-slot-card
+                data-room-available="{% if slot.room_available %}1{% else %}0{% endif %}"
+                data-room-block-reason="{{ slot.room_block_reason }}"
+                data-course-ids="{{ slot.available_course_ids_csv }}"
+              >
                 <input type="radio" name="{{ form.trial_lesson_slot.html_name }}" value="{{ slot.value }}" {% if selected_trial_lesson_slot == slot.value %}checked{% endif %}>
                 <span>{{ slot.start_time|time:"H:i" }} - {{ slot.end_time|time:"H:i" }}</span>
                 <small>{{ slot.room.name }}</small>
+                {% for blocked in slot.blocked_courses %}
+                  <small class="trial-slot-course-reason" data-blocked-course-id="{{ blocked.course.id }}" hidden>{{ blocked.reason }}</small>
+                {% endfor %}
+                <small class="trial-slot-blocked-reason" data-trial-slot-blocked-reason hidden></small>
               </label>
             {% endfor %}
           </div>
@@ -161,6 +171,7 @@
       {% empty %}
         <p class="muted">Nenhum horário livre encontrado nesta semana.</p>
       {% endfor %}
+      <p class="muted trial-slot-empty-filter" id="trial-slot-empty-filter" hidden>Nenhum horário disponível para o curso selecionado nesta semana.</p>
     </div>
   </section>
 
@@ -292,10 +303,55 @@
     const statusSelect = document.getElementById('id_status');
     const funnelSelect = document.getElementById('id_commercial_funnel');
     const followUpInput = document.getElementById('id_next_follow_up_date');
+    const trialCourseSelect = document.getElementById('id_trial_lesson_course');
+    const trialSlotCards = Array.from(document.querySelectorAll('[data-trial-slot-card]'));
+    const trialEmptyFiltered = document.getElementById('trial-slot-empty-filter');
+    const trialEmptyRadio = document.querySelector('input[name="{{ form.trial_lesson_slot.html_name }}"][value=""]');
     const trialStageId = form.dataset.trialStageId || '';
     const lostStageId = form.dataset.lostStageId || '';
     const interestedFunnelId = form.dataset.interestedFunnelId || '';
     const lostFollowUpDate = form.dataset.lostFollowUpDate || '';
+
+    const blockReasonForCard = (card, courseId) => {
+      if (card.dataset.roomAvailable !== '1') {
+        return card.dataset.roomBlockReason || 'Sala indisponível neste horário.';
+      }
+      if (!courseId) return '';
+      const allowedCourseIds = (card.dataset.courseIds || '').split(',').filter(Boolean);
+      if (allowedCourseIds.includes(courseId)) return '';
+      const courseReason = Array.from(card.querySelectorAll('[data-blocked-course-id]'))
+        .find((item) => item.dataset.blockedCourseId === courseId);
+      return courseReason ? courseReason.textContent.trim() : 'Curso indisponível neste horário.';
+    };
+
+    const updateTrialSlotAvailability = () => {
+      const courseId = trialCourseSelect ? trialCourseSelect.value : '';
+      let selectableSlots = 0;
+      trialSlotCards.forEach((card) => {
+        const reason = blockReasonForCard(card, courseId);
+        const blocked = Boolean(reason);
+        const radio = card.querySelector('input[type="radio"]');
+        const reasonElement = card.querySelector('[data-trial-slot-blocked-reason]');
+        card.classList.toggle('is-disabled', blocked);
+        if (radio) {
+          radio.disabled = blocked;
+          if (blocked && radio.checked && trialEmptyRadio) {
+            trialEmptyRadio.checked = true;
+          }
+        }
+        if (reasonElement) {
+          reasonElement.textContent = reason;
+          reasonElement.hidden = !blocked;
+        }
+        if (!blocked) {
+          selectableSlots += 1;
+        }
+      });
+
+      if (trialEmptyFiltered) {
+        trialEmptyFiltered.hidden = selectableSlots > 0;
+      }
+    };
 
     const markTrialStage = () => {
       if (stageSelect && trialStageId) {
@@ -331,6 +387,10 @@
       stageSelect.addEventListener('change', applyLostStage);
       applyLostStage();
     }
+    if (trialCourseSelect) {
+      trialCourseSelect.addEventListener('change', updateTrialSlotAvailability);
+    }
+    updateTrialSlotAvailability();
   })();
 </script>
 <script id="interest-value-map" type="application/json">{{ form.interest_value_map_json|safe }}</script>

@@ -337,7 +337,7 @@ def run_backup(config=None, *, force_local_only=False):
         f'Data: {timezone.localtime().isoformat()}',
         f'Banco: {db.get("NAME", "")}',
         'Arquivos: db.dump, media.tar.gz, app_config.tar.gz',
-        'Evidencias: incluidas em media.tar.gz',
+        'Midia local: incluida em media.tar.gz quando existir',
         'Pacote restauravel: backup_package.tar.gz',
         f'Destino em nuvem: {config.get_cloud_provider_display()}',
         f'Retencao local/nuvem: {config.retention_days} dia(s)',
@@ -440,7 +440,7 @@ def import_uploaded_backup(uploaded_file):
                 'Backup My Robot Checklist',
                 f'Data de importacao: {timezone.localtime().isoformat()}',
                 'Origem: upload manual de db.dump',
-                'Evidencias: nao incluidas neste arquivo',
+                'Midia local: nao incluida neste arquivo',
             ])
             _create_backup_package(backup_root)
         elif lower_name.endswith('.zip'):

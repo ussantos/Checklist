@@ -139,11 +139,9 @@ Validar:
 - [ ] Cards ficam ordenados por horário de início.
 - [ ] É possível abrir uma atividade e alterar status para **Executando**.
 - [ ] É possível salvar evidência textual.
-- [ ] Se a atividade exigir evidência, concluir sem evidência textual e sem anexo é bloqueado.
+- [ ] Se a atividade exigir evidência, concluir sem evidência textual é bloqueado.
 - [ ] Se a atividade não exigir evidência, os campos de evidência não aparecem.
 - [ ] Ao concluir com evidência textual, o sistema salva.
-- [ ] Ao concluir com anexo PDF, o sistema salva.
-- [ ] Ao concluir com imagem, o sistema salva.
 - [ ] Ao marcar como **Atrasada**, o sistema exige observação operacional.
 - [ ] O nome do usuário logado aparece no histórico da atividade.
 
@@ -165,23 +163,14 @@ Com administrador:
 - [ ] Administrador consegue aprovar desativação sem excluir histórico.
 - [ ] ActivityLog registra aprovação/rejeição.
 
-## 8. Teste de uploads de evidência
+## 8. Teste de evidência textual
 
-Testar anexos:
+Testar registro textual:
 
-- [ ] PDF pequeno.
-- [ ] PNG.
-- [ ] JPG/JPEG.
-- [ ] WEBP.
-- [ ] Múltiplos arquivos no mesmo lançamento.
-- [ ] Arquivo acima do limite configurado em `MAX_EVIDENCE_FILE_SIZE_MB` é rejeitado.
-- [ ] Arquivo com extensão não permitida é rejeitado.
-
-Testar segurança:
-
-- [ ] Usuário deslogado não acessa anexo.
-- [ ] Funcionário de outro cargo não acessa anexo sem permissão.
-- [ ] Administrador acessa anexos de todos os cargos.
+- [ ] Usuário comum registra observação/evidência textual.
+- [ ] Atividade concluída que exige evidência textual bloqueia texto vazio.
+- [ ] Histórico exibe a evidência textual registrada.
+- [ ] CSV de histórico exporta a evidência textual.
 
 ## 9. Visões de calendário
 
@@ -227,7 +216,7 @@ Validar:
 - [ ] Alterações de cargo, usuário, atividade, indicador/meta e importação XLSX aparecem na auditoria.
 - [ ] Redefinição de senha aparece na auditoria sem exibir senha.
 - [ ] CSV abre corretamente no Excel/LibreOffice.
-- [ ] CSV de histórico contém usuário executor, cargo, status, evidência textual e anexos.
+- [ ] CSV de histórico contém usuário executor, cargo, status e evidência textual.
 
 ## 12. Indicadores operacionais
 
@@ -238,7 +227,7 @@ Validar:
 - [ ] Administrador vincula indicador a atividade do tipo escolhido.
 - [ ] Administrador edita meta (`monthly_target`).
 - [ ] Administrador inativa indicador sem exclusão física.
-- [ ] Indicador aceita evidência TXT, planilha, PDF, imagem ou arquivo similar quando registrado pelo administrador.
+- [ ] Indicador pode ser registrado pelo administrador sem upload de arquivo.
 - [ ] Indicadores aparecem no dashboard.
 - [ ] Usuário comum só vê indicadores do próprio escopo.
 
@@ -277,7 +266,6 @@ Validar:
 - [ ] É possível visualizar cargos.
 - [ ] É possível visualizar modelos de tarefas.
 - [ ] É possível visualizar execuções de tarefas.
-- [ ] É possível visualizar anexos de evidência.
 - [ ] Usuários operacionais não acessam `/admin/`.
 
 ## 16. Backup manual
@@ -301,7 +289,7 @@ bash scripts/backup.sh
 Validar:
 
 - [ ] Backup do banco foi gerado.
-- [ ] Backup da pasta `media/` foi gerado, incluindo arquivos de evidência.
+- [ ] Backup da pasta `media/` foi gerado quando houver arquivos locais do sistema.
 - [ ] Backup do `.env` foi gerado.
 - [ ] Backup de scripts/seed/configurações foi gerado.
 - [ ] Pacote `backup_package.tar.gz` foi gerado.
@@ -318,7 +306,7 @@ Na tela **Backups**, validar:
 - [ ] Restore de banco conclui sem erro.
 - [ ] Restore de mídia pode ser marcado/desmarcado.
 - [ ] Upload de `backup_package.tar.gz` baixado da nuvem importa o backup para a lista local.
-- [ ] Após restore, login, usuários, atividades, indicadores e anexos são validados.
+- [ ] Após restore, login, usuários, atividades e indicadores são validados.
 
 ## 17. Agendador de backup
 
@@ -364,7 +352,6 @@ Validar:
 - [ ] Sistema sobe após restauração.
 - [ ] Usuários restaurados conseguem login.
 - [ ] Histórico aparece.
-- [ ] Evidências anexadas aparecem.
 - [ ] CSV exporta dados restaurados.
 - [ ] Dashboard bate com dados esperados.
 
@@ -377,9 +364,7 @@ Liberar uso somente se todos estes itens estiverem OK:
 - [ ] Senha forte validada.
 - [ ] Senha temporária gerada automaticamente testada.
 - [ ] Auditoria administrativa testada.
-- [ ] Upload de PDF testado.
-- [ ] Upload de imagem testado.
-- [ ] Acesso a evidências protegido.
+- [ ] Evidência textual/observação testada quando aplicável.
 - [ ] Histórico e CSV testados.
 - [ ] Backup manual testado.
 - [ ] Agendador de backup configurado.

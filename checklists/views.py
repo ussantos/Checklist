@@ -6,7 +6,7 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.db import transaction
-from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden
+from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -25,7 +25,7 @@ from .forms import (
 )
 from .models import (
     ActivityLog, ActivitySuggestion, BackupConfiguration, ChecklistOccurrence,
-    ChecklistOccurrenceStatusEvent, DailyNote, EvidenceAttachment,
+    ChecklistOccurrenceStatusEvent, DailyNote,
     MetricRecord, MetricType, Position, TaskTemplate, UserProfile,
 )
 from .activity_import import (
@@ -265,7 +265,7 @@ def activities(request):
     occurrences = filter_absence_ignored_occurrences(ChecklistOccurrence.objects.filter(
         position=position,
         date__range=(start_date, end_date),
-    ).select_related('template', 'position').prefetch_related('attachments').order_by(
+    ).select_related('template', 'position').order_by(
         'date', F('template__start_time').asc(nulls_last=True), 'template__order', 'template__title'
     ))
 
@@ -433,7 +433,7 @@ def update_occurrence(request, occurrence_id):
 @login_required
 def occurrence_edit(request, occurrence_id):
     occurrence = get_object_or_404(
-        ChecklistOccurrence.objects.select_related('position', 'template').prefetch_related('attachments'),
+        ChecklistOccurrence.objects.select_related('position', 'template'),
         pk=occurrence_id,
     )
     if not _can_access_position_history(request.user, occurrence.position):
@@ -448,10 +448,8 @@ def occurrence_edit(request, occurrence_id):
             return redirect(_activity_return_url(request, occurrence))
         messages.error(request, 'Não foi possível salvar. Verifique os campos.')
     else:
-        has_existing = bool(occurrence.evidence_file) or occurrence.attachments.exists()
         form = OccurrenceUpdateForm(
             instance=occurrence,
-            has_existing_file=has_existing,
             requires_evidence=occurrence.template.requires_evidence,
         )
 
@@ -572,13 +570,10 @@ def activity_suggestion_deactivate(request):
 
 def _save_occurrence_update(request, occurrence):
     old_status = occurrence.status
-    has_existing = bool(occurrence.evidence_file) or occurrence.attachments.exists()
     requires_evidence = occurrence.template.requires_evidence
     form = OccurrenceUpdateForm(
         request.POST,
-        request.FILES,
         instance=occurrence,
-        has_existing_file=has_existing,
         requires_evidence=requires_evidence,
     )
     if form.is_valid():
@@ -593,14 +588,6 @@ def _save_occurrence_update(request, occurrence):
                 new_status=obj.status,
                 changed_by=request.user,
             )
-        if requires_evidence:
-            for uploaded in request.FILES.getlist('evidence_files'):
-                EvidenceAttachment.objects.create(
-                    occurrence=obj,
-                    file=uploaded,
-                    original_name=uploaded.name,
-                    uploaded_by=request.user,
-                )
         ActivityLog.objects.create(
             actor=request.user,
             position=obj.position,
@@ -616,7 +603,7 @@ def _save_occurrence_update(request, occurrence):
 @login_required
 def history(request):
     positions = _history_positions_for_user(request.user)
-    qs = ChecklistOccurrence.objects.filter(position__in=positions).select_related('position', 'template').prefetch_related('attachments')
+    qs = ChecklistOccurrence.objects.filter(position__in=positions).select_related('position', 'template')
 
     start = request.GET.get('inicio')
     end = request.GET.get('fim')
@@ -1227,7 +1214,7 @@ def metrics(request):
     if request.method == 'POST':
         if not is_admin_user(request.user):
             return HttpResponseForbidden('Usuário comum não pode registrar indicadores.')
-        form = MetricRecordForm(request.POST, request.FILES)
+        form = MetricRecordForm(request.POST)
         applicable_metrics = (
             MetricType.objects.filter(active=True)
             .filter(Q(position=position) | Q(position__isnull=True))
@@ -1379,36 +1366,6 @@ def metric_type_edit(request, metric_id):
 
 
 @login_required
-def metric_evidence_download(request, record_id):
-    record = get_object_or_404(MetricRecord.objects.select_related('position'), pk=record_id)
-    if record.position not in visible_positions(request.user):
-        return HttpResponseForbidden('Você não pode acessar esta evidência.')
-    if not record.evidence_file:
-        raise Http404('Arquivo não encontrado.')
-    return FileResponse(record.evidence_file.open('rb'), as_attachment=False, filename=record.evidence_file.name.split('/')[-1])
-
-
-@login_required
-def evidence_attachment_download(request, attachment_id):
-    attachment = get_object_or_404(EvidenceAttachment.objects.select_related('occurrence__position'), pk=attachment_id)
-    if not _can_access_position_history(request.user, attachment.occurrence.position):
-        return HttpResponseForbidden('Você não pode acessar esta evidência.')
-    if not attachment.file:
-        raise Http404('Arquivo não encontrado.')
-    return FileResponse(attachment.file.open('rb'), as_attachment=True, filename=attachment.original_name or attachment.file.name.split('/')[-1])
-
-
-@login_required
-def legacy_evidence_download(request, occurrence_id):
-    occurrence = get_object_or_404(ChecklistOccurrence.objects.select_related('position'), pk=occurrence_id)
-    if not _can_access_position_history(request.user, occurrence.position):
-        return HttpResponseForbidden('Você não pode acessar esta evidência.')
-    if not occurrence.evidence_file:
-        raise Http404('Arquivo não encontrado.')
-    return FileResponse(occurrence.evidence_file.open('rb'), as_attachment=True, filename=occurrence.evidence_file.name.split('/')[-1])
-
-
-@login_required
 def monthly_csv(request):
     year, month = _parse_month_year(request)
     positions = visible_positions(request.user)
@@ -1421,7 +1378,7 @@ def monthly_csv(request):
 @login_required
 def history_csv(request):
     positions = _history_positions_for_user(request.user)
-    qs = ChecklistOccurrence.objects.filter(position__in=positions).select_related('position', 'template').prefetch_related('attachments').order_by('-date', 'position__name')
+    qs = ChecklistOccurrence.objects.filter(position__in=positions).select_related('position', 'template').order_by('-date', 'position__name')
     qs = filter_absence_ignored_occurrences(qs)
     return _occurrences_csv_response(qs, 'historico_checklist.csv')
 
@@ -1431,7 +1388,7 @@ def _occurrences_csv_response(qs, filename):
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     response.write('\ufeff')
     writer = csv.writer(response)
-    writer.writerow(['Data', 'Cargo', 'Tarefa', 'Status', 'Funcionário', 'Evidência textual', 'Anexos', 'Pendência/Bloqueio', 'Atualizado por', 'Atualizado em'])
+    writer.writerow(['Data', 'Cargo', 'Tarefa', 'Status', 'Funcionário', 'Evidência textual', 'Pendência/Bloqueio', 'Atualizado por', 'Atualizado em'])
     for item in qs:
         writer.writerow([
             item.date.isoformat(),
@@ -1440,7 +1397,6 @@ def _occurrences_csv_response(qs, filename):
             item.operational_status_label,
             item.executor_full_name,
             item.evidence_text,
-            '; '.join([a.original_name or a.file.name for a in item.attachments.all()]),
             item.blocked_reason,
             item.updated_by.username if item.updated_by else '',
             timezone.localtime(item.updated_at).strftime('%d/%m/%Y %H:%M'),

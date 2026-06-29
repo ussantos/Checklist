@@ -14,10 +14,7 @@ SENSITIVE_FIELD_NAMES = {
     'token',
     'secret',
     'evidence_text',
-    'evidence_file',
-    'evidence_files',
     'file',
-    'attachments',
 }
 
 

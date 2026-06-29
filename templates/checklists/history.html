@@ -3,7 +3,7 @@
 <div class="page-title">
   <div>
     <h1>Histórico</h1>
-    <p class="muted">Atividades executadas, evidências registradas e arquivos anexados.</p>
+    <p class="muted">Atividades executadas, observações registradas e histórico operacional.</p>
   </div>
   <div class="actions">
     {% if is_admin %}<a class="btn" href="{% url 'history' %}?status={{ done_status }}">Concluídas</a>{% endif %}
@@ -28,13 +28,13 @@
       {% endfor %}
     </select>
   {% endif %}
-  <input class="input" name="busca" value="{{ filters.busca }}" placeholder="Buscar tarefa, evidência ou funcionário">
+  <input class="input" name="busca" value="{{ filters.busca }}" placeholder="Buscar tarefa, observação ou funcionário">
   <button class="btn">Filtrar</button>
   <a class="btn" href="{% url 'history' %}">Limpar</a>
 </form>
 
 <table class="panel-table">
-<thead><tr><th>Data</th><th>Cargo</th><th>Tarefa</th><th>Status</th><th>Funcionário</th><th>Evidência textual</th><th>Arquivos</th><th>Atualizado</th></tr></thead>
+<thead><tr><th>Data</th><th>Cargo</th><th>Tarefa</th><th>Status</th><th>Funcionário</th><th>Evidência textual</th><th>Atualizado</th></tr></thead>
 <tbody>
 {% for item in occurrences %}
 <tr>
@@ -44,19 +44,9 @@
   <td><span class="badge {{ item.operational_status_css }}">{{ item.operational_status_label }}</span></td>
   <td>{{ item.executor_full_name|default:"-" }}</td>
   <td>{{ item.evidence_text|truncatechars:100|default:"-" }}</td>
-  <td>
-    {% if item.evidence_file %}
-      <a class="attachment-link" href="{% url 'legacy_evidence_download' item.id %}">Baixar arquivo legado</a><br>
-    {% endif %}
-    {% for a in item.attachments.all %}
-      <a class="attachment-link" href="{% url 'evidence_attachment_download' a.id %}">Baixar {{ a.original_name|default:"anexo" }}</a>{% if not forloop.last %}<br>{% endif %}
-    {% empty %}
-      {% if not item.evidence_file %}-{% endif %}
-    {% endfor %}
-  </td>
   <td>{{ item.updated_at|date:"d/m/Y H:i" }}</td>
 </tr>
-{% empty %}<tr><td colspan="8">Sem registros.</td></tr>{% endfor %}
+{% empty %}<tr><td colspan="7">Sem registros.</td></tr>{% endfor %}
 </tbody>
 </table>
 {% endblock %}

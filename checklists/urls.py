@@ -83,6 +83,4 @@ urlpatterns = [
     path('senha/alterar/', RequiredPasswordChangeView.as_view(), name='password_change'),
     path('senha/alterada/', auth_views.PasswordChangeDoneView.as_view(template_name='registration/password_change_done.html'), name='password_change_done'),
     path('relatorio/historico.csv', views.history_csv, name='history_csv'),
-    path('evidencia/<int:attachment_id>/', views.evidence_attachment_download, name='evidence_attachment_download'),
-    path('evidencia-legado/<int:occurrence_id>/', views.legacy_evidence_download, name='legacy_evidence_download'),
 ]

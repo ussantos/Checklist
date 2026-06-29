@@ -86,9 +86,9 @@ docker compose exec web python manage.py makemigrations --check --dry-run
 
 ## Atualizar ou reinstalar preservando dados
 
-Use este procedimento quando o servidor ja tem o Checklist instalado em `/opt/checklist` e voce quer aplicar um pacote novo sem apagar banco, `.env`, evidencias, backups ou configuracao rclone.
+Use este procedimento quando o servidor ja tem o Checklist instalado em `/opt/checklist` e voce quer aplicar um pacote novo sem apagar banco, `.env`, arquivos locais, backups ou configuracao rclone.
 
-O banco fica no volume Docker `postgres_data`. Evidencias, backups, logs, arquivos estaticos e configuracao `rclone` ficam em diretorios locais montados em `/opt/checklist`. O instalador nao usa `docker compose down -v` e nao apaga esses caminhos.
+O banco fica no volume Docker `postgres_data`. Arquivos locais, backups, logs, arquivos estaticos e configuracao `rclone` ficam em diretorios locais montados em `/opt/checklist`. O instalador nao usa `docker compose down -v` e nao apaga esses caminhos.
 
 Por seguranca, o instalador tenta gerar automaticamente um backup local antes de atualizar uma instalacao existente. Se esse backup falhar, a atualizacao para. Para continuar mesmo assim, use `CHECKLIST_SKIP_PRE_UPDATE_BACKUP=True` somente quando voce ja tiver um backup valido.
 

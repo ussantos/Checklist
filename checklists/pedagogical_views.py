@@ -627,6 +627,35 @@ def _apply_lesson_filters(request, lessons):
     }
 
 
+def _lesson_calendar(lessons, period_start, period_end, period):
+    lessons_by_date = {}
+    for lesson in lessons:
+        lessons_by_date.setdefault(lesson.date, []).append(lesson)
+
+    if period == 'mes':
+        calendar_start = period_start - timedelta(days=period_start.weekday())
+        calendar_end = period_end + timedelta(days=6 - period_end.weekday())
+    else:
+        calendar_start = period_start
+        calendar_end = period_end
+
+    days = []
+    current = calendar_start
+    today = timezone.localdate()
+    while current <= calendar_end:
+        days.append({
+            'date': current,
+            'lessons': lessons_by_date.get(current, []),
+            'in_period': period_start <= current <= period_end,
+            'is_today': current == today,
+        })
+        current += timedelta(days=1)
+
+    if period == 'hoje':
+        return [days]
+    return [days[index:index + 7] for index in range(0, len(days), 7)]
+
+
 @user_passes_test(_admin_check)
 def lesson_agenda(request):
     target_date = _parse_date(request.GET.get('data'))
@@ -638,9 +667,12 @@ def lesson_agenda(request):
     for lesson in lessons:
         lesson.assistant_warning = lesson.assistant_warning_message()
     selected['period'] = period
+    calendar_weeks = _lesson_calendar(lessons, period_start, period_end, period)
     return render(request, 'checklists/lesson_agenda.html', {
         'title': 'Agenda de Aulas',
         'lessons': lessons,
+        'calendar_weeks': calendar_weeks,
+        'weekday_labels': ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'],
         'target_date': target_date,
         'period_start': period_start,
         'period_end': period_end,
@@ -722,9 +754,12 @@ def trial_lessons(request):
     for lesson in lessons:
         lesson.assistant_warning = lesson.assistant_warning_message()
     selected['period'] = period
+    calendar_weeks = _lesson_calendar(lessons, period_start, period_end, period)
     return render(request, 'checklists/lesson_agenda.html', {
         'title': 'Aulas Experimentais ou Play',
         'lessons': lessons,
+        'calendar_weeks': calendar_weeks,
+        'weekday_labels': ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'],
         'target_date': target_date,
         'period_start': period_start,
         'period_end': period_end,

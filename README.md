@@ -20,7 +20,7 @@ Este sistema **não é um produto comercial** vendido, licenciado ou garantido p
 
 Qualquer uso por outras empresas, franquias, unidades, organizações ou terceiros ocorre **por conta e risco próprios**. Antes de usar, adaptar ou implantar este sistema, cada organização deve validar a aplicação com seus responsáveis técnicos, jurídicos, contábeis, trabalhistas e de proteção de dados.
 
-Como o sistema pode armazenar evidências contendo dados de colaboradores, alunos, responsáveis, imagens, documentos e informações operacionais, seu uso deve observar boas práticas de segurança da informação, controle de acesso, backup, retenção e privacidade, inclusive LGPD quando aplicável.
+Como o sistema pode armazenar dados de colaboradores, alunos, responsáveis e informações operacionais, seu uso deve observar boas práticas de segurança da informação, controle de acesso, backup, retenção e privacidade, inclusive LGPD quando aplicável.
 
 ## Documentação complementar
 
@@ -66,9 +66,8 @@ Senhas criadas ou redefinidas por administradores seguem essa regra automaticame
 - Histórico legado filtrável.
 - Auditoria administrativa com antes/depois e exportação CSV.
 - Exportação CSV.
-- Anexos legados protegidos por login e permissão no cargo.
 - Painel administrativo Django para manutenção avançada.
-- Backup diário configurável com dump PostgreSQL, arquivos de evidência e configurações.
+- Backup diário configurável com dump PostgreSQL, arquivos locais e configurações.
 - Script de restauração.
 
 Módulos removidos nesta etapa: Ausências, Checklist do dia, Semana, Indicadores, Atividades e Comercial.
@@ -81,12 +80,6 @@ Módulos removidos nesta etapa: Ausências, Checklist do dia, Semana, Indicadore
 - Concluída
 
 Os status acima podem aparecer apenas em registros históricos criados antes da remoção das telas antigas de execução.
-
-## Evidências aceitas
-
-Extensões aceitas por padrão: `.pdf`, `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif` e `.heic`.
-
-O limite efetivo para evidências operacionais é de até 5 MB por arquivo.
 
 ## Arquitetura
 
@@ -263,7 +256,7 @@ No `rclone`, cada **remoto** é uma conta configurada. Se você criar o remoto `
 
 O serviço `backup` do Docker Compose executa o agendador interno e roda o backup uma vez por dia no horário configurado. Por padrão, o agendador verifica a cada 15 minutos (`BACKUP_SCHEDULER_INTERVAL_SECONDS=900`) se o horário já venceu. O script `scripts/backup.sh` continua disponível para execução manual, chamando o comando Django `run_configured_backup`.
 
-Cada backup gera dump PostgreSQL, `media.tar.gz` com evidências e anexos, `.env`, configurações, seeds, scripts e o pacote único `backup_package.tar.gz`, que pode ser enviado pela tela para restore. A retenção padrão é de **30 dias** tanto local quanto na nuvem. Os diretórios `backups/` e `rclone/` ficam montados nos containers `web`/`backup` e devem continuar ignorados pelo Git.
+Cada backup gera dump PostgreSQL, `media.tar.gz` quando houver arquivos locais do sistema, `.env`, configurações, seeds, scripts e o pacote único `backup_package.tar.gz`, que pode ser enviado pela tela para restore. A retenção padrão é de **30 dias** tanto local quanto na nuvem. Os diretórios `backups/` e `rclone/` ficam montados nos containers `web`/`backup` e devem continuar ignorados pelo Git.
 
 Para restaurar, acesse **Backups**, baixe o backup da nuvem para a lista local ou envie um arquivo de backup baixado manualmente, digite `RESTAURAR` na linha do backup local e confirme. Antes de substituir o banco, o sistema gera automaticamente um backup local de segurança do estado atual.
 
@@ -300,7 +293,7 @@ Mantenha os backups anuais por pelo menos 5 anos em dois locais: servidor/local 
 
 ## Configuração recomendada do computador/servidor
 
-Para poucos usuários, checklists diários, evidências em PDF/imagem e retenção de 1 ano ativo + 5 anos arquivados:
+Para poucos usuários, cadastros comerciais/pedagógicos, histórico operacional textual e retenção de 1 ano ativo + 5 anos arquivados:
 
 | Cenário | Configuração |
 |---|---|
@@ -308,7 +301,7 @@ Para poucos usuários, checklists diários, evidências em PDF/imagem e retenç�
 | Recomendado | 4 cores, 8 GB RAM, SSD/NVMe 512 GB |
 | Ideal com folga | 4 cores ou mais, 16 GB RAM, SSD/NVMe 1 TB |
 
-O banco de dados deve crescer pouco. O consumo real virá principalmente dos anexos de evidência.
+O banco de dados deve crescer pouco. Sem upload de evidências operacionais, o consumo real tende a ficar concentrado no PostgreSQL e nos backups.
 
 ## Segurança operacional
 
@@ -318,7 +311,7 @@ O banco de dados deve crescer pouco. O consumo real virá principalmente dos ane
 - Trocar senhas iniciais.
 - Fazer teste de restauração trimestral.
 - Não guardar senhas em planilhas.
-- Se houver dados de alunos, responsáveis ou crianças em evidências, tratar como informação sensível operacionalmente e restringir acesso.
+- Tratar dados de alunos, responsáveis ou crianças como informação sensível operacionalmente e restringir acesso.
 
 <a id="english-us"></a>
 
@@ -344,7 +337,7 @@ This system **is not a commercial product** sold, licensed, or guaranteed by My 
 
 Any use by other companies, franchises, units, organizations, or third parties is done **at their own risk**. Before using, adapting, or deploying this system, each organization must validate it with its technical, legal, accounting, labor, and data-protection stakeholders.
 
-Because the system may store evidence containing information about employees, students, guardians, images, documents, and operational data, its use must follow good information-security practices, access control, backup, retention, and privacy rules, including LGPD where applicable.
+Because the system may store information about employees, students, guardians, and operational data, its use must follow good information-security practices, access control, backup, retention, and privacy rules, including LGPD where applicable.
 
 ## Additional Documentation
 
@@ -390,9 +383,8 @@ Passwords created or reset by administrators follow this rule automatically. The
 - Filterable legacy history.
 - Administrative audit trail with before/after values and CSV export.
 - CSV export.
-- Legacy attachments protected by login and position permission.
 - Django admin panel for advanced maintenance.
-- Configurable daily backup with PostgreSQL dump, evidence files, and configuration files.
+- Configurable daily backup with PostgreSQL dump, local files, and configuration files.
 - Restore script.
 
 Modules removed in this step: Absences, Daily Checklist, Week, Indicators, Activities, and Commercial.
@@ -405,12 +397,6 @@ Modules removed in this step: Absences, Daily Checklist, Week, Indicators, Activ
 - Completed
 
 The statuses above may appear only in historical records created before the old activity execution screens were removed.
-
-## Accepted Evidence
-
-Accepted extensions by default: `.pdf`, `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, and `.heic`.
-
-The effective limit for operational evidence is up to 5 MB per file.
 
 ## Architecture
 
@@ -587,7 +573,7 @@ In `rclone`, each **remote** is a configured account. If you create a `gdrive` r
 
 The Docker Compose `backup` service runs the internal scheduler and creates one backup per day at the configured time. By default, the scheduler checks every 15 minutes (`BACKUP_SCHEDULER_INTERVAL_SECONDS=900`) whether the configured time is due. The `scripts/backup.sh` script remains available for manual execution and calls the Django `run_configured_backup` command.
 
-Each backup includes the PostgreSQL dump, `media.tar.gz` with evidence files and attachments, `.env`, settings, seeds, scripts, and the single-file `backup_package.tar.gz`, which can be uploaded in the screen for restore. The default retention is **30 days** both locally and in the cloud. The `backups/` and `rclone/` directories are mounted into the `web`/`backup` containers and must remain ignored by Git.
+Each backup includes the PostgreSQL dump, `media.tar.gz` when local system files exist, `.env`, settings, seeds, scripts, and the single-file `backup_package.tar.gz`, which can be uploaded in the screen for restore. The default retention is **30 days** both locally and in the cloud. The `backups/` and `rclone/` directories are mounted into the `web`/`backup` containers and must remain ignored by Git.
 
 To restore, open **Backups**, download the cloud backup into the local list or upload a backup file downloaded manually, type `RESTAURAR` on the local backup row, and confirm. Before replacing the database, the system automatically creates a local safety backup of the current state.
 
@@ -624,7 +610,7 @@ Keep annual backups for at least 5 years in two locations: server/local and clou
 
 ## Recommended Computer/Server Configuration
 
-For a small number of users, daily checklists, PDF/image evidence, and retention of 1 active year + 5 archived years:
+For a small number of users, commercial/pedagogical records, textual operational history, and retention of 1 active year + 5 archived years:
 
 | Scenario | Configuration |
 |---|---|
@@ -632,7 +618,7 @@ For a small number of users, daily checklists, PDF/image evidence, and retention
 | Recommended | 4 cores, 8 GB RAM, 512 GB SSD/NVMe |
 | Comfortable headroom | 4+ cores, 16 GB RAM, 1 TB SSD/NVMe |
 
-The database should grow slowly. Actual storage usage will mainly come from evidence attachments.
+The database should grow slowly. Without operational evidence uploads, storage usage should mostly be concentrated in PostgreSQL and backup packages.
 
 ## Operational Security
 
@@ -642,5 +628,5 @@ The database should grow slowly. Actual storage usage will mainly come from evid
 - Change initial passwords.
 - Perform quarterly restore tests.
 - Do not store passwords in spreadsheets.
-- If evidence includes data from students, guardians, or children, treat it as sensitive operational information and restrict access.
+- Treat data from students, guardians, or children as sensitive operational information and restrict access.
 

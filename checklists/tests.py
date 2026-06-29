@@ -430,6 +430,31 @@ class SponteFreeClassScheduleSyncTests(TestCase):
       </wsAgendaAluno>
     </ArrayOfWsAgendaAluno>
     '''
+    CANCELLED_FLAG_XML = '''<?xml version="1.0" encoding="utf-8"?>
+    <ArrayOfWsAgendaAluno xmlns="http://api.sponteeducacional.net.br/">
+      <wsAgendaAluno>
+        <AlunoID>123</AlunoID>
+        <AulasLivres>
+          <wsAulasLivresAluno>
+            <AulaLivreID>900</AulaLivreID>
+            <DataAula>07/07/2026</DataAula>
+            <HorarioInicial>14:00</HorarioInicial>
+            <HorarioFinal>16:00</HorarioFinal>
+            <CursoID>77</CursoID>
+            <NomeCurso>Techbot</NomeCurso>
+            <DisciplinaID>88</DisciplinaID>
+            <NomeDisciplina>Robótica</NomeDisciplina>
+            <ProfessorID>99</ProfessorID>
+            <NomeProfessor>Professor Sponte</NomeProfessor>
+            <Sala>Sala Maker</Sala>
+            <P>0</P>
+            <F>0</F>
+            <C>1</C>
+          </wsAulasLivresAluno>
+        </AulasLivres>
+      </wsAgendaAluno>
+    </ArrayOfWsAgendaAluno>
+    '''
 
     def setUp(self):
         self.student = PedagogicalStudent.objects.create(
@@ -468,6 +493,28 @@ class SponteFreeClassScheduleSyncTests(TestCase):
         )
 
         cancelled_records = parse_sponte_free_class_schedule(self.CANCELLED_XML, student_external_id='123')
+        result = import_sponte_free_class_records(
+            self.student,
+            cancelled_records,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+        )
+
+        lesson = Lesson.objects.get(external_id='aula_livre:123:900:2026-07-07')
+        self.assertEqual(result.updated, 1)
+        self.assertEqual(cancelled_records[0]['lesson_status'], 'Cancelada')
+        self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
+
+    def test_import_updates_lesson_status_from_sponte_cancelled_flag(self):
+        records = parse_sponte_free_class_schedule(self.SAMPLE_XML, student_external_id='123')
+        import_sponte_free_class_records(
+            self.student,
+            records,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+        )
+
+        cancelled_records = parse_sponte_free_class_schedule(self.CANCELLED_FLAG_XML, student_external_id='123')
         result = import_sponte_free_class_records(
             self.student,
             cancelled_records,
@@ -549,8 +596,12 @@ class LessonAgendaViewTests(TestCase):
         self.assertContains(response, 'Aluno Semana')
         self.assertContains(response, 'Aluno Mesma Semana')
         self.assertNotContains(response, 'Aluno Fora')
+        self.assertContains(response, 'data-auto-submit')
+        self.assertContains(response, 'lesson-calendar')
         self.assertEqual(response.context['period_start'], date(2026, 7, 6))
         self.assertEqual(response.context['period_end'], date(2026, 7, 12))
+        self.assertEqual(len(response.context['calendar_weeks']), 1)
+        self.assertEqual(response.context['calendar_weeks'][0][0]['date'], date(2026, 7, 6))
 
 
 class CommercialOpportunityInterestFormTests(TestCase):
@@ -863,9 +914,12 @@ class CommercialDashboardTests(TestCase):
 
         response = self.client.get(reverse('commercial_opportunity_create'))
 
+        tomorrow = timezone.localdate() + timedelta(days=1)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Criar oportunidade')
         self.assertContains(response, 'Agenda da semana')
+        self.assertEqual(response.context['form'].initial['next_follow_up_date'], tomorrow)
+        self.assertContains(response, f'value="{tomorrow.isoformat()}"')
 
     def _post_opportunity_data(self, **kwargs):
         data = {
@@ -939,3 +993,64 @@ class CommercialDashboardTests(TestCase):
         lesson = Lesson.objects.get(commercial_opportunity=opportunity)
         self.assertEqual(opportunity.stage, trial_stage)
         self.assertIsNone(lesson.course)
+
+    def test_create_form_lists_slots_blocked_by_selected_course_capacity(self):
+        target = timezone.localdate() + timedelta(days=((7 - timezone.localdate().weekday()) % 7 or 7))
+        week_start = target - timedelta(days=target.weekday())
+        TimeSlot.objects.create(weekday=target.weekday(), start_time=time(9, 0), end_time=time(11, 0), active=True)
+        student = PedagogicalStudent.objects.create(name='Aluno Gamebot')
+        Lesson.objects.create(
+            lesson_type=Lesson.TYPE_REGULAR,
+            student=student,
+            course=self.course,
+            room=self.room,
+            date=target,
+            start_time=time(9, 0),
+            end_time=time(11, 0),
+            status=Lesson.STATUS_SCHEDULED,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(f"{reverse('commercial_opportunity_create')}?semana={week_start.isoformat()}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'data-blocked-course-id="{self.course.id}"')
+        self.assertContains(response, 'data-trial-slot-blocked-reason')
+        self.assertContains(response, 'kits insuficientes para Gamebot')
+        self.assertNotContains(response, 'Horários indisponíveis para o curso selecionado')
+
+    def test_create_rejects_trial_slot_when_selected_course_has_no_kits(self):
+        trial_stage = FunnelStage.objects.create(
+            code='3-aula-experimental-kits',
+            name='3 - Aula Experimental kits',
+            active=True,
+            order=3,
+        )
+        target = timezone.localdate() + timedelta(days=((7 - timezone.localdate().weekday()) % 7 or 7))
+        week_start = target - timedelta(days=target.weekday())
+        TimeSlot.objects.create(weekday=target.weekday(), start_time=time(9, 0), end_time=time(11, 0), active=True)
+        student = PedagogicalStudent.objects.create(name='Aluno Kit Ocupado')
+        Lesson.objects.create(
+            lesson_type=Lesson.TYPE_REGULAR,
+            student=student,
+            course=self.course,
+            room=self.room,
+            date=target,
+            start_time=time(9, 0),
+            end_time=time(11, 0),
+            status=Lesson.STATUS_SCHEDULED,
+        )
+        slot_value = f'{target.isoformat()}|09:00|11:00|{self.room.pk}'
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse('commercial_opportunity_create'), self._post_opportunity_data(
+            stage=str(trial_stage.pk),
+            trial_lesson_week=week_start.isoformat(),
+            trial_lesson_kind=Lesson.TRIAL_KIND_EXPERIMENTAL,
+            trial_lesson_course=str(self.course.pk),
+            trial_lesson_slot=slot_value,
+        ))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Selecione um horário livre válido.')
+        self.assertFalse(Lesson.objects.filter(lesson_type=Lesson.TYPE_TRIAL).exists())

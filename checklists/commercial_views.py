@@ -18,6 +18,7 @@ from .forms import (
 )
 from .models import (
     CommercialFunnel, CommercialOpportunity, CommercialOpportunityFollowUp,
+    Course,
     CommercialOpportunityStageEvent, FunnelModel, FunnelModelField, FunnelStage,
     FunnelType, Lesson, OpportunityOrigin, Room, SchoolHoliday, TimeSlot,
 )
@@ -299,13 +300,54 @@ def _slot_value(target_date, slot, room):
     return f'{target_date.isoformat()}|{slot.start_time:%H:%M}|{slot.end_time:%H:%M}|{room.pk}'
 
 
-def _available_trial_slots(week_start):
+def _slot_label(target_date, slot, room):
+    return f'{target_date:%d/%m} {slot.start_time:%H:%M}-{slot.end_time:%H:%M} · {room.name}'
+
+
+def _slot_start(slot):
+    return slot['start_time'] if isinstance(slot, dict) else slot.start_time
+
+
+def _slot_end(slot):
+    return slot['end_time'] if isinstance(slot, dict) else slot.end_time
+
+
+def _overlaps_slot(lesson, target_date, slot):
+    return (
+        lesson.date == target_date
+        and lesson.start_time < _slot_end(slot)
+        and lesson.end_time > _slot_start(slot)
+    )
+
+
+def _trial_slot_block_reasons(*, lessons, target_date, slot, room, course=None):
+    overlapping = [
+        lesson
+        for lesson in lessons
+        if _overlaps_slot(lesson, target_date, slot)
+    ]
+    reasons = []
+    room_occupancy = sum(1 for lesson in overlapping if lesson.room_id == room.id)
+    if room_occupancy >= room.capacity:
+        reasons.append(f'sala cheia ({room_occupancy}/{room.capacity})')
+
+    if course:
+        course_occupancy = sum(1 for lesson in overlapping if lesson.course_id == course.id)
+        if course_occupancy >= course.kit_quantity:
+            reasons.append(
+                f'kits insuficientes para {course.name} '
+                f'({course_occupancy}/{course.kit_quantity} em uso)'
+            )
+    return reasons
+
+
+def _trial_slot_base_context(week_start):
     today = timezone.localdate()
     now_time = timezone.localtime().time()
     rooms = list(Room.objects.filter(active=True).order_by('name'))
     time_slots = list(TimeSlot.objects.filter(active=True).order_by('weekday', 'start_time', 'end_time'))
     if not rooms or not time_slots:
-        return []
+        return [], []
 
     week_end = week_start + timedelta(days=5)
     holidays = list(
@@ -329,26 +371,74 @@ def _available_trial_slots(week_start):
             if target_date == today and slot.start_time <= now_time:
                 continue
             for room in rooms:
-                occupancy = sum(
-                    1
-                    for lesson in lessons
-                    if lesson.date == target_date
-                    and lesson.room_id == room.id
-                    and lesson.start_time < slot.end_time
-                    and lesson.end_time > slot.start_time
-                )
-                if occupancy >= room.capacity:
-                    continue
                 slots.append({
                     'value': _slot_value(target_date, slot, room),
-                    'label': f'{target_date:%d/%m} {slot.start_time:%H:%M}-{slot.end_time:%H:%M} · {room.name}',
+                    'label': _slot_label(target_date, slot, room),
                     'day_label': target_date.strftime('%A'),
                     'date': target_date,
                     'start_time': slot.start_time,
                     'end_time': slot.end_time,
                     'room': room,
                 })
+    return slots, lessons
+
+
+def _available_trial_slots(week_start, course=None):
+    slots, lessons = _trial_slot_base_context(week_start)
+    return [
+        slot
+        for slot in slots
+        if not _trial_slot_block_reasons(
+            lessons=lessons,
+            target_date=slot['date'],
+            slot=slot,
+            room=slot['room'],
+            course=course,
+        )
+    ]
+
+
+def _trial_calendar_slots(week_start):
+    slots, lessons = _trial_slot_base_context(week_start)
+    courses = list(Course.objects.filter(active=True).order_by('name'))
+    for slot in slots:
+        room_reasons = _trial_slot_block_reasons(
+            lessons=lessons,
+            target_date=slot['date'],
+            slot=slot,
+            room=slot['room'],
+        )
+        slot['room_available'] = not room_reasons
+        slot['room_block_reason'] = '; '.join(room_reasons)
+        slot['available_course_ids'] = []
+        slot['blocked_courses'] = []
+        for course in courses:
+            reasons = _trial_slot_block_reasons(
+                lessons=lessons,
+                target_date=slot['date'],
+                slot=slot,
+                room=slot['room'],
+                course=course,
+            )
+            if reasons:
+                slot['blocked_courses'].append({
+                    'course': course,
+                    'reason': '; '.join(reasons),
+                })
+            else:
+                slot['available_course_ids'].append(str(course.pk))
+        slot['available_course_ids_csv'] = ','.join(slot['available_course_ids'])
     return slots
+
+
+def _trial_lesson_course_from_request(request):
+    if request.method != 'POST':
+        return None
+    course_id = request.POST.get('trial_lesson_course')
+    try:
+        return Course.objects.filter(pk=int(course_id)).first() if course_id else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _group_slots_by_day(slots):
@@ -1240,7 +1330,9 @@ def commercial_opportunity_create(request):
     week_start = _parse_week_start(
         request.POST.get('trial_lesson_week') if request.method == 'POST' else request.GET.get('semana')
     )
-    slots = _available_trial_slots(week_start)
+    trial_lesson_course = _trial_lesson_course_from_request(request)
+    slots = _available_trial_slots(week_start, course=trial_lesson_course)
+    calendar_slots = _trial_calendar_slots(week_start)
     if request.method == 'POST':
         generated_code = _next_opportunity_code()
         post_data = request.POST.copy()
@@ -1284,7 +1376,10 @@ def commercial_opportunity_create(request):
             except ValidationError as exc:
                 form.add_error('trial_lesson_slot', '; '.join(exc.messages))
     else:
-        initial = {'title': _next_opportunity_code()}
+        initial = {
+            'title': _next_opportunity_code(),
+            'next_follow_up_date': timezone.localdate() + timedelta(days=1),
+        }
         funnel_id = request.GET.get('funil')
         if funnel_id and funnel_id.isdigit():
             initial['commercial_funnel'] = funnel_id
@@ -1296,7 +1391,7 @@ def commercial_opportunity_create(request):
         title='Criar oportunidade',
         submit_label='Criar oportunidade',
         week_start=week_start,
-        slots=slots,
+        slots=calendar_slots,
     ))
 
 
@@ -1306,7 +1401,9 @@ def commercial_opportunity_edit(request, opportunity_id):
     week_start = _parse_week_start(
         request.POST.get('trial_lesson_week') if request.method == 'POST' else request.GET.get('semana')
     )
-    slots = _available_trial_slots(week_start)
+    trial_lesson_course = _trial_lesson_course_from_request(request)
+    slots = _available_trial_slots(week_start, course=trial_lesson_course)
+    calendar_slots = _trial_calendar_slots(week_start)
     previous_active = opportunity.active
     previous_stage = opportunity.stage
     previous_stage_id = opportunity.stage_id
@@ -1386,7 +1483,7 @@ def commercial_opportunity_edit(request, opportunity_id):
         submit_label='Salvar alterações',
         opportunity=opportunity,
         week_start=week_start,
-        slots=slots,
+        slots=calendar_slots,
         extra={
             'follow_up_events': opportunity.follow_up_events.select_related('actor')[:20],
             'stage_events': opportunity.stage_events.select_related('actor', 'previous_stage', 'new_stage')[:20],

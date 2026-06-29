@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block container_class %}container-wide{% endblock %}
 {% block content %}
 <div class="page-title">
   <div>
@@ -22,9 +23,11 @@
   </div>
 </div>
 
-<form method="get" class="filters panel">
-  <input type="hidden" name="data" value="{{ target_date|date:'Y-m-d' }}">
-  <label>Data
+<form method="get" class="filters panel lesson-agenda-filters" data-auto-submit>
+  <label>Data base
+    <input class="input" type="date" name="data" value="{{ target_date|date:'Y-m-d' }}">
+  </label>
+  <label>Período
     <select class="input" name="periodo">
       <option value="hoje" {% if selected.period == "hoje" %}selected{% endif %}>Hoje</option>
       <option value="semana" {% if selected.period == "semana" %}selected{% endif %}>Esta semana</option>
@@ -65,76 +68,91 @@
       {% endfor %}
     </select>
   </label>
-  <button class="btn">Filtrar</button>
+  <noscript><button class="btn">Filtrar</button></noscript>
   <span class="filter-summary">{{ period_start|date:"d/m/Y" }}{% if period_end != period_start %} a {{ period_end|date:"d/m/Y" }}{% endif %}</span>
 </form>
 
-<table class="panel-table">
-  <thead>
-    <tr>
-      <th>Data</th>
-      <th>Horário</th>
-      <th>Aluno/Interessado</th>
-      <th>Tipo</th>
-      <th>Origem</th>
-      <th>Curso</th>
-      <th>Sala</th>
-      <th>Status</th>
-      <th>Alertas</th>
-      <th>Ações</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for lesson in lessons %}
-    <tr>
-      <td>{{ lesson.date|date:"d/m/Y" }}</td>
-      <td>{{ lesson.start_time|time:"H:i" }} - {{ lesson.end_time|time:"H:i" }}</td>
-      <td>
-        {{ lesson.student_name_snapshot }}<br>
-        <span class="muted">{{ lesson.responsible_name_snapshot|default:"-" }}{% if lesson.whatsapp_snapshot %} · {{ lesson.whatsapp_snapshot }}{% endif %}</span>
-        {% if lesson.commercial_opportunity %}
-          <br><span class="muted">Oportunidade:
-            <a class="opportunity-link" href="{% url 'commercial_opportunity_edit' lesson.commercial_opportunity.id %}">
-              {{ lesson.commercial_opportunity.title }}
-            </a>
-          </span>
-        {% endif %}
-      </td>
-      <td>
-        {% if lesson.lesson_type == "trial" and lesson.trial_kind %}
-          {{ lesson.get_trial_kind_display }}
-        {% else %}
-          {{ lesson.get_lesson_type_display }}
-        {% endif %}
-      </td>
-      <td>
-        {% if lesson.is_sponte_synced %}
-          <span class="badge neutral">Sponte</span>
-        {% else %}
-          <span class="badge pending">Checklist</span>
-        {% endif %}
-      </td>
-      <td>{% if lesson.course %}{{ lesson.course.name }}{% else %}Definir durante a aula{% endif %}</td>
-      <td>{{ lesson.room.name }}</td>
-      <td><span class="badge {% if lesson.status == 'scheduled' %}pending{% elif lesson.status == 'done' %}done{% elif lesson.status == 'cancelled' %}blocked{% elif lesson.status == 'absent' %}overdue{% elif lesson.status == 'not_given' %}neutral{% else %}neutral{% endif %}">{{ lesson.get_status_display }}</span></td>
-      <td>
-        {% if lesson.assistant_warning %}
-          <span class="badge warning">Assistente recomendado</span>
-        {% else %}
-          <span class="muted">-</span>
-        {% endif %}
-      </td>
-      <td>
-        {% if lesson.lesson_type == "regular" %}
-          <span class="muted">Somente leitura</span>
-        {% else %}
-          <a class="btn small" href="{% url 'pedagogical_lesson_edit' lesson.id %}">Editar</a>
-        {% endif %}
-      </td>
-    </tr>
-    {% empty %}
-    <tr><td colspan="10">Nenhuma aula encontrada para o período selecionado.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+<section class="lesson-calendar" aria-label="Calendário de aulas">
+  {% if selected.period != "hoje" %}
+    <div class="lesson-calendar-weekdays">
+      {% for label in weekday_labels %}
+        <span>{{ label }}</span>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% for week in calendar_weeks %}
+    <div class="lesson-calendar-row {% if selected.period == 'hoje' %}single-day{% endif %}">
+      {% for day in week %}
+        <section class="lesson-calendar-day {% if not day.in_period %}outside-period{% endif %} {% if day.is_today %}today{% endif %}">
+          <header class="lesson-calendar-day-header">
+            <div>
+              <strong>{{ day.date|date:"d/m" }}</strong>
+              <span>{{ day.date|date:"l" }}</span>
+            </div>
+            <span class="lesson-count">{{ day.lessons|length }}</span>
+          </header>
+
+          <div class="lesson-calendar-items">
+            {% for lesson in day.lessons %}
+              <article class="lesson-calendar-card status-{{ lesson.status }}">
+                <div class="lesson-card-time">
+                  <strong>{{ lesson.start_time|time:"H:i" }} - {{ lesson.end_time|time:"H:i" }}</strong>
+                  <span>{{ lesson.room.name }}</span>
+                </div>
+                <div class="lesson-card-main">
+                  <strong>{{ lesson.student_name_snapshot }}</strong>
+                  <span>{{ lesson.responsible_name_snapshot|default:"-" }}{% if lesson.whatsapp_snapshot %} · {{ lesson.whatsapp_snapshot }}{% endif %}</span>
+                </div>
+                <div class="lesson-card-tags">
+                  {% if lesson.lesson_type == "trial" and lesson.trial_kind %}
+                    <span class="badge today">{{ lesson.get_trial_kind_display }}</span>
+                  {% else %}
+                    <span class="badge neutral">{{ lesson.get_lesson_type_display }}</span>
+                  {% endif %}
+                  {% if lesson.is_sponte_synced %}
+                    <span class="badge neutral">Sponte</span>
+                  {% else %}
+                    <span class="badge pending">Checklist</span>
+                  {% endif %}
+                  <span class="badge {% if lesson.status == 'scheduled' %}pending{% elif lesson.status == 'done' %}done{% elif lesson.status == 'cancelled' %}blocked{% elif lesson.status == 'absent' %}overdue{% elif lesson.status == 'not_given' %}neutral{% else %}neutral{% endif %}">{{ lesson.get_status_display }}</span>
+                </div>
+                <div class="lesson-card-meta">
+                  <span>{% if lesson.course %}{{ lesson.course.name }}{% else %}Definir durante a aula{% endif %}</span>
+                  {% if lesson.assistant_warning %}
+                    <span class="badge warning">Assistente recomendado</span>
+                  {% endif %}
+                  {% if lesson.commercial_opportunity %}
+                    <a class="opportunity-link" href="{% url 'commercial_opportunity_edit' lesson.commercial_opportunity.id %}">{{ lesson.commercial_opportunity.title }}</a>
+                  {% endif %}
+                </div>
+                <div class="lesson-card-actions">
+                  {% if lesson.lesson_type == "regular" %}
+                    <span class="muted">Somente leitura</span>
+                  {% else %}
+                    <a class="btn small" href="{% url 'pedagogical_lesson_edit' lesson.id %}">Editar</a>
+                  {% endif %}
+                </div>
+              </article>
+            {% empty %}
+              <p class="lesson-calendar-empty muted">Sem aulas.</p>
+            {% endfor %}
+          </div>
+        </section>
+      {% endfor %}
+    </div>
+  {% empty %}
+    <section class="panel empty-state">Nenhuma aula encontrada para o período selecionado.</section>
+  {% endfor %}
+</section>
+
+<script>
+  (() => {
+    document.querySelectorAll('[data-auto-submit]').forEach((form) => {
+      form.querySelectorAll('select, input[type="date"]').forEach((field) => {
+        field.addEventListener('change', () => form.requestSubmit ? form.requestSubmit() : form.submit());
+      });
+    });
+  })();
+</script>
 {% endblock %}
