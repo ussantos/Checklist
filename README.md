@@ -166,7 +166,7 @@ SPONTE_API_CACHE_TTL_MINUTES=60
 SPONTE_API_MAX_REQUESTS_PER_MINUTE=30
 SPONTE_STUDENT_SEARCH_PARAMS=Nome=%
 SPONTE_COURSE_SEARCH_PARAMS=Situacao=1
-SPONTE_SCHEDULE_SYNC_DAYS_BACK=7
+SPONTE_SCHEDULE_SYNC_DAYS_BACK=0
 SPONTE_SCHEDULE_SYNC_DAYS_AHEAD=90
 ```
 
@@ -178,7 +178,7 @@ Na tela **Gestão Pedagógica > Agenda**, o botão **Sincronizar Sponte** busca 
 
 Ao cadastrar uma **Aula Experimental ou Play**, o administrador deve informar se ela é `Experimental` ou `Play` e vinculá-la a uma oportunidade comercial. Uma oportunidade pode ter várias Aulas Experimentais ou Play, garantindo rastreabilidade para clientes que ainda não existem no Sponte.
 
-As variáveis `SPONTE_SCHEDULE_SYNC_DAYS_BACK` e `SPONTE_SCHEDULE_SYNC_DAYS_AHEAD` controlam a janela sincronizada em relação à data selecionada na agenda. Se uma aula regular do Sponte não voltar mais dentro da janela sincronizada, ela é marcada como cancelada no Checklist, sem exclusão física.
+Sincronizações datadas do Sponte sempre começam no dia em que a sincronização é executada e seguem para frente. `SPONTE_SCHEDULE_SYNC_DAYS_AHEAD` controla quantos dias futuros entram na agenda. `SPONTE_SCHEDULE_SYNC_DAYS_BACK` é mantida apenas por compatibilidade e deve ficar `0`. Se uma aula regular futura do Sponte não voltar mais dentro da janela sincronizada, ela é marcada como cancelada no Checklist, sem exclusão física.
 
 Detalhes técnicos, política de cache, rate limit e cuidados LGPD estão em `docs/sponte_integration.md`.
 
@@ -481,7 +481,7 @@ SPONTE_API_CACHE_TTL_MINUTES=60
 SPONTE_API_MAX_REQUESTS_PER_MINUTE=30
 SPONTE_STUDENT_SEARCH_PARAMS=Nome=%
 SPONTE_COURSE_SEARCH_PARAMS=Situacao=1
-SPONTE_SCHEDULE_SYNC_DAYS_BACK=7
+SPONTE_SCHEDULE_SYNC_DAYS_BACK=0
 SPONTE_SCHEDULE_SYNC_DAYS_AHEAD=90
 ```
 
@@ -493,7 +493,7 @@ On **Pedagogical Management > Schedule**, the **Sync Sponte** button fetches eac
 
 When creating a **Trial or Play Lesson**, the administrator must choose whether it is `Trial` or `Play` and link it to a commercial opportunity. One opportunity may have several Trial or Play Lessons, keeping traceability for clients that do not exist in Sponte yet.
 
-`SPONTE_SCHEDULE_SYNC_DAYS_BACK` and `SPONTE_SCHEDULE_SYNC_DAYS_AHEAD` control the sync window relative to the selected schedule date. If a regular Sponte lesson no longer appears within the synced window, it is marked as cancelled in Checklist without physical deletion.
+Dated Sponte synchronizations always start on the day the sync runs and move forward only. `SPONTE_SCHEDULE_SYNC_DAYS_AHEAD` controls how many future days are included in the schedule. `SPONTE_SCHEDULE_SYNC_DAYS_BACK` is kept only for compatibility and should remain `0`. If a future regular Sponte lesson no longer appears within the synced window, it is marked as cancelled in Checklist without physical deletion.
 
 Technical details, cache policy, rate limiting, and privacy safeguards are documented in `docs/sponte_integration.md`.
 

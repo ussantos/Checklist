@@ -20,13 +20,15 @@ SPONTE_API_CACHE_TTL_MINUTES=60
 SPONTE_API_MAX_REQUESTS_PER_MINUTE=30
 SPONTE_STUDENT_SEARCH_PARAMS=Nome=%
 SPONTE_COURSE_SEARCH_PARAMS=Situacao=1
-SPONTE_SCHEDULE_SYNC_DAYS_BACK=7
+SPONTE_SCHEDULE_SYNC_DAYS_BACK=0
 SPONTE_SCHEDULE_SYNC_DAYS_AHEAD=90
 ```
 
 `SPONTE_API_ENABLED=False` mantém o sistema funcionando sem chamadas externas. Para ativar, configure `True` e preencha `SPONTE_API_CLIENT_CODE` e `SPONTE_API_TOKEN`.
 
 As variáveis antigas `SPONTE_API_URL`, `SPONTE_CODIGO_CLIENTE`, `SPONTE_TOKEN` e `SPONTE_TIMEOUT_SECONDS` ainda são aceitas por compatibilidade, mas novas instalações devem usar os nomes `SPONTE_API_*`.
+
+Sincronizações datadas do Sponte devem sempre considerar o dia da execução para frente. `SPONTE_SCHEDULE_SYNC_DAYS_AHEAD` define a quantidade de dias futuros buscados. `SPONTE_SCHEDULE_SYNC_DAYS_BACK` é mantida apenas por compatibilidade e deve permanecer `0`; dados antigos não são importados nem usados para bloquear horários.
 
 ## Dados vindos da Sponte
 

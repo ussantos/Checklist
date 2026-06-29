@@ -670,7 +670,18 @@ def _post_sponte_form(operation, data, error_context, *, use_cache=True):
         raise SponteClientError(f'{error_context}: {exc}') from exc
 
 
+def _forward_schedule_window(start_date=None, end_date=None):
+    today = timezone.localdate()
+    days_ahead = int(_sponte_setting('SPONTE_SCHEDULE_SYNC_DAYS_AHEAD', 90) or 90)
+    effective_start = today
+    effective_end = end_date or (today + timedelta(days=days_ahead))
+    if effective_end < effective_start:
+        effective_end = effective_start
+    return effective_start, effective_end
+
+
 def fetch_sponte_student_schedule_xml(student_external_id, start_date, end_date):
+    start_date, end_date = _forward_schedule_window(start_date, end_date)
     return _post_sponte_form(
         'GetAgendaAluno',
         {
@@ -733,6 +744,7 @@ def _room_for_schedule(record):
 
 
 def import_sponte_free_class_records(student, records, *, start_date, end_date):
+    start_date, end_date = _forward_schedule_window(start_date, end_date)
     result = SponteScheduleSyncResult(students_synced=1)
     now = timezone.now()
     seen_external_ids = set()
@@ -745,6 +757,9 @@ def import_sponte_free_class_records(student, records, *, start_date, end_date):
             if not all([class_date, start_time, end_time, free_class_id]):
                 result.skipped += 1
                 result.errors.append(f'Aula livre ignorada para {student.name}: dados de data/horário incompletos.')
+                continue
+            if class_date < start_date or class_date > end_date:
+                result.skipped += 1
                 continue
             external_id = f'aula_livre:{student.external_id}:{free_class_id}:{class_date.isoformat()}'
             seen_external_ids.add(external_id)
@@ -811,6 +826,7 @@ def import_sponte_free_class_records(student, records, *, start_date, end_date):
 
 
 def sync_sponte_free_class_schedule(start_date, end_date, fetcher=None):
+    start_date, end_date = _forward_schedule_window(start_date, end_date)
     students = list(PedagogicalStudent.objects.filter(
         source=SPONTE_SOURCE,
         external_id__gt='',
@@ -850,7 +866,4 @@ def sync_sponte_free_class_schedule(start_date, end_date, fetcher=None):
 
 
 def default_sponte_schedule_window(target_date=None):
-    target_date = target_date or timezone.localdate()
-    days_back = int(_sponte_setting('SPONTE_SCHEDULE_SYNC_DAYS_BACK', 7) or 7)
-    days_ahead = int(_sponte_setting('SPONTE_SCHEDULE_SYNC_DAYS_AHEAD', 90) or 90)
-    return target_date - timedelta(days=days_back), target_date + timedelta(days=days_ahead)
+    return _forward_schedule_window()

@@ -1,5 +1,6 @@
 from decimal import Decimal
 from datetime import date, timedelta, time
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -15,7 +16,7 @@ from .models import (
     Room, SchoolHoliday, TimeSlot, UserProfile,
 )
 from .sponte import (
-    _sponte_config, import_sponte_course_records, import_sponte_free_class_records,
+    _sponte_config, default_sponte_schedule_window, import_sponte_course_records, import_sponte_free_class_records,
     import_sponte_student_records, parse_sponte_courses, parse_sponte_free_class_schedule, parse_sponte_students,
     sync_sponte_free_class_schedule,
 )
@@ -702,6 +703,10 @@ class SponteFreeClassScheduleSyncTests(TestCase):
     '''
 
     def setUp(self):
+        self.today = date(2026, 7, 1)
+        self.localdate_patcher = patch('checklists.sponte.timezone.localdate', return_value=self.today)
+        self.localdate_patcher.start()
+        self.addCleanup(self.localdate_patcher.stop)
         self.student = PedagogicalStudent.objects.create(
             name='Aluno Sponte',
             responsible_name='Responsável',
@@ -709,6 +714,45 @@ class SponteFreeClassScheduleSyncTests(TestCase):
             source='Sponte',
             external_id='123',
         )
+
+    @override_settings(SPONTE_SCHEDULE_SYNC_DAYS_BACK=30, SPONTE_SCHEDULE_SYNC_DAYS_AHEAD=10)
+    def test_default_schedule_window_starts_on_sync_day(self):
+        start_date, end_date = default_sponte_schedule_window(date(2026, 6, 1))
+
+        self.assertEqual(start_date, self.today)
+        self.assertEqual(end_date, date(2026, 7, 11))
+
+    def test_import_ignores_past_sponte_lessons(self):
+        xml_text = '''<?xml version="1.0" encoding="utf-8"?>
+        <ArrayOfWsAgendaAluno xmlns="http://api.sponteeducacional.net.br/">
+          <wsAgendaAluno>
+            <AlunoID>123</AlunoID>
+            <AulasLivres>
+              <wsAulasLivresAluno>
+                <AulaLivreID>899</AulaLivreID>
+                <DataAula>30/06/2026</DataAula>
+                <HorarioInicial>14:00</HorarioInicial>
+                <HorarioFinal>16:00</HorarioFinal>
+                <CursoID>77</CursoID>
+                <NomeCurso>Techbot</NomeCurso>
+                <Sala>Sala Maker</Sala>
+              </wsAulasLivresAluno>
+            </AulasLivres>
+          </wsAgendaAluno>
+        </ArrayOfWsAgendaAluno>
+        '''
+        records = parse_sponte_free_class_schedule(xml_text, student_external_id='123')
+
+        result = import_sponte_free_class_records(
+            self.student,
+            records,
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 7, 31),
+        )
+
+        self.assertEqual(result.created, 0)
+        self.assertEqual(result.skipped, 1)
+        self.assertFalse(Lesson.objects.filter(external_id='aula_livre:123:899:2026-06-30').exists())
 
     def test_import_creates_regular_read_only_sponte_lesson(self):
         records = parse_sponte_free_class_schedule(self.SAMPLE_XML, student_external_id='123')
@@ -828,6 +872,21 @@ class SponteFreeClassScheduleSyncTests(TestCase):
         lesson = Lesson.objects.get(external_id='aula_livre:123:900:2026-07-07')
         self.assertEqual(result.cancelled, 1)
         self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
+
+    def test_sync_never_requests_past_dates(self):
+        calls = []
+
+        def fetcher(student_id, start, end):
+            calls.append((student_id, start, end))
+            return self.EMPTY_XML
+
+        sync_sponte_free_class_schedule(
+            date(2026, 6, 1),
+            date(2026, 7, 31),
+            fetcher=fetcher,
+        )
+
+        self.assertEqual(calls, [('123', self.today, date(2026, 7, 31))])
 
     def test_sync_frees_old_slot_when_student_changes_schedule_in_sponte(self):
         records = parse_sponte_free_class_schedule(self.SAMPLE_XML, student_external_id='123')
