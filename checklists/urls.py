@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 from . import commercial_views
+from . import pedagogical_views
 from .auth_views import RequiredPasswordChangeView
 from . import user_views
 from django.contrib.auth import views as auth_views
@@ -44,6 +45,10 @@ urlpatterns = [
     path('acompanhamento/metas/', views.commercial_goals, name='commercial_goals'),
     path('gestao-pedagogica/agenda-de-aulas/', views.pedagogical_class_schedule, name='pedagogical_class_schedule'),
     path('gestao-pedagogica/modelos-feedback-aula/', views.pedagogical_feedback_models, name='pedagogical_feedback_models'),
+    path('gestao-pedagogica/cursos/', pedagogical_views.courses_list, name='pedagogical_courses'),
+    path('gestao-pedagogica/cursos/novo/', pedagogical_views.course_create, name='pedagogical_course_create'),
+    path('gestao-pedagogica/cursos/<int:course_id>/editar/', pedagogical_views.course_edit, name='pedagogical_course_edit'),
+    path('gestao-pedagogica/cursos/<int:course_id>/alternar-status/', pedagogical_views.course_toggle, name='pedagogical_course_toggle'),
     path('tipos-usuario/', user_views.positions_list, name='positions_list'),
     path('tipos-usuario/novo/', user_views.position_create, name='position_create'),
     path('tipos-usuario/<int:position_id>/editar/', user_views.position_edit, name='position_edit'),

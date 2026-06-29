@@ -6,7 +6,7 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from .models import (
     ActivityLog, CommercialFunnel, CommercialOpportunity,
     CommercialOpportunityFollowUp, CommercialOpportunityStageEvent, FunnelModel,
-    FunnelModelField, FunnelStage, FunnelType, OpportunityOrigin, Position,
+    FunnelModelField, FunnelStage, FunnelType, Course, OpportunityOrigin, Position,
     UserProfile,
 )
 
@@ -137,6 +137,16 @@ class CommercialOpportunityStageEventAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Course)
+class CourseAdmin(admin.ModelAdmin):
+    list_display = ('name', 'value', 'active')
+    search_fields = ('name',)
+    list_filter = ('active',)
 
     def has_delete_permission(self, request, obj=None):
         return False

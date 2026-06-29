@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Gestão de Cursos</h1>
+    <p class="muted">Cursos disponíveis para organização pedagógica interna.</p>
+  </div>
+  <a class="btn primary" href="{% url 'pedagogical_course_create' %}">Inserir curso</a>
+</div>
+
+<form method="get" class="filters panel">
+  <label>Status
+    <select class="input" name="status">
+      <option value="ativos" {% if status == "ativos" %}selected{% endif %}>Ativos</option>
+      <option value="inativos" {% if status == "inativos" %}selected{% endif %}>Desativados</option>
+      <option value="todos" {% if status == "todos" %}selected{% endif %}>Todos</option>
+    </select>
+  </label>
+  <button class="btn">Filtrar</button>
+</form>
+
+<table class="panel-table">
+  <thead>
+    <tr>
+      <th>Nome</th>
+      <th>Valor</th>
+      <th>Status</th>
+      <th>Ações</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for course in courses %}
+    <tr>
+      <td>{{ course.name }}</td>
+      <td>R$ {{ course.value|floatformat:2 }}</td>
+      <td>{% if course.active %}<span class="badge done">Ativo</span>{% else %}<span class="badge blocked">Desativado</span>{% endif %}</td>
+      <td>
+        <div class="row-actions">
+          <a class="btn small" href="{% url 'pedagogical_course_edit' course.id %}">Editar</a>
+          <form method="post" action="{% url 'pedagogical_course_toggle' course.id %}" class="inline-form">
+            {% csrf_token %}
+            <button class="btn small" type="submit">{% if course.active %}Desativar{% else %}Ativar{% endif %}</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="4">Nenhum curso cadastrado.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -362,6 +362,24 @@ class CommercialOpportunityStageEvent(models.Model):
         return f'{self.opportunity} - {self.previous_stage_label or "-"} -> {self.new_stage_label or "-"}'
 
 
+class Course(models.Model):
+    """Curso pedagógico administrado internamente."""
+
+    name = models.CharField('Nome', max_length=160, unique=True)
+    value = models.DecimalField('Valor', max_digits=10, decimal_places=2)
+    active = models.BooleanField('Ativo', default=True)
+    created_at = models.DateTimeField('Criado em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizado em', auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Curso'
+        verbose_name_plural = 'Cursos'
+
+    def __str__(self):
+        return self.name
+
+
 class UserProfile(models.Model):
     """Perfil local do usuário autenticado.
 

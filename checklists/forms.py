@@ -9,7 +9,7 @@ from django.utils.text import slugify
 from .backup import build_remote_path, split_remote_path
 from .models import (
     ActivitySuggestion, BackupConfiguration, ChecklistOccurrence, CommercialFunnel,
-    CommercialOpportunity, DailyNote, EmployeeAbsence, FunnelModel,
+    CommercialOpportunity, Course, DailyNote, EmployeeAbsence, FunnelModel,
     FunnelModelField, FunnelStage, FunnelType, MetricRecord, MetricType,
     OpportunityOrigin, Position, TaskTemplate, UserProfile,
 )
@@ -626,6 +626,63 @@ class CommercialFunnelForm(forms.ModelForm):
         if commit:
             funnel.save()
         return funnel
+
+
+class CourseForm(forms.ModelForm):
+    STATUS_ACTIVE = 'active'
+    STATUS_INACTIVE = 'inactive'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Ativo'),
+        (STATUS_INACTIVE, 'Desativado'),
+    ]
+
+    status = forms.ChoiceField(
+        label='Status',
+        choices=STATUS_CHOICES,
+        widget=forms.Select(attrs={'class': 'input'}),
+    )
+
+    class Meta:
+        model = Course
+        fields = ['name', 'value']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'input'}),
+            'value': forms.NumberInput(attrs={'class': 'input', 'min': '0', 'step': '0.01'}),
+        }
+        labels = {
+            'name': 'Nome',
+            'value': 'Valor',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['status'].initial = self.STATUS_ACTIVE if self.instance.active else self.STATUS_INACTIVE
+
+    def clean_name(self):
+        name = (self.cleaned_data.get('name') or '').strip()
+        if not name:
+            raise forms.ValidationError('Informe o nome do curso.')
+        qs = Course.objects.filter(name__iexact=name)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError('Já existe um curso com este nome.')
+        return name
+
+    def clean_value(self):
+        value = self.cleaned_data.get('value')
+        if value is None:
+            raise forms.ValidationError('Informe o valor do curso.')
+        if value < 0:
+            raise forms.ValidationError('O valor do curso não pode ser negativo.')
+        return value
+
+    def save(self, commit=True):
+        course = super().save(commit=False)
+        course.active = self.cleaned_data.get('status') == self.STATUS_ACTIVE
+        if commit:
+            course.save()
+        return course
 
 
 class CommercialOpportunityForm(forms.ModelForm):
