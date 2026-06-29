@@ -996,6 +996,65 @@ th {
   padding: 9px;
 }
 
+.trial-lesson-config {
+  background: linear-gradient(135deg, #fff7ed 0%, #ffffff 58%);
+  border: 1px solid var(--line);
+  border-left: 6px solid var(--primary);
+  border-radius: 8px;
+  margin-top: 16px;
+  padding: 18px;
+}
+
+.trial-lesson-config-header {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.trial-lesson-config h3 {
+  color: var(--dark);
+  font-size: 1.1rem;
+  margin: 0 0 4px;
+}
+
+.trial-lesson-config p {
+  margin: 0;
+}
+
+.trial-lesson-fields {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+}
+
+.trial-lesson-main-fields,
+.trial-lesson-side-fields {
+  display: grid;
+  gap: 12px;
+}
+
+.trial-lesson-main-fields {
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+}
+
+.trial-lesson-config label {
+  display: block;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.trial-lesson-config .input {
+  width: 100%;
+}
+
+.trial-lesson-notes textarea {
+  min-height: 104px;
+  resize: vertical;
+}
+
 .trial-slot-grid {
   display: grid;
   gap: 16px;
@@ -2359,6 +2418,16 @@ html[data-theme="dark"] .badge.not_applicable {
   color: #d1d5db;
 }
 
+html[data-theme="dark"] .trial-lesson-config {
+  background: #1e293b;
+  border-color: #334155;
+  border-left-color: var(--primary);
+}
+
+html[data-theme="dark"] .trial-lesson-config h3 {
+  color: #f8fafc;
+}
+
 html[data-theme="dark"] .trial-slot-day.weekday-1,
 html[data-theme="dark"] .trial-slot-day.weekday-2,
 html[data-theme="dark"] .trial-slot-day.weekday-3,
@@ -2439,6 +2508,7 @@ html[data-theme="dark"] .mini-card:hover {
 
 @media (max-width: 1100px) {
   .password-change-layout,
+  .trial-lesson-fields,
   .feedback-row,
   .feedback-programming-fields {
     grid-template-columns: 1fr;
@@ -2514,6 +2584,10 @@ html[data-theme="dark"] .mini-card:hover {
 @media (max-width: 560px) {
   .container {
     padding: 18px 14px;
+  }
+
+  .trial-lesson-main-fields {
+    grid-template-columns: 1fr;
   }
 
   .container-wide {

@@ -461,7 +461,7 @@ def _build_trial_lesson_from_form(*, opportunity, form, actor):
         lesson_type=Lesson.TYPE_TRIAL,
         trial_kind=payload['trial_kind'],
         commercial_opportunity=opportunity,
-        student_name_snapshot=opportunity.contact_name,
+        student_name_snapshot=payload.get('student_name') or opportunity.contact_name,
         responsible_name_snapshot=opportunity.contact_name,
         whatsapp_snapshot=opportunity.contact_phone,
         course=payload['course'],

@@ -122,22 +122,39 @@
     {% if selected_stage_requires_trial_lesson %}
       <div class="message warning">A etapa selecionada exige agendamento de Aula Experimental ou Play.</div>
     {% endif %}
-    <div class="form-grid">
-      <p>
-        {{ form.trial_lesson_kind.label_tag }}
-        {{ form.trial_lesson_kind }}
-        {{ form.trial_lesson_kind.errors }}
-      </p>
-      <p>
-        {{ form.trial_lesson_course.label_tag }}
-        {{ form.trial_lesson_course }}
-        {{ form.trial_lesson_course.errors }}
-      </p>
-      <p>
-        {{ form.trial_lesson_notes.label_tag }}
-        {{ form.trial_lesson_notes }}
-        {{ form.trial_lesson_notes.errors }}
-      </p>
+    <div class="trial-lesson-config">
+      <div class="trial-lesson-config-header">
+        <div>
+          <h3>Dados da Aula Experimental ou Play</h3>
+          <p class="muted">Informe os detalhes da aula e escolha um horário disponível na agenda.</p>
+        </div>
+      </div>
+      <div class="trial-lesson-fields">
+        <div class="trial-lesson-main-fields">
+          <p>
+            {{ form.trial_lesson_kind.label_tag }}
+            {{ form.trial_lesson_kind }}
+            {{ form.trial_lesson_kind.errors }}
+          </p>
+          <p>
+            {{ form.trial_lesson_course.label_tag }}
+            {{ form.trial_lesson_course }}
+            {{ form.trial_lesson_course.errors }}
+          </p>
+        </div>
+        <div class="trial-lesson-side-fields">
+          <p>
+            {{ form.trial_lesson_student_name.label_tag }}
+            {{ form.trial_lesson_student_name }}
+            {{ form.trial_lesson_student_name.errors }}
+          </p>
+          <p class="trial-lesson-notes">
+            {{ form.trial_lesson_notes.label_tag }}
+            {{ form.trial_lesson_notes }}
+            {{ form.trial_lesson_notes.errors }}
+          </p>
+        </div>
+      </div>
     </div>
     {{ form.trial_lesson_slot.errors }}
     <div class="trial-slot-grid">

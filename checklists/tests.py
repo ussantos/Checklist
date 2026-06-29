@@ -1158,6 +1158,7 @@ class CommercialOpportunityInterestFormTests(TestCase):
                 trial_lesson_kind=Lesson.TRIAL_KIND_EXPERIMENTAL,
                 trial_lesson_course=str(self.course.pk),
                 trial_lesson_slot=slot['value'],
+                trial_lesson_student_name='Criança Teste',
                 trial_lesson_notes='Cliente prefere conhecer o curso.',
             ),
             available_trial_slots=[slot],
@@ -1167,6 +1168,7 @@ class CommercialOpportunityInterestFormTests(TestCase):
         self.assertEqual(form.trial_lesson_payload['trial_kind'], Lesson.TRIAL_KIND_EXPERIMENTAL)
         self.assertEqual(form.trial_lesson_payload['course'], self.course)
         self.assertEqual(form.trial_lesson_payload['room'], self.room)
+        self.assertEqual(form.trial_lesson_payload['student_name'], 'Criança Teste')
 
     def test_trial_lesson_can_leave_course_to_define_during_class(self):
         stage = FunnelStage.objects.create(
@@ -1358,6 +1360,7 @@ class CommercialDashboardTests(TestCase):
             'trial_lesson_week': timezone.localdate().isoformat(),
             'trial_lesson_kind': '',
             'trial_lesson_course': '',
+            'trial_lesson_student_name': '',
             'trial_lesson_slot': '',
             'trial_lesson_notes': '',
         }
@@ -1406,6 +1409,7 @@ class CommercialDashboardTests(TestCase):
             trial_lesson_week=week_start.isoformat(),
             trial_lesson_kind=Lesson.TRIAL_KIND_EXPERIMENTAL,
             trial_lesson_course='',
+            trial_lesson_student_name='Aluno Experimental',
             trial_lesson_slot=slot_value,
         ))
 
@@ -1414,6 +1418,7 @@ class CommercialDashboardTests(TestCase):
         lesson = Lesson.objects.get(commercial_opportunity=opportunity)
         self.assertEqual(opportunity.stage, trial_stage)
         self.assertIsNone(lesson.course)
+        self.assertEqual(lesson.student_name_snapshot, 'Aluno Experimental')
         self.assertEqual(lesson.status, Lesson.STATUS_NOT_GIVEN)
 
     def test_create_form_lists_slots_blocked_by_selected_course_capacity(self):

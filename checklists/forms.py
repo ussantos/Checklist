@@ -1044,6 +1044,16 @@ class CommercialOpportunityForm(forms.ModelForm):
         empty_label='Definir durante a aula',
         widget=forms.Select(attrs={'class': 'input'}),
     )
+    trial_lesson_student_name = forms.CharField(
+        label='Nome da Criança/Adolescente',
+        required=False,
+        max_length=160,
+        widget=forms.TextInput(attrs={
+            'class': 'input',
+            'placeholder': 'Opcional',
+            'autocomplete': 'off',
+        }),
+    )
     trial_lesson_slot = forms.ChoiceField(
         label='Horário livre',
         required=False,
@@ -1364,12 +1374,13 @@ class CommercialOpportunityForm(forms.ModelForm):
         slot_value = cleaned.get('trial_lesson_slot') or ''
         lesson_kind = cleaned.get('trial_lesson_kind') or ''
         course = cleaned.get('trial_lesson_course')
+        student_name = (cleaned.get('trial_lesson_student_name') or '').strip()
         notes = (cleaned.get('trial_lesson_notes') or '').strip()
 
         if requires_trial_lesson and not self.has_existing_trial_lesson and not slot_value:
             self.add_error('trial_lesson_slot', 'Esta etapa exige agendar uma Aula Experimental ou Play.')
 
-        if slot_value or lesson_kind or course:
+        if slot_value or lesson_kind or course or student_name:
             if not lesson_kind:
                 self.add_error('trial_lesson_kind', 'Informe se a aula é Experimental ou Play.')
             if not slot_value:
@@ -1392,6 +1403,7 @@ class CommercialOpportunityForm(forms.ModelForm):
                 'date': slot['date'],
                 'start_time': slot['start_time'],
                 'end_time': slot['end_time'],
+                'student_name': student_name,
                 'notes': notes,
             }
 
