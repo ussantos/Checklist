@@ -14,6 +14,8 @@ ROLE_POSITIONS = [
 
 DEFAULT_COURSE_VALUE = Decimal('3690.00')
 PREMIUM_COURSE_VALUE = Decimal('4190.00')
+MY_ROBOT_PLAY_VALUE = Decimal('89.90')
+VACATION_CAMP_VALUE = Decimal('129.90')
 
 SAMPLE_COURSES = [
     {'name': 'Firtsbot', 'value': DEFAULT_COURSE_VALUE, 'kit_quantity': 2},
@@ -27,6 +29,8 @@ SAMPLE_COURSES = [
     {'name': '3D Print Lab', 'value': PREMIUM_COURSE_VALUE, 'kit_quantity': 4},
     {'name': 'Inteligência Artificial', 'value': PREMIUM_COURSE_VALUE, 'kit_quantity': 4},
     {'name': 'APP Developer', 'value': DEFAULT_COURSE_VALUE, 'kit_quantity': 4},
+    {'name': 'My Robot Play', 'value': MY_ROBOT_PLAY_VALUE, 'kit_quantity': 4},
+    {'name': 'Colônia de Férias', 'value': VACATION_CAMP_VALUE, 'kit_quantity': 6},
 ]
 
 SAMPLE_ROOMS = [
