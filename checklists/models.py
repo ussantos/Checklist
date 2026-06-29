@@ -73,6 +73,146 @@ class FunnelType(models.Model):
         return not self.has_funnel_usage()
 
 
+class FunnelStage(models.Model):
+    """Etapa operacional usada por modelos e instâncias de funis."""
+
+    code = models.SlugField('Código', max_length=80, unique=True)
+    name = models.CharField('Etapa', max_length=120, unique=True)
+    description = models.TextField('Descrição', blank=True)
+    order = models.PositiveIntegerField('Ordem', default=0)
+    active = models.BooleanField('Ativa', default=True)
+    created_at = models.DateTimeField('Criada em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizada em', auto_now=True)
+
+    class Meta:
+        ordering = ['order', 'name']
+        verbose_name = 'Etapa de funil'
+        verbose_name_plural = 'Etapas de funis'
+
+    def __str__(self):
+        return self.name
+
+    def has_usage(self):
+        return self.funnel_models.exists()
+
+    def can_be_deleted(self):
+        return not self.has_usage()
+
+
+class OpportunityOrigin(models.Model):
+    """Origem de oportunidade comercial usada por modelos e funis."""
+
+    code = models.SlugField('Código', max_length=80, unique=True)
+    name = models.CharField('Origem', max_length=120, unique=True)
+    description = models.TextField('Descrição', blank=True)
+    active = models.BooleanField('Ativa', default=True)
+    created_at = models.DateTimeField('Criada em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizada em', auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Origem de oportunidade'
+        verbose_name_plural = 'Origens de oportunidades'
+
+    def __str__(self):
+        return self.name
+
+    def has_usage(self):
+        return self.funnel_models.exists()
+
+    def can_be_deleted(self):
+        return not self.has_usage()
+
+
+class FunnelModel(models.Model):
+    """Modelo que define os campos usados para criar funis comerciais."""
+
+    funnel_type = models.ForeignKey(FunnelType, on_delete=models.PROTECT, related_name='funnel_models', verbose_name='Tipo')
+    stage = models.ForeignKey(FunnelStage, on_delete=models.PROTECT, related_name='funnel_models', verbose_name='Etapa')
+    origin = models.ForeignKey(OpportunityOrigin, on_delete=models.PROTECT, related_name='funnel_models', verbose_name='Origem')
+    responsible_name = models.CharField('Nome do responsável', max_length=120)
+    responsible_phone = models.CharField('Telefone do responsável', max_length=30)
+    active = models.BooleanField('Ativado', default=True)
+    created_at = models.DateTimeField('Criado em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizado em', auto_now=True)
+
+    class Meta:
+        ordering = ['funnel_type__name', 'stage__order', 'stage__name', 'responsible_name']
+        verbose_name = 'Modelo de funil'
+        verbose_name_plural = 'Modelos de funis'
+
+    def __str__(self):
+        return f'{self.funnel_type.name} - {self.stage.name} - {self.responsible_name}'
+
+    @property
+    def status_label(self):
+        return 'Ativado' if self.active else 'Desativado'
+
+    def has_instantiated_funnels(self):
+        for relation in self._meta.related_objects:
+            if relation.related_model.__name__ == 'FunnelModelField':
+                continue
+            accessor_name = relation.get_accessor_name()
+            related_model = relation.related_model.__name__.lower()
+            accessor_lower = accessor_name.lower()
+            if not any(
+                token in accessor_lower or token in related_model
+                for token in ['funnel', 'funil', 'opportunity', 'oportunidade', 'lead']
+            ):
+                continue
+            try:
+                related = getattr(self, accessor_name, None)
+            except ObjectDoesNotExist:
+                continue
+            if related is None:
+                continue
+            if hasattr(related, 'exists') and related.exists():
+                return True
+            if not hasattr(related, 'exists'):
+                return True
+        return False
+
+    def can_be_deleted(self):
+        return not self.has_instantiated_funnels()
+
+
+class FunnelModelField(models.Model):
+    """Campo adicional configurável de um modelo de funil."""
+
+    TYPE_TEXT = 'TEXT'
+    TYPE_DATETIME = 'DATETIME'
+    TYPE_BOOLEAN = 'BOOLEAN'
+    TYPE_SELECT = 'SELECT'
+    TYPE_INTEGER = 'INTEGER'
+    FIELD_TYPE_CHOICES = [
+        (TYPE_TEXT, 'Texto'),
+        (TYPE_DATETIME, 'Data e Hora'),
+        (TYPE_BOOLEAN, 'Verdadeiro/Falso'),
+        (TYPE_SELECT, 'Caixa de Seleção'),
+        (TYPE_INTEGER, 'Número Inteiro'),
+    ]
+
+    funnel_model = models.ForeignKey(FunnelModel, on_delete=models.CASCADE, related_name='fields')
+    name = models.CharField('Nome do campo', max_length=120)
+    field_type = models.CharField('Tipo do campo', max_length=20, choices=FIELD_TYPE_CHOICES)
+    required = models.BooleanField('Obrigatório', default=False)
+    options = models.JSONField('Opções', default=list, blank=True)
+    order = models.PositiveIntegerField('Ordem', default=0)
+    created_at = models.DateTimeField('Criado em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizado em', auto_now=True)
+
+    class Meta:
+        ordering = ['order', 'id']
+        constraints = [
+            models.UniqueConstraint(fields=['funnel_model', 'name'], name='unique_field_name_per_funnel_model'),
+        ]
+        verbose_name = 'Campo de modelo de funil'
+        verbose_name_plural = 'Campos de modelos de funis'
+
+    def __str__(self):
+        return f'{self.funnel_model_id} - {self.name}'
+
+
 class UserProfile(models.Model):
     """Perfil local do usuário autenticado.
 

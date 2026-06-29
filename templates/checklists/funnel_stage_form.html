@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>{{ title }}</h1>
+    <p class="muted">Configure o nome e o status da etapa para uso em funis comerciais.</p>
+  </div>
+  <a class="btn" href="{% url 'commercial_funnel_stages' %}">Voltar</a>
+</div>
+
+<section class="panel">
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn primary" type="submit">{{ submit_label }}</button>
+  </form>
+</section>
+{% endblock %}

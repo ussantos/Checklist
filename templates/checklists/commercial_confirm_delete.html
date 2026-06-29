@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>{{ title }}</h1>
+    <p class="muted">{{ warning }}</p>
+  </div>
+  <a class="btn" href="{% url cancel_url %}">Voltar</a>
+</div>
+
+<section class="panel">
+  <p>Confirma a exclusão de <strong>{{ object_label }}</strong>?</p>
+  <form method="post" class="actions">
+    {% csrf_token %}
+    <a class="btn" href="{% url cancel_url %}">Cancelar</a>
+    <button class="btn danger" type="submit">Excluir definitivamente</button>
+  </form>
+</section>
+{% endblock %}

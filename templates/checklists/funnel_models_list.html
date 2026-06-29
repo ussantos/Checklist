@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Modelos de Funis</h1>
+    <p class="muted">Modelos usados como base para futuras instâncias de funis do time comercial.</p>
+  </div>
+  <a class="btn primary" href="{% url 'funnel_model_create' %}">Inserir modelo</a>
+</div>
+
+<form method="get" class="filters panel">
+  <label>Status
+    <select class="input" name="status">
+      <option value="ativos" {% if status == "ativos" %}selected{% endif %}>Ativados</option>
+      <option value="inativos" {% if status == "inativos" %}selected{% endif %}>Desativados</option>
+      <option value="todos" {% if status == "todos" %}selected{% endif %}>Todos</option>
+    </select>
+  </label>
+  <label>Tipo
+    <select class="input" name="tipo">
+      <option value="">Todos</option>
+      {% for funnel_type in funnel_types %}
+        <option value="{{ funnel_type.id }}" {% if funnel_type_id == funnel_type.id|stringformat:"s" %}selected{% endif %}>{{ funnel_type.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button class="btn">Filtrar</button>
+</form>
+
+<table class="panel-table">
+  <thead>
+    <tr><th>Tipo</th><th>Etapa</th><th>Origem</th><th>Responsável</th><th>Campos adicionais</th><th>Status</th><th>Ações</th></tr>
+  </thead>
+  <tbody>
+    {% for model in funnel_models %}
+    <tr>
+      <td>{{ model.funnel_type.name }}</td>
+      <td>{{ model.stage.name }}</td>
+      <td>{{ model.origin.name }}</td>
+      <td>{{ model.responsible_name }}<br><span class="muted">{{ model.responsible_phone }}</span></td>
+      <td>
+        {% if model.fields.all %}
+          {{ model.fields.all|length }}
+        {% else %}
+          0
+        {% endif %}
+      </td>
+      <td>{% if model.active %}<span class="badge done">Ativado</span>{% else %}<span class="badge blocked">Desativado</span>{% endif %}</td>
+      <td>
+        <div class="row-actions">
+          <a class="btn small" href="{% url 'funnel_model_edit' model.id %}">Editar</a>
+          <form method="post" action="{% url 'funnel_model_toggle' model.id %}" class="inline-form">
+            {% csrf_token %}
+            <button class="btn small" type="submit">{% if model.active %}Desativar{% else %}Ativar{% endif %}</button>
+          </form>
+          {% if model.can_delete_from_ui %}
+            <a class="btn danger small" href="{% url 'funnel_model_delete' model.id %}">Excluir</a>
+          {% else %}
+            <span class="muted">Exclusão bloqueada</span>
+          {% endif %}
+        </div>
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="7">Nenhum modelo de funil cadastrado.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

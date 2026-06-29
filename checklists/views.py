@@ -197,24 +197,6 @@ def _admin_module_placeholder(request, *, title, section):
 
 
 @user_passes_test(_admin_check)
-def commercial_funnel_stages(request):
-    return _admin_module_placeholder(
-        request,
-        title='Etapas de Funis',
-        section='Gestão Comercial > Funis',
-    )
-
-
-@user_passes_test(_admin_check)
-def commercial_funnel_models(request):
-    return _admin_module_placeholder(
-        request,
-        title='Modelos de Funis',
-        section='Gestão Comercial > Funis',
-    )
-
-
-@user_passes_test(_admin_check)
 def commercial_indicators(request):
     return _admin_module_placeholder(
         request,

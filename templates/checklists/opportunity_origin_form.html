@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>{{ title }}</h1>
+    <p class="muted">Cadastre origens que serão usadas em modelos e oportunidades comerciais.</p>
+  </div>
+  <a class="btn" href="{% url 'commercial_opportunity_origins' %}">Voltar</a>
+</div>
+
+<section class="panel">
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button class="btn primary" type="submit">{{ submit_label }}</button>
+  </form>
+</section>
+{% endblock %}

@@ -3,7 +3,7 @@ from django.contrib.admin.sites import NotRegistered
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-from .models import ActivityLog, FunnelType, Position, UserProfile
+from .models import ActivityLog, FunnelModel, FunnelModelField, FunnelStage, FunnelType, OpportunityOrigin, Position, UserProfile
 
 
 User = get_user_model()
@@ -35,6 +35,42 @@ class FunnelTypeAdmin(admin.ModelAdmin):
     list_display = ('name', 'code', 'active')
     search_fields = ('name', 'code')
     list_filter = ('active',)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+class FunnelModelFieldInline(admin.TabularInline):
+    model = FunnelModelField
+    extra = 0
+
+
+@admin.register(FunnelStage)
+class FunnelStageAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'order', 'active')
+    search_fields = ('name', 'code')
+    list_filter = ('active',)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(OpportunityOrigin)
+class OpportunityOriginAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'active')
+    search_fields = ('name', 'code')
+    list_filter = ('active',)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(FunnelModel)
+class FunnelModelAdmin(admin.ModelAdmin):
+    list_display = ('funnel_type', 'stage', 'origin', 'responsible_name', 'responsible_phone', 'active')
+    search_fields = ('responsible_name', 'responsible_phone', 'funnel_type__name', 'stage__name', 'origin__name')
+    list_filter = ('active', 'funnel_type', 'stage', 'origin')
+    inlines = [FunnelModelFieldInline]
 
     def has_delete_permission(self, request, obj=None):
         return False

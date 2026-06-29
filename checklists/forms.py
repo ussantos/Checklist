@@ -2,12 +2,14 @@ from pathlib import Path
 from django import forms
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.forms import inlineformset_factory
+from django.forms.models import BaseInlineFormSet
 from django.utils.text import slugify
 from .backup import build_remote_path, split_remote_path
 from .models import (
     ActivitySuggestion, BackupConfiguration, ChecklistOccurrence, DailyNote,
-    EmployeeAbsence, FunnelType, MetricRecord, MetricType, Position, TaskTemplate,
-    UserProfile,
+    EmployeeAbsence, FunnelModel, FunnelModelField, FunnelStage, FunnelType,
+    MetricRecord, MetricType, OpportunityOrigin, Position, TaskTemplate, UserProfile,
 )
 from .security import generate_temporary_password, should_force_password_change_on_first_login
 
@@ -319,6 +321,287 @@ class FunnelTypeForm(forms.ModelForm):
             raise forms.ValidationError('Já existe um tipo de funil com este código.')
         cleaned['code'] = code
         return cleaned
+
+
+class FunnelStageForm(forms.ModelForm):
+    STATUS_ACTIVE = 'active'
+    STATUS_INACTIVE = 'inactive'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Ativado'),
+        (STATUS_INACTIVE, 'Desativado'),
+    ]
+
+    status = forms.ChoiceField(
+        label='Status',
+        choices=STATUS_CHOICES,
+        widget=forms.Select(attrs={'class': 'input'}),
+    )
+
+    class Meta:
+        model = FunnelStage
+        fields = ['name']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'input'}),
+        }
+        labels = {
+            'name': 'Nome da etapa',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['status'].initial = self.STATUS_ACTIVE if self.instance.active else self.STATUS_INACTIVE
+
+    def clean_name(self):
+        name = (self.cleaned_data.get('name') or '').strip()
+        if not name:
+            raise forms.ValidationError('Informe o nome da etapa.')
+        qs = FunnelStage.objects.filter(name__iexact=name)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError('Já existe uma etapa com este nome.')
+        return name
+
+    def clean(self):
+        cleaned = super().clean()
+        name = cleaned.get('name') or ''
+        code = slugify(name)
+        if not code:
+            raise forms.ValidationError('Informe um nome válido.')
+        qs = FunnelStage.objects.filter(code=code)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError('Já existe uma etapa com nome equivalente.')
+        cleaned['code'] = code
+        return cleaned
+
+    def save(self, commit=True):
+        stage = super().save(commit=False)
+        stage.code = self.cleaned_data['code']
+        stage.active = self.cleaned_data.get('status') == self.STATUS_ACTIVE
+        if commit:
+            stage.save()
+        return stage
+
+
+class OpportunityOriginForm(forms.ModelForm):
+    STATUS_ACTIVE = 'active'
+    STATUS_INACTIVE = 'inactive'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Ativado'),
+        (STATUS_INACTIVE, 'Desativado'),
+    ]
+
+    status = forms.ChoiceField(
+        label='Status',
+        choices=STATUS_CHOICES,
+        widget=forms.Select(attrs={'class': 'input'}),
+    )
+
+    class Meta:
+        model = OpportunityOrigin
+        fields = ['name']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'input'}),
+        }
+        labels = {
+            'name': 'Nome da origem',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['status'].initial = self.STATUS_ACTIVE if self.instance.active else self.STATUS_INACTIVE
+
+    def clean_name(self):
+        name = (self.cleaned_data.get('name') or '').strip()
+        if not name:
+            raise forms.ValidationError('Informe o nome da origem.')
+        qs = OpportunityOrigin.objects.filter(name__iexact=name)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError('Já existe uma origem com este nome.')
+        return name
+
+    def clean(self):
+        cleaned = super().clean()
+        name = cleaned.get('name') or ''
+        code = slugify(name)
+        if not code:
+            raise forms.ValidationError('Informe um nome válido.')
+        qs = OpportunityOrigin.objects.filter(code=code)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError('Já existe uma origem com nome equivalente.')
+        cleaned['code'] = code
+        return cleaned
+
+    def save(self, commit=True):
+        origin = super().save(commit=False)
+        origin.code = self.cleaned_data['code']
+        origin.active = self.cleaned_data.get('status') == self.STATUS_ACTIVE
+        if commit:
+            origin.save()
+        return origin
+
+
+class FunnelModelForm(forms.ModelForm):
+    STATUS_ACTIVE = 'active'
+    STATUS_INACTIVE = 'inactive'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Ativado'),
+        (STATUS_INACTIVE, 'Desativado'),
+    ]
+
+    status = forms.ChoiceField(
+        label='Status',
+        choices=STATUS_CHOICES,
+        widget=forms.Select(attrs={'class': 'input'}),
+    )
+
+    class Meta:
+        model = FunnelModel
+        fields = ['funnel_type', 'stage', 'origin', 'responsible_name', 'responsible_phone']
+        widgets = {
+            'funnel_type': forms.Select(attrs={'class': 'input'}),
+            'stage': forms.Select(attrs={'class': 'input'}),
+            'origin': forms.Select(attrs={'class': 'input'}),
+            'responsible_name': forms.TextInput(attrs={'class': 'input'}),
+            'responsible_phone': forms.TextInput(attrs={'class': 'input'}),
+        }
+        labels = {
+            'funnel_type': 'Tipo',
+            'stage': 'Etapa',
+            'origin': 'Origem',
+            'responsible_name': 'Nome do responsável',
+            'responsible_phone': 'Telefone do responsável',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['status'].initial = self.STATUS_ACTIVE if self.instance.active else self.STATUS_INACTIVE
+
+        funnel_types = FunnelType.objects.filter(active=True).order_by('name')
+        stages = FunnelStage.objects.filter(active=True).order_by('order', 'name')
+        origins = OpportunityOrigin.objects.filter(active=True).order_by('name')
+
+        if self.instance and self.instance.pk:
+            if self.instance.funnel_type_id:
+                funnel_types = FunnelType.objects.filter(
+                    pk__in=list(funnel_types.values_list('pk', flat=True)) + [self.instance.funnel_type_id]
+                ).order_by('name')
+            if self.instance.stage_id:
+                stages = FunnelStage.objects.filter(
+                    pk__in=list(stages.values_list('pk', flat=True)) + [self.instance.stage_id]
+                ).order_by('order', 'name')
+            if self.instance.origin_id:
+                origins = OpportunityOrigin.objects.filter(
+                    pk__in=list(origins.values_list('pk', flat=True)) + [self.instance.origin_id]
+                ).order_by('name')
+
+        self.fields['funnel_type'].queryset = funnel_types
+        self.fields['stage'].queryset = stages
+        self.fields['origin'].queryset = origins
+
+    def clean_responsible_name(self):
+        value = (self.cleaned_data.get('responsible_name') or '').strip()
+        if not value:
+            raise forms.ValidationError('Informe o nome do responsável.')
+        return value
+
+    def clean_responsible_phone(self):
+        value = (self.cleaned_data.get('responsible_phone') or '').strip()
+        if not value:
+            raise forms.ValidationError('Informe o telefone do responsável.')
+        return value
+
+    def save(self, commit=True):
+        obj = super().save(commit=False)
+        obj.active = self.cleaned_data.get('status') == self.STATUS_ACTIVE
+        if commit:
+            obj.save()
+        return obj
+
+
+class FunnelModelFieldForm(forms.ModelForm):
+    options_text = forms.CharField(
+        label='Opções da caixa de seleção',
+        required=False,
+        help_text='Informe uma opção por linha. Obrigatório apenas para Caixa de Seleção.',
+        widget=forms.Textarea(attrs={'class': 'input', 'rows': 3}),
+    )
+
+    class Meta:
+        model = FunnelModelField
+        fields = ['name', 'field_type', 'required', 'options_text', 'order']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'input'}),
+            'field_type': forms.Select(attrs={'class': 'input'}),
+            'required': forms.CheckboxInput(),
+            'order': forms.NumberInput(attrs={'class': 'input small', 'min': 0}),
+        }
+        labels = {
+            'name': 'Nome do campo',
+            'field_type': 'Tipo do campo',
+            'required': 'Obrigatório',
+            'order': 'Ordem',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk and self.instance.options:
+            self.fields['options_text'].initial = '\n'.join(self.instance.options)
+
+    def clean_name(self):
+        value = (self.cleaned_data.get('name') or '').strip()
+        if not value:
+            raise forms.ValidationError('Informe o nome do campo.')
+        return value
+
+    def clean(self):
+        cleaned = super().clean()
+        field_type = cleaned.get('field_type')
+        options_text = cleaned.get('options_text') or ''
+        options = [line.strip() for line in options_text.splitlines() if line.strip()]
+        if field_type == FunnelModelField.TYPE_SELECT and not options:
+            raise forms.ValidationError('Informe pelo menos uma opção para campos do tipo Caixa de Seleção.')
+        cleaned['options'] = options if field_type == FunnelModelField.TYPE_SELECT else []
+        return cleaned
+
+    def save(self, commit=True):
+        obj = super().save(commit=False)
+        obj.options = self.cleaned_data.get('options', [])
+        if commit:
+            obj.save()
+        return obj
+
+
+class BaseFunnelModelFieldFormSet(BaseInlineFormSet):
+    def clean(self):
+        super().clean()
+        names = set()
+        for form in self.forms:
+            if not hasattr(form, 'cleaned_data') or form.cleaned_data.get('DELETE'):
+                continue
+            name = form.cleaned_data.get('name')
+            if not name:
+                continue
+            key = name.casefold()
+            if key in names:
+                raise forms.ValidationError('Não repita nomes de campos adicionais no mesmo modelo de funil.')
+            names.add(key)
+
+
+FunnelModelFieldFormSet = inlineformset_factory(
+    FunnelModel,
+    FunnelModelField,
+    form=FunnelModelFieldForm,
+    formset=BaseFunnelModelFieldFormSet,
+    extra=1,
+    can_delete=True,
+)
 
 
 class EmployeeAbsenceForm(forms.ModelForm):

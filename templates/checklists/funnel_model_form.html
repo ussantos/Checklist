@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>{{ title }}</h1>
+    <p class="muted">Campos adicionais podem ser criados livremente conforme a necessidade do modelo.</p>
+  </div>
+  <a class="btn" href="{% url 'commercial_funnel_models' %}">Voltar</a>
+</div>
+
+<form method="post" class="form-stack" id="funnel-model-form">
+  {% csrf_token %}
+  <section class="panel">
+    <h2>Campos obrigatórios do modelo</h2>
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="form-grid">
+      {{ form.as_p }}
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="section-title">
+      <h2>Campos adicionais</h2>
+      <button class="btn small" type="button" id="add-field-row">Adicionar campo</button>
+    </div>
+    <p class="muted">Para Caixa de Seleção, informe uma opção por linha.</p>
+
+    {{ formset.management_form }}
+    {% if formset.non_form_errors %}<div class="form-errors">{{ formset.non_form_errors }}</div>{% endif %}
+
+    <div class="dynamic-fields" id="field-forms">
+      {% for field_form in formset.forms %}
+      <article class="dynamic-field-card">
+        {% for hidden in field_form.hidden_fields %}{{ hidden }}{% endfor %}
+        {% if field_form.non_field_errors %}<div class="form-errors">{{ field_form.non_field_errors }}</div>{% endif %}
+        <div class="dynamic-field-grid">
+          <label>{{ field_form.name.label }}{{ field_form.name }}{{ field_form.name.errors }}</label>
+          <label>{{ field_form.field_type.label }}{{ field_form.field_type }}{{ field_form.field_type.errors }}</label>
+          <label>{{ field_form.order.label }}{{ field_form.order }}{{ field_form.order.errors }}</label>
+        </div>
+        <label>{{ field_form.options_text.label }}{{ field_form.options_text }}{{ field_form.options_text.errors }}</label>
+        <div class="row-actions">
+          <label class="checkbox-line">{{ field_form.required }} {{ field_form.required.label }}</label>
+          {% if field_form.instance.pk %}
+            <label class="checkbox-line danger-text">{{ field_form.DELETE }} Remover campo</label>
+          {% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+
+    <template id="empty-field-form">
+      <article class="dynamic-field-card">
+        {% for hidden in formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}
+        <div class="dynamic-field-grid">
+          <label>{{ formset.empty_form.name.label }}{{ formset.empty_form.name }}</label>
+          <label>{{ formset.empty_form.field_type.label }}{{ formset.empty_form.field_type }}</label>
+          <label>{{ formset.empty_form.order.label }}{{ formset.empty_form.order }}</label>
+        </div>
+        <label>{{ formset.empty_form.options_text.label }}{{ formset.empty_form.options_text }}</label>
+        <div class="row-actions">
+          <label class="checkbox-line">{{ formset.empty_form.required }} {{ formset.empty_form.required.label }}</label>
+        </div>
+      </article>
+    </template>
+  </section>
+
+  <div class="form-actions">
+    <button class="btn primary" type="submit">{{ submit_label }}</button>
+  </div>
+</form>
+
+<script>
+  (() => {
+    const addButton = document.getElementById('add-field-row');
+    const formsContainer = document.getElementById('field-forms');
+    const emptyTemplate = document.getElementById('empty-field-form');
+    const totalForms = document.getElementById('id_custom_fields-TOTAL_FORMS');
+    if (!addButton || !formsContainer || !emptyTemplate || !totalForms) return;
+
+    addButton.addEventListener('click', () => {
+      const index = Number.parseInt(totalForms.value, 10);
+      const html = emptyTemplate.innerHTML.replaceAll('__prefix__', index);
+      formsContainer.insertAdjacentHTML('beforeend', html);
+      totalForms.value = index + 1;
+    });
+  })();
+</script>
+{% endblock %}
