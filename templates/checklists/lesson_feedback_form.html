@@ -30,32 +30,33 @@
   </div>
 </section>
 
-<form method="post" class="form-stack" data-feedback-form="1">
+<form method="post" class="feedback-form" data-feedback-form="1">
   {% csrf_token %}
   {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
 
-  <section class="panel">
-    <h2>Avaliação</h2>
-    <div class="form-grid">
+  <section class="panel feedback-editor">
+    <div class="section-title feedback-section-title">
+      <div>
+        <h2>Avaliação da aula</h2>
+        <p class="muted">Preencha a sequência pedagógica e registre comentários objetivos para cada critério.</p>
+      </div>
+    </div>
+
+    <div class="feedback-meta-grid">
+      <p>
+        {{ form.module_number.label_tag }}
+        {{ form.module_number }}
+        {{ form.module_number.errors }}
+      </p>
+      <p>
+        {{ form.lesson_number.label_tag }}
+        {{ form.lesson_number }}
+        {{ form.lesson_number.errors }}
+      </p>
       <p>
         {{ form.punctuality_score.label_tag }}
         {{ form.punctuality_score }}
         {{ form.punctuality_score.errors }}
-      </p>
-      <p>
-        {{ form.assembly_score.label_tag }}
-        {{ form.assembly_score }}
-        {{ form.assembly_score.errors }}
-      </p>
-      <p>
-        {{ form.participation_score.label_tag }}
-        {{ form.participation_score }}
-        {{ form.participation_score.errors }}
-      </p>
-      <p>
-        {{ form.behavior_score.label_tag }}
-        {{ form.behavior_score }}
-        {{ form.behavior_score.errors }}
       </p>
       <p>
         {{ form.general_score.label_tag }}
@@ -63,65 +64,78 @@
         {{ form.general_score.errors }}
       </p>
     </div>
-  </section>
 
-  <section class="panel">
-    <h2>Montagem</h2>
-    <p>
-      {{ form.assembly_comment.label_tag }}
-      {{ form.assembly_comment }}
-      {{ form.assembly_comment.errors }}
-    </p>
-  </section>
+    <div class="feedback-criteria">
+      <article class="feedback-row">
+        <div class="feedback-text-field">
+          {{ form.assembly_comment.label_tag }}
+          {{ form.assembly_comment }}
+          {{ form.assembly_comment.errors }}
+        </div>
+        <div class="feedback-score-field">
+          {{ form.assembly_score.label_tag }}
+          {{ form.assembly_score }}
+          {{ form.assembly_score.errors }}
+        </div>
+      </article>
 
-  <section class="panel">
-    <h2>Programação</h2>
-    <label class="checkbox-line">
-      {{ form.has_programming }}
-      <span>A aula teve programação</span>
-    </label>
-    {{ form.has_programming.errors }}
-    <div data-programming-section="1">
-      <div class="form-grid">
-        <p>
-          {{ form.programming_score.label_tag }}
-          {{ form.programming_score }}
-          {{ form.programming_score.errors }}
-        </p>
-      </div>
-      <p>
-        {{ form.programming_comment.label_tag }}
-        {{ form.programming_comment }}
-        {{ form.programming_comment.errors }}
-      </p>
+      <article class="feedback-row feedback-programming-row">
+        <div class="feedback-programming-toggle">
+          <label class="checkbox-line">
+            {{ form.has_programming }}
+            <span>A aula teve programação</span>
+          </label>
+          <p class="muted">Quando marcado, comentário e nota de programação entram no cálculo da média.</p>
+          {{ form.has_programming.errors }}
+        </div>
+        <div class="feedback-programming-fields" data-programming-section="1">
+          <div class="feedback-text-field">
+            {{ form.programming_comment.label_tag }}
+            {{ form.programming_comment }}
+            {{ form.programming_comment.errors }}
+          </div>
+          <div class="feedback-score-field">
+            {{ form.programming_score.label_tag }}
+            {{ form.programming_score }}
+            {{ form.programming_score.errors }}
+          </div>
+        </div>
+      </article>
+
+      <article class="feedback-row">
+        <div class="feedback-text-field">
+          {{ form.participation_comment.label_tag }}
+          {{ form.participation_comment }}
+          {{ form.participation_comment.errors }}
+        </div>
+        <div class="feedback-score-field">
+          {{ form.participation_score.label_tag }}
+          {{ form.participation_score }}
+          {{ form.participation_score.errors }}
+        </div>
+      </article>
+
+      <article class="feedback-row">
+        <div class="feedback-text-field">
+          {{ form.behavior_comment.label_tag }}
+          {{ form.behavior_comment }}
+          {{ form.behavior_comment.errors }}
+        </div>
+        <div class="feedback-score-field">
+          {{ form.behavior_score.label_tag }}
+          {{ form.behavior_score }}
+          {{ form.behavior_score.errors }}
+        </div>
+      </article>
+
+      <article class="feedback-summary-row">
+        <div class="feedback-text-field">
+          {{ form.general_comment.label_tag }}
+          {{ form.general_comment }}
+          {{ form.general_comment.errors }}
+        </div>
+      </article>
     </div>
-  </section>
-
-  <section class="panel">
-    <h2>Interesse/Participação</h2>
-    <p>
-      {{ form.participation_comment.label_tag }}
-      {{ form.participation_comment }}
-      {{ form.participation_comment.errors }}
-    </p>
-  </section>
-
-  <section class="panel">
-    <h2>Comportamento</h2>
-    <p>
-      {{ form.behavior_comment.label_tag }}
-      {{ form.behavior_comment }}
-      {{ form.behavior_comment.errors }}
-    </p>
-  </section>
-
-  <section class="panel">
-    <h2>Comentário geral</h2>
-    <p>
-      {{ form.general_comment.label_tag }}
-      {{ form.general_comment }}
-      {{ form.general_comment.errors }}
-    </p>
   </section>
 
   <div class="form-actions">

@@ -599,12 +599,14 @@ class Lesson(models.Model):
     STATUS_CANCELLED = 'cancelled'
     STATUS_ABSENT = 'absent'
     STATUS_RESCHEDULED = 'rescheduled'
+    STATUS_NOT_GIVEN = 'not_given'
     STATUS_CHOICES = [
         (STATUS_SCHEDULED, 'Agendada'),
         (STATUS_DONE, 'Realizada'),
         (STATUS_CANCELLED, 'Cancelada'),
         (STATUS_ABSENT, 'Falta'),
         (STATUS_RESCHEDULED, 'Reagendada'),
+        (STATUS_NOT_GIVEN, 'Não dada'),
     ]
     OCCUPYING_STATUSES = [STATUS_SCHEDULED, STATUS_DONE, STATUS_ABSENT]
 
@@ -746,12 +748,16 @@ class LessonFeedback(models.Model):
     """Feedback pedagógico preenchido após uma aula regular de aluno matriculado."""
 
     SCORE_CHOICES = [(score, str(score)) for score in range(0, 11)]
+    MODULE_CHOICES = [(number, str(number)) for number in range(1, 4)]
+    LESSON_NUMBER_CHOICES = [(number, str(number)) for number in range(1, 16)]
     PUNCTUALITY_CHOICES = [
         (10, 'Sim'),
         (5, 'Não'),
     ]
 
     lesson = models.OneToOneField(Lesson, on_delete=models.PROTECT, related_name='feedback', verbose_name='Aula')
+    module_number = models.PositiveSmallIntegerField('Módulo', choices=MODULE_CHOICES)
+    lesson_number = models.PositiveSmallIntegerField('Aula', choices=LESSON_NUMBER_CHOICES)
     punctuality_score = models.PositiveSmallIntegerField('Pontualidade', choices=PUNCTUALITY_CHOICES)
     assembly_comment = models.TextField('Montagem')
     assembly_score = models.PositiveSmallIntegerField('Montagem nota', choices=SCORE_CHOICES)

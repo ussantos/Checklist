@@ -1022,6 +1022,8 @@ class LessonFeedbackForm(forms.ModelForm):
     class Meta:
         model = LessonFeedback
         fields = [
+            'module_number',
+            'lesson_number',
             'punctuality_score',
             'assembly_comment',
             'assembly_score',
@@ -1036,6 +1038,8 @@ class LessonFeedbackForm(forms.ModelForm):
             'general_score',
         ]
         widgets = {
+            'module_number': forms.Select(attrs={'class': 'input'}),
+            'lesson_number': forms.Select(attrs={'class': 'input'}),
             'punctuality_score': forms.Select(attrs={'class': 'input', 'data-feedback-score': '1'}),
             'assembly_comment': forms.Textarea(attrs={'class': 'input', 'rows': 4}),
             'assembly_score': forms.Select(attrs={'class': 'input', 'data-feedback-score': '1'}),
@@ -1049,9 +1053,15 @@ class LessonFeedbackForm(forms.ModelForm):
             'general_comment': forms.Textarea(attrs={'class': 'input', 'rows': 5}),
             'general_score': forms.NumberInput(attrs={'class': 'input', 'readonly': 'readonly', 'data-general-score': '1'}),
         }
+        labels = {
+            'module_number': 'Módulo',
+            'lesson_number': 'Aula',
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['module_number'].choices = [('', 'Selecione'), *LessonFeedback.MODULE_CHOICES]
+        self.fields['lesson_number'].choices = [('', 'Selecione'), *LessonFeedback.LESSON_NUMBER_CHOICES]
         for field_name in ['assembly_score', 'programming_score', 'participation_score', 'behavior_score']:
             self.fields[field_name].choices = self.NOTE_CHOICES
         self.fields['punctuality_score'].choices = [('', 'Selecione'), *LessonFeedback.PUNCTUALITY_CHOICES]

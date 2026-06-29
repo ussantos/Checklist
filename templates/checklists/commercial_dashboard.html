@@ -21,47 +21,15 @@
     </div>
   </div>
 
-  <div class="commercial-kpi-grid">
-    <a class="commercial-kpi-card kpi-today" href="#followups-hoje">
-      <span>Hoje</span>
-      <strong>{{ follow_up_today_count }}</strong>
-      <small>{{ today|date:"d/m/Y" }}</small>
-    </a>
-    <a class="commercial-kpi-card kpi-tomorrow" href="#followups-amanha">
-      <span>Amanhã</span>
-      <strong>{{ follow_up_tomorrow_count }}</strong>
-      <small>{{ tomorrow|date:"d/m/Y" }}</small>
-    </a>
-    <a class="commercial-kpi-card kpi-overdue" href="#followups-atrasados">
-      <span>Atrasados</span>
-      <strong>{{ overdue_count }}</strong>
-      <small>Follow-up vencido</small>
-    </a>
-    <a class="commercial-kpi-card kpi-critical" href="#followups-criticos">
-      <span>Críticos</span>
-      <strong>{{ critical_count }}</strong>
-      <small>Atrasados e parados há mais de 3 dias</small>
-    </a>
-  </div>
-
   <div class="followup-board">
-    <section class="followup-lane" id="followups-hoje">
-      <h3>Hoje</h3>
-      <div class="followup-list">
-        {% for opportunity in follow_up_today %}
-          <a class="followup-card" href="{% url 'commercial_opportunity_edit' opportunity.id %}">
-            <strong>{{ opportunity.title }}</strong>
-            <span>{{ opportunity.contact_name }}</span>
-            <small>{{ opportunity.commercial_funnel.name }} · {{ opportunity.stage.name|default:"Sem etapa" }}</small>
-          </a>
-        {% empty %}
-          <p class="muted">Nenhum follow-up para hoje.</p>
-        {% endfor %}
+    <section class="followup-lane followup-lane-overdue" id="followups-atrasados">
+      <div class="followup-lane-head">
+        <div>
+          <h3>Atrasados</h3>
+          <small>Follow-up vencido</small>
+        </div>
+        <strong>{{ overdue_count }}</strong>
       </div>
-    </section>
-
-    <section class="followup-lane" id="followups-atrasados">
-      <h3>Atrasados</h3>
       <div class="followup-list">
         {% for opportunity in overdue %}
           <a class="followup-card is-overdue" href="{% url 'commercial_opportunity_edit' opportunity.id %}">
@@ -75,8 +43,14 @@
       </div>
     </section>
 
-    <section class="followup-lane" id="followups-criticos">
-      <h3>Críticos</h3>
+    <section class="followup-lane followup-lane-critical" id="followups-criticos">
+      <div class="followup-lane-head">
+        <div>
+          <h3>Críticos</h3>
+          <small>Atrasados e parados há mais de 3 dias</small>
+        </div>
+        <strong>{{ critical_count }}</strong>
+      </div>
       <div class="followup-list">
         {% for opportunity in critical_opportunities %}
           <a class="followup-card is-critical" href="{% url 'commercial_opportunity_edit' opportunity.id %}">
@@ -90,8 +64,35 @@
       </div>
     </section>
 
-    <section class="followup-lane" id="followups-amanha">
-      <h3>Amanhã</h3>
+    <section class="followup-lane followup-lane-today" id="followups-hoje">
+      <div class="followup-lane-head">
+        <div>
+          <h3>Hoje</h3>
+          <small>{{ today|date:"d/m/Y" }}</small>
+        </div>
+        <strong>{{ follow_up_today_count }}</strong>
+      </div>
+      <div class="followup-list">
+        {% for opportunity in follow_up_today %}
+          <a class="followup-card" href="{% url 'commercial_opportunity_edit' opportunity.id %}">
+            <strong>{{ opportunity.title }}</strong>
+            <span>{{ opportunity.contact_name }}</span>
+            <small>{{ opportunity.commercial_funnel.name }} · {{ opportunity.stage.name|default:"Sem etapa" }}</small>
+          </a>
+        {% empty %}
+          <p class="muted">Nenhum follow-up para hoje.</p>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="followup-lane followup-lane-tomorrow" id="followups-amanha">
+      <div class="followup-lane-head">
+        <div>
+          <h3>Amanhã</h3>
+          <small>{{ tomorrow|date:"d/m/Y" }}</small>
+        </div>
+        <strong>{{ follow_up_tomorrow_count }}</strong>
+      </div>
       <div class="followup-list">
         {% for opportunity in follow_up_tomorrow %}
           <a class="followup-card" href="{% url 'commercial_opportunity_edit' opportunity.id %}">

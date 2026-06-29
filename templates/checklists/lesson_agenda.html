@@ -13,6 +13,7 @@
       <form method="post" action="{% url 'pedagogical_lessons_sync_sponte' %}" class="inline-form">
         {% csrf_token %}
         <input type="hidden" name="data" value="{{ target_date|date:'Y-m-d' }}">
+        <input type="hidden" name="periodo" value="{{ selected.period }}">
         <button class="btn" type="submit">Sincronizar Sponte</button>
       </form>
       <a class="btn primary" href="{% url 'pedagogical_lesson_create' %}?tipo=trial">Nova aula Experimental ou Play</a>
@@ -22,8 +23,13 @@
 </div>
 
 <form method="get" class="filters panel">
+  <input type="hidden" name="data" value="{{ target_date|date:'Y-m-d' }}">
   <label>Data
-    <input class="input" type="date" name="data" value="{{ target_date|date:'Y-m-d' }}">
+    <select class="input" name="periodo">
+      <option value="hoje" {% if selected.period == "hoje" %}selected{% endif %}>Hoje</option>
+      <option value="semana" {% if selected.period == "semana" %}selected{% endif %}>Esta semana</option>
+      <option value="mes" {% if selected.period == "mes" %}selected{% endif %}>Este mês</option>
+    </select>
   </label>
   <label>Curso
     <select class="input" name="curso">
@@ -60,11 +66,13 @@
     </select>
   </label>
   <button class="btn">Filtrar</button>
+  <span class="filter-summary">{{ period_start|date:"d/m/Y" }}{% if period_end != period_start %} a {{ period_end|date:"d/m/Y" }}{% endif %}</span>
 </form>
 
 <table class="panel-table">
   <thead>
     <tr>
+      <th>Data</th>
       <th>Horário</th>
       <th>Aluno/Interessado</th>
       <th>Tipo</th>
@@ -79,6 +87,7 @@
   <tbody>
     {% for lesson in lessons %}
     <tr>
+      <td>{{ lesson.date|date:"d/m/Y" }}</td>
       <td>{{ lesson.start_time|time:"H:i" }} - {{ lesson.end_time|time:"H:i" }}</td>
       <td>
         {{ lesson.student_name_snapshot }}<br>
@@ -107,7 +116,7 @@
       </td>
       <td>{% if lesson.course %}{{ lesson.course.name }}{% else %}Definir durante a aula{% endif %}</td>
       <td>{{ lesson.room.name }}</td>
-      <td><span class="badge {% if lesson.status == 'scheduled' %}pending{% elif lesson.status == 'done' %}done{% elif lesson.status == 'cancelled' %}blocked{% else %}neutral{% endif %}">{{ lesson.get_status_display }}</span></td>
+      <td><span class="badge {% if lesson.status == 'scheduled' %}pending{% elif lesson.status == 'done' %}done{% elif lesson.status == 'cancelled' %}blocked{% elif lesson.status == 'absent' %}overdue{% elif lesson.status == 'not_given' %}neutral{% else %}neutral{% endif %}">{{ lesson.get_status_display }}</span></td>
       <td>
         {% if lesson.assistant_warning %}
           <span class="badge warning">Assistente recomendado</span>
@@ -124,7 +133,7 @@
       </td>
     </tr>
     {% empty %}
-    <tr><td colspan="9">Nenhuma aula encontrada para a data selecionada.</td></tr>
+    <tr><td colspan="10">Nenhuma aula encontrada para o período selecionado.</td></tr>
     {% endfor %}
   </tbody>
 </table>

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block container_class %}container-wide{% endblock %}
 {% block content %}
 <div class="page-title">
   <div>
@@ -20,11 +21,10 @@
     </select>
   </label>
   <span class="funnel-board-total">{{ opportunity_count }} oportunidade{{ opportunity_count|pluralize }}</span>
-  <button class="btn">Abrir</button>
 </form>
 
 {% if selected_funnel %}
-<section class="panel funnel-board-heading">
+<section class="funnel-board-heading">
   <div>
     <span class="section-eyebrow">Kanban</span>
     <h2>{{ selected_funnel.name }}</h2>

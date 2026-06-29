@@ -210,6 +210,8 @@ class LessonFeedbackTests(TestCase):
     def _feedback(self, **kwargs):
         data = {
             'lesson': self.lesson,
+            'module_number': 1,
+            'lesson_number': 1,
             'punctuality_score': 10,
             'assembly_comment': 'Montou dentro do tempo.',
             'assembly_score': 8,
@@ -405,6 +407,29 @@ class SponteFreeClassScheduleSyncTests(TestCase):
       </wsAgendaAluno>
     </ArrayOfWsAgendaAluno>
     '''
+    CANCELLED_XML = '''<?xml version="1.0" encoding="utf-8"?>
+    <ArrayOfWsAgendaAluno xmlns="http://api.sponteeducacional.net.br/">
+      <wsAgendaAluno>
+        <AlunoID>123</AlunoID>
+        <AulasLivres>
+          <wsAulasLivresAluno>
+            <AulaLivreID>900</AulaLivreID>
+            <DataAula>07/07/2026</DataAula>
+            <HorarioInicial>14:00</HorarioInicial>
+            <HorarioFinal>16:00</HorarioFinal>
+            <CursoID>77</CursoID>
+            <NomeCurso>Techbot</NomeCurso>
+            <DisciplinaID>88</DisciplinaID>
+            <NomeDisciplina>Robótica</NomeDisciplina>
+            <ProfessorID>99</ProfessorID>
+            <NomeProfessor>Professor Sponte</NomeProfessor>
+            <Sala>Sala Maker</Sala>
+            <SituacaoAula>Cancelada</SituacaoAula>
+          </wsAulasLivresAluno>
+        </AulasLivres>
+      </wsAgendaAluno>
+    </ArrayOfWsAgendaAluno>
+    '''
 
     def setUp(self):
         self.student = PedagogicalStudent.objects.create(
@@ -433,6 +458,28 @@ class SponteFreeClassScheduleSyncTests(TestCase):
         self.assertEqual(lesson.room.name, 'Sala Maker')
         self.assertTrue(lesson.is_sponte_synced)
 
+    def test_import_updates_lesson_status_from_sponte_situation(self):
+        records = parse_sponte_free_class_schedule(self.SAMPLE_XML, student_external_id='123')
+        import_sponte_free_class_records(
+            self.student,
+            records,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+        )
+
+        cancelled_records = parse_sponte_free_class_schedule(self.CANCELLED_XML, student_external_id='123')
+        result = import_sponte_free_class_records(
+            self.student,
+            cancelled_records,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+        )
+
+        lesson = Lesson.objects.get(external_id='aula_livre:123:900:2026-07-07')
+        self.assertEqual(result.updated, 1)
+        self.assertEqual(cancelled_records[0]['lesson_status'], 'Cancelada')
+        self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
+
     def test_sync_cancels_stale_sponte_lesson_without_deleting(self):
         records = parse_sponte_free_class_schedule(self.SAMPLE_XML, student_external_id='123')
         import_sponte_free_class_records(
@@ -451,6 +498,59 @@ class SponteFreeClassScheduleSyncTests(TestCase):
         lesson = Lesson.objects.get(external_id='aula_livre:123:900:2026-07-07')
         self.assertEqual(result.cancelled, 1)
         self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
+
+
+class LessonAgendaViewTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            username='agenda-admin',
+            email='agenda-admin@example.com',
+            password='testpass123',
+        )
+        self.course = Course.objects.create(name='Techbot', value=Decimal('3690.00'), kit_quantity=4, active=True)
+        self.room = Room.objects.create(name='Sala Maker', capacity=4, active=True)
+        self.student = PedagogicalStudent.objects.create(
+            name='Aluno Agenda',
+            responsible_name='Responsável Agenda',
+            whatsapp='21999990000',
+        )
+
+    def _lesson(self, lesson_date, student_name):
+        student = PedagogicalStudent.objects.create(
+            name=student_name,
+            responsible_name='Responsável Agenda',
+            whatsapp='21999990000',
+        )
+        return Lesson.objects.create(
+            lesson_type=Lesson.TYPE_REGULAR,
+            student=student,
+            student_name_snapshot=student_name,
+            responsible_name_snapshot='Responsável Agenda',
+            course=self.course,
+            room=self.room,
+            date=lesson_date,
+            start_time=time(14, 0),
+            end_time=time(16, 0),
+            status=Lesson.STATUS_SCHEDULED,
+        )
+
+    def test_week_period_filter_shows_lessons_from_selected_week(self):
+        self._lesson(date(2026, 7, 7), 'Aluno Semana')
+        self._lesson(date(2026, 7, 9), 'Aluno Mesma Semana')
+        self._lesson(date(2026, 7, 14), 'Aluno Fora')
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse('pedagogical_class_schedule'), {
+            'data': '2026-07-08',
+            'periodo': 'semana',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Aluno Semana')
+        self.assertContains(response, 'Aluno Mesma Semana')
+        self.assertNotContains(response, 'Aluno Fora')
+        self.assertEqual(response.context['period_start'], date(2026, 7, 6))
+        self.assertEqual(response.context['period_end'], date(2026, 7, 12))
 
 
 class CommercialOpportunityInterestFormTests(TestCase):

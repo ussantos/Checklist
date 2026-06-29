@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
@@ -59,6 +59,25 @@ def _parse_date(value):
         return date.fromisoformat(value)
     except ValueError:
         return timezone.localdate()
+
+
+def _agenda_period(value):
+    return value if value in {'hoje', 'semana', 'mes'} else 'hoje'
+
+
+def _agenda_period_bounds(period, target_date):
+    period = _agenda_period(period)
+    if period == 'semana':
+        start_date = target_date - timedelta(days=target_date.weekday())
+        return start_date, start_date + timedelta(days=6)
+    if period == 'mes':
+        start_date = target_date.replace(day=1)
+        if target_date.month == 12:
+            next_month = target_date.replace(year=target_date.year + 1, month=1, day=1)
+        else:
+            next_month = target_date.replace(month=target_date.month + 1, day=1)
+        return start_date, next_month - timedelta(days=1)
+    return target_date, target_date
 
 
 def _active_filter(queryset, status, *, active_label='ativos', inactive_label='inativos', all_label='todos'):
@@ -611,15 +630,20 @@ def _apply_lesson_filters(request, lessons):
 @user_passes_test(_admin_check)
 def lesson_agenda(request):
     target_date = _parse_date(request.GET.get('data'))
-    lessons = _lesson_queryset().filter(date=target_date)
+    period = _agenda_period(request.GET.get('periodo', 'hoje'))
+    period_start, period_end = _agenda_period_bounds(period, target_date)
+    lessons = _lesson_queryset().filter(date__gte=period_start, date__lte=period_end)
     lessons, selected = _apply_lesson_filters(request, lessons)
     lessons = list(lessons)
     for lesson in lessons:
         lesson.assistant_warning = lesson.assistant_warning_message()
+    selected['period'] = period
     return render(request, 'checklists/lesson_agenda.html', {
         'title': 'Agenda de Aulas',
         'lessons': lessons,
         'target_date': target_date,
+        'period_start': period_start,
+        'period_end': period_end,
         'selected': selected,
         'courses': Course.objects.order_by('name'),
         'rooms': Room.objects.order_by('name'),
@@ -634,12 +658,13 @@ def lesson_agenda(request):
 @user_passes_test(_admin_check)
 def lessons_sync_sponte(request):
     target_date = _parse_date(request.POST.get('data'))
+    period = _agenda_period(request.POST.get('periodo', 'hoje'))
     start_date, end_date = default_sponte_schedule_window(target_date)
     try:
         result = sync_sponte_free_class_schedule(start_date, end_date)
     except SponteConfigurationError as exc:
         messages.error(request, str(exc))
-        return redirect(f'{reverse("pedagogical_class_schedule")}?data={target_date.isoformat()}')
+        return redirect(f'{reverse("pedagogical_class_schedule")}?data={target_date.isoformat()}&periodo={period}')
 
     if result.errors:
         messages.warning(request, f'Sincronização do Sponte concluída com {len(result.errors)} aviso(s).')
@@ -679,21 +704,30 @@ def lessons_sync_sponte(request):
             'errors': result.errors[:10],
         },
     )
-    return redirect(f'{reverse("pedagogical_class_schedule")}?data={target_date.isoformat()}')
+    return redirect(f'{reverse("pedagogical_class_schedule")}?data={target_date.isoformat()}&periodo={period}')
 
 
 @user_passes_test(_admin_check)
 def trial_lessons(request):
     target_date = _parse_date(request.GET.get('data'))
-    lessons = _lesson_queryset().filter(date=target_date, lesson_type=Lesson.TYPE_TRIAL)
+    period = _agenda_period(request.GET.get('periodo', 'hoje'))
+    period_start, period_end = _agenda_period_bounds(period, target_date)
+    lessons = _lesson_queryset().filter(
+        date__gte=period_start,
+        date__lte=period_end,
+        lesson_type=Lesson.TYPE_TRIAL,
+    )
     lessons, selected = _apply_lesson_filters(request, lessons)
     lessons = list(lessons)
     for lesson in lessons:
         lesson.assistant_warning = lesson.assistant_warning_message()
+    selected['period'] = period
     return render(request, 'checklists/lesson_agenda.html', {
         'title': 'Aulas Experimentais ou Play',
         'lessons': lessons,
         'target_date': target_date,
+        'period_start': period_start,
+        'period_end': period_end,
         'selected': selected,
         'courses': Course.objects.order_by('name'),
         'rooms': Room.objects.order_by('name'),

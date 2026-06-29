@@ -95,6 +95,33 @@ def _status_from_sponte(value):
     return PedagogicalStudent.STATUS_ACTIVE
 
 
+def _lesson_status_from_sponte(value):
+    normalized = _normalize(value)
+    if not normalized:
+        return Lesson.STATUS_SCHEDULED
+    if 'cancel' in normalized:
+        return Lesson.STATUS_CANCELLED
+    if 'falta' in normalized or 'ausente' in normalized:
+        return Lesson.STATUS_ABSENT
+    if 'reagend' in normalized or 'remarc' in normalized:
+        return Lesson.STATUS_RESCHEDULED
+    if 'nao dada' in normalized or 'nao realizada' in normalized or 'nao ministrada' in normalized:
+        return Lesson.STATUS_NOT_GIVEN
+    if 'presenc' in normalized or 'realiz' in normalized or 'conclu' in normalized:
+        return Lesson.STATUS_DONE
+    if 'agend' in normalized:
+        return Lesson.STATUS_SCHEDULED
+    return Lesson.STATUS_SCHEDULED
+
+
+def _first_child_text(element, *names):
+    for name in names:
+        value = _child_text(element, name)
+        if value:
+            return value
+    return ''
+
+
 def _is_success_message(value):
     return (value or '').strip().startswith('01')
 
@@ -313,12 +340,23 @@ def parse_sponte_free_class_schedule(xml_text, *, student_external_id=''):
             end_time = _child_text(item, 'HorarioFinal')
             if not any([free_class_id, class_date, start_time, end_time]):
                 continue
+            lesson_status = _first_child_text(
+                item,
+                'SituacaoAula',
+                'SituacaoDaAula',
+                'Situacao',
+                'NomeSituacao',
+                'DescricaoSituacao',
+                'StatusAula',
+                'Status',
+            )
             records.append({
                 'student_external_id': agenda_student_id,
                 'free_class_id': free_class_id,
                 'date': class_date,
                 'start_time': start_time,
                 'end_time': end_time,
+                'lesson_status': lesson_status,
                 'course_name': _child_text(item, 'NomeCurso') or _child_text(item, 'NomeDisciplina') or 'Curso Sponte',
                 'room_name': _child_text(item, 'Sala'),
                 'teacher_name': _child_text(item, 'NomeProfessor'),
@@ -419,6 +457,7 @@ def import_sponte_free_class_records(student, records, *, start_date, end_date):
             notes_parts = [
                 'Aula Livre sincronizada do Sponte.',
                 f'Professor: {record.get("teacher_name") or "-"}',
+                f'Situação no Sponte: {record.get("lesson_status") or "-"}',
                 f'CursoID: {record.get("course_external_id") or "-"}',
                 f'DisciplinaID: {record.get("discipline_external_id") or "-"}',
             ]
@@ -433,7 +472,7 @@ def import_sponte_free_class_records(student, records, *, start_date, end_date):
                 'date': class_date,
                 'start_time': start_time,
                 'end_time': end_time,
-                'status': Lesson.STATUS_SCHEDULED,
+                'status': _lesson_status_from_sponte(record.get('lesson_status')),
                 'notes': '\n'.join(notes_parts),
                 'source': Lesson.SOURCE_SPONTE,
                 'external_id': external_id,
