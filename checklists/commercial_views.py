@@ -469,7 +469,7 @@ def _build_trial_lesson_from_form(*, opportunity, form, actor):
         date=payload['date'],
         start_time=payload['start_time'],
         end_time=payload['end_time'],
-        status=Lesson.STATUS_SCHEDULED,
+        status=Lesson.STATUS_NOT_GIVEN,
         notes=payload['notes'],
         created_by=actor,
     )

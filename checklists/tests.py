@@ -127,6 +127,14 @@ class PedagogicalSchedulingRulesTests(TestCase):
             lesson.save()
         self.assertIn('student', ctx.exception.message_dict)
 
+    def test_cancelled_lesson_does_not_block_room_or_kit(self):
+        self._lesson(status=Lesson.STATUS_CANCELLED).save()
+        lesson = self._lesson(student=self.other_student)
+
+        lesson.save()
+
+        self.assertEqual(Lesson.objects.count(), 2)
+
     def test_blocks_lessons_longer_than_two_hours(self):
         lesson = self._lesson(end_time=time(16, 30))
         with self.assertRaises(ValidationError) as ctx:
@@ -718,6 +726,8 @@ class SponteFreeClassScheduleSyncTests(TestCase):
         self.assertEqual(lesson.student, self.student)
         self.assertEqual(lesson.course.name, 'Techbot')
         self.assertEqual(lesson.room.name, 'Sala Maker')
+        self.assertEqual(lesson.status, Lesson.STATUS_NOT_GIVEN)
+        self.assertIn('Situação no Sponte: não informada pela API', lesson.notes)
         self.assertTrue(lesson.is_sponte_synced)
 
     def test_parse_success_response_without_lessons_is_empty_schedule(self):
@@ -777,6 +787,27 @@ class SponteFreeClassScheduleSyncTests(TestCase):
         lesson = Lesson.objects.get(external_id='aula_livre:123:900:2026-07-07')
         self.assertEqual(result.updated, 1)
         self.assertEqual(cancelled_records[0]['lesson_status'], 'Cancelada')
+        self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
+
+    def test_import_preserves_existing_status_when_sponte_omits_lesson_status(self):
+        cancelled_records = parse_sponte_free_class_schedule(self.CANCELLED_XML, student_external_id='123')
+        import_sponte_free_class_records(
+            self.student,
+            cancelled_records,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+        )
+
+        records_without_status = parse_sponte_free_class_schedule(self.SAMPLE_XML, student_external_id='123')
+        result = import_sponte_free_class_records(
+            self.student,
+            records_without_status,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+        )
+
+        lesson = Lesson.objects.get(external_id='aula_livre:123:900:2026-07-07')
+        self.assertEqual(result.updated, 1)
         self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
 
     def test_sync_cancels_stale_sponte_lesson_without_deleting(self):
@@ -840,7 +871,7 @@ class SponteFreeClassScheduleSyncTests(TestCase):
         self.assertEqual(result.created, 1)
         self.assertEqual(result.cancelled, 1)
         self.assertEqual(old_lesson.status, Lesson.STATUS_CANCELLED)
-        self.assertEqual(new_lesson.status, Lesson.STATUS_SCHEDULED)
+        self.assertEqual(new_lesson.status, Lesson.STATUS_NOT_GIVEN)
         self.assertEqual(new_lesson.start_time, time(16, 0))
 
     def test_sync_cancels_future_sponte_lessons_outside_active_student_scope(self):
@@ -1324,6 +1355,7 @@ class CommercialDashboardTests(TestCase):
         lesson = Lesson.objects.get(commercial_opportunity=opportunity)
         self.assertEqual(opportunity.stage, trial_stage)
         self.assertIsNone(lesson.course)
+        self.assertEqual(lesson.status, Lesson.STATUS_NOT_GIVEN)
 
     def test_create_form_lists_slots_blocked_by_selected_course_capacity(self):
         target = timezone.localdate() + timedelta(days=((7 - timezone.localdate().weekday()) % 7 or 7))

@@ -63,23 +63,13 @@ Senhas criadas ou redefinidas por administradores seguem essa regra automaticame
 - Geração automática de senha temporária forte para novos usuários e redefinições.
 - CRUD administrativo de tipos/cargos.
 - Dashboard administrativo enxuto.
-- Histórico legado filtrável.
 - Auditoria administrativa com antes/depois e exportação CSV.
 - Exportação CSV.
 - Painel administrativo Django para manutenção avançada.
 - Backup diário configurável com dump PostgreSQL, arquivos locais e configurações.
 - Script de restauração.
 
-Módulos removidos nesta etapa: Ausências, Checklist do dia, Semana, Indicadores, Atividades e Comercial.
-
-## Histórico legado de atividades
-
-- Pendente
-- Executando
-- Atrasada
-- Concluída
-
-Os status acima podem aparecer apenas em registros históricos criados antes da remoção das telas antigas de execução.
+Módulos removidos nesta etapa: Ausências, Checklist do dia, Semana, Histórico, Indicadores, Atividades e Comercial.
 
 ## Arquitetura
 
@@ -331,7 +321,7 @@ Internal web system for operational administration at My Robot Barra da Tijuca.
 
 The application controls access by **position**, but login is performed through **named user accounts**. This avoids generic shared logins and preserves administrative traceability.
 
-> Current status: the old Absences, Daily Checklist, Week, Indicators, Activities, and Commercial modules were removed from navigation and internal routes. Legacy data/models may remain in the database for history until the new modules are defined.
+> Current status: the old Absences, Daily Checklist, Week, History, Indicators, Activities, and Commercial modules were removed from navigation and internal routes. Legacy data/models may remain in the database for retention until the new modules are defined.
 
 ## License and Usage Disclaimer
 
@@ -358,7 +348,7 @@ Use the production checklist before officially releasing the system. Use the ann
 
 The system works with two logical profiles:
 
-- **Administrator**: creates users, resets passwords, manages types/positions, checks history/audit, and manages backups.
+- **Administrator**: creates users, resets passwords, manages types/positions, checks the audit trail, and manages backups.
 - **Common/operational user**: accesses a neutral operational area and changes their own password while the new operational modules are redesigned.
 
 Common-user types/positions are configurable, for example **Commercial Attendant**, **Free Course Instructor**, or future operational positions. Positions and users must not be physically deleted through the interface; when they are no longer valid, they are deactivated to preserve history.
@@ -388,23 +378,13 @@ Passwords created or reset by administrators follow this rule automatically. The
 - Automatic strong temporary password generation for new users and password resets.
 - Administrative CRUD for user types/positions.
 - Lean administrative dashboard.
-- Filterable legacy history.
 - Administrative audit trail with before/after values and CSV export.
 - CSV export.
 - Django admin panel for advanced maintenance.
 - Configurable daily backup with PostgreSQL dump, local files, and configuration files.
 - Restore script.
 
-Modules removed in this step: Absences, Daily Checklist, Week, Indicators, Activities, and Commercial.
-
-## Legacy Activity History
-
-- Pending
-- In progress
-- Late
-- Completed
-
-The statuses above may appear only in historical records created before the old activity execution screens were removed.
+Modules removed in this step: Absences, Daily Checklist, Week, History, Indicators, Activities, and Commercial.
 
 ## Architecture
 
@@ -505,7 +485,7 @@ SPONTE_SCHEDULE_SYNC_DAYS_BACK=7
 SPONTE_SCHEDULE_SYNC_DAYS_AHEAD=90
 ```
 
-The system imports active and inactive students returned by Sponte, including name, enrollment number, guardian, WhatsApp, status, source, and external ID. The import creates missing students and updates existing students by `source=Sponte`/`external_id` or by enrollment number. The token is not stored in logs or history. Calls use local cache and a defensive per-minute request limit.
+The system imports active and inactive students returned by Sponte, including name, enrollment number, guardian, WhatsApp, status, source, and external ID. The import creates missing students and updates existing students by `source=Sponte`/`external_id` or by enrollment number. The token is not stored in logs or audit payloads. Calls use local cache and a defensive per-minute request limit.
 
 On **Pedagogical Management > Courses**, the **Sync Sponte** button fetches courses from the SOAP `GetCursos` endpoint. Courses with version `1.0` are ignored; when a base-name conflict exists, the Sponte version, preferably `2.0`, replaces the local record without physical deletion and preserves value/kits already configured in Checklist.
 
@@ -575,7 +555,7 @@ Before official release, run the tests in `docs/TESTE_PRODUCAO.md`.
 
 ### Administrators
 
-Administrators can create other administrators, create operational users, define positions, reset passwords, view the administrative dashboard, filter history, export CSV files, consult the administrative audit trail, manage backups, and access the `/admin/` panel.
+Administrators can create other administrators, create operational users, define positions, reset passwords, view the administrative dashboard, export CSV files, consult the administrative audit trail, manage backups, and access the `/admin/` panel.
 
 ### Operational Users
 
@@ -626,7 +606,7 @@ Keep annual backups for at least 5 years in two locations: server/local and clou
 
 ## Recommended Computer/Server Configuration
 
-For a small number of users, commercial/pedagogical records, textual operational history, and retention of 1 active year + 5 archived years:
+For a small number of users, commercial/pedagogical records, textual operational records, and retention of 1 active year + 5 archived years:
 
 | Scenario | Configuration |
 |---|---|

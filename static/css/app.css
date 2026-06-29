@@ -2062,12 +2062,12 @@ th {
   padding: 10px;
 }
 
-.lesson-calendar-card.status-scheduled {
+.lesson-calendar-card.status-not_given {
   border-left-color: #fbbf24;
 }
 
 .lesson-calendar-card.status-done {
-  border-left-color: #93c5fd;
+  border-left-color: #86efac;
 }
 
 .lesson-calendar-card.status-cancelled {
@@ -2077,11 +2077,6 @@ th {
 
 .lesson-calendar-card.status-absent {
   border-left-color: #fb923c;
-}
-
-.lesson-calendar-card.status-not_given,
-.lesson-calendar-card.status-rescheduled {
-  border-left-color: #94a3b8;
 }
 
 .lesson-card-time {

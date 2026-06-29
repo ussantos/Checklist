@@ -64,7 +64,6 @@ Validar com o usuário técnico `checklistadmin` ou com um administrador nominal
 - [ ] Dashboard abre.
 - [ ] Menu administrativo aparece.
 - [ ] Menu **Usuários** aparece.
-- [ ] Menu **Histórico** aparece.
 - [ ] Menu **Indicadores** aparece.
 - [ ] Menu **Auditoria** aparece.
 - [ ] Link para `/admin/` funciona.
@@ -169,8 +168,6 @@ Testar registro textual:
 
 - [ ] Usuário comum registra observação/evidência textual.
 - [ ] Atividade concluída que exige evidência textual bloqueia texto vazio.
-- [ ] Histórico exibe a evidência textual registrada.
-- [ ] CSV de histórico exporta a evidência textual.
 
 ## 9. Visões de calendário
 
@@ -199,24 +196,17 @@ Como usuário comum:
 - [ ] Botão de adicionar indicador não aparece.
 - [ ] Filtro de período atualiza a tela automaticamente.
 
-## 11. Histórico, auditoria e exportações
+## 11. Auditoria e exportações
 
 Validar:
 
-- [ ] Histórico carrega.
-- [ ] Filtro por data funciona.
-- [ ] Filtro por status funciona.
-- [ ] Filtro por cargo funciona para administradores.
-- [ ] Busca por texto funciona.
 - [ ] Exportação CSV mensal funciona.
-- [ ] Exportação CSV de histórico funciona.
 - [ ] Auditoria administrativa carrega.
 - [ ] Filtros de auditoria por data, administrador, tipo de objeto, ação e texto livre funcionam.
 - [ ] Exportação CSV da auditoria funciona.
 - [ ] Alterações de cargo, usuário, atividade, indicador/meta e importação XLSX aparecem na auditoria.
 - [ ] Redefinição de senha aparece na auditoria sem exibir senha.
 - [ ] CSV abre corretamente no Excel/LibreOffice.
-- [ ] CSV de histórico contém usuário executor, cargo, status e evidência textual.
 
 ## 12. Indicadores operacionais
 
@@ -351,8 +341,8 @@ Validar:
 
 - [ ] Sistema sobe após restauração.
 - [ ] Usuários restaurados conseguem login.
-- [ ] Histórico aparece.
-- [ ] CSV exporta dados restaurados.
+- [ ] Auditoria administrativa aparece.
+- [ ] CSVs exportam dados restaurados.
 - [ ] Dashboard bate com dados esperados.
 
 ## 19. Validação final antes de liberar uso
@@ -365,7 +355,7 @@ Liberar uso somente se todos estes itens estiverem OK:
 - [ ] Senha temporária gerada automaticamente testada.
 - [ ] Auditoria administrativa testada.
 - [ ] Evidência textual/observação testada quando aplicável.
-- [ ] Histórico e CSV testados.
+- [ ] Exportações CSV testadas.
 - [ ] Backup manual testado.
 - [ ] Agendador de backup configurado.
 - [ ] Restauração testada.

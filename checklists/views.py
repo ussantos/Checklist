@@ -119,12 +119,6 @@ def _selected_position(request):
     return positions.first()
 
 
-def _history_positions_for_user(user):
-    if is_admin_user(user):
-        return Position.objects.all().order_by('name')
-    return visible_positions(user)
-
-
 def _can_access_position_history(user, position):
     if is_admin_user(user):
         return True
@@ -598,50 +592,6 @@ def _save_occurrence_update(request, occurrence):
         )
         return form, True
     return form, False
-
-
-@login_required
-def history(request):
-    positions = _history_positions_for_user(request.user)
-    qs = ChecklistOccurrence.objects.filter(position__in=positions).select_related('position', 'template')
-
-    start = request.GET.get('inicio')
-    end = request.GET.get('fim')
-    status = request.GET.get('status')
-    cargo = request.GET.get('cargo')
-    search = request.GET.get('busca')
-
-    if start:
-        qs = qs.filter(date__gte=start)
-    if end:
-        qs = qs.filter(date__lte=end)
-    if status:
-        qs = qs.filter(status=status)
-    if cargo and is_admin_user(request.user):
-        qs = qs.filter(position_id=cargo)
-    if search:
-        qs = qs.filter(
-            Q(template__title__icontains=search) |
-            Q(evidence_text__icontains=search) |
-            Q(executor_full_name__icontains=search) |
-            Q(blocked_reason__icontains=search)
-        )
-
-    qs = filter_absence_ignored_occurrences(qs.order_by('-date', 'position__name', 'template__order')[:1000])[:800]
-    return render(request, 'checklists/history.html', {
-        'occurrences': qs,
-        'positions': positions,
-        'statuses': ChecklistOccurrence.HISTORY_STATUS_CHOICES,
-        'filters': {
-            'inicio': start or '',
-            'fim': end or '',
-            'status': status or '',
-            'cargo': cargo or '',
-            'busca': search or '',
-        },
-        'done_status': ChecklistOccurrence.STATUS_DONE,
-        'is_admin': is_admin_user(request.user),
-    })
 
 
 def _admin_activity_log_queryset(request):
@@ -1373,14 +1323,6 @@ def monthly_csv(request):
     qs = ChecklistOccurrence.objects.filter(date__range=(start, end), position__in=positions).select_related('position', 'template').order_by('date', 'position__name', 'template__order')
     qs = filter_absence_ignored_occurrences(qs)
     return _occurrences_csv_response(qs, f'relatorio_checklist_{year}_{month:02d}.csv')
-
-
-@login_required
-def history_csv(request):
-    positions = _history_positions_for_user(request.user)
-    qs = ChecklistOccurrence.objects.filter(position__in=positions).select_related('position', 'template').order_by('-date', 'position__name')
-    qs = filter_absence_ignored_occurrences(qs)
-    return _occurrences_csv_response(qs, 'historico_checklist.csv')
 
 
 def _occurrences_csv_response(qs, filename):

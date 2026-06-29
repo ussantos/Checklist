@@ -9,7 +9,6 @@ from django.contrib.auth import views as auth_views
 urlpatterns = [
     path('', views.dashboard, name='dashboard'),
     path('operacional/', views.operational_home, name='operational_home'),
-    path('historico/', views.history, name='history'),
     path('auditoria/', views.admin_activity_history, name='admin_activity_history'),
     path('auditoria.csv', views.admin_activity_history_csv, name='admin_activity_history_csv'),
     path('backups/', views.backups, name='backups'),
@@ -83,5 +82,4 @@ urlpatterns = [
     path('usuarios/<int:user_id>/senha/', user_views.user_reset_password, name='employee_reset_password'),
     path('senha/alterar/', RequiredPasswordChangeView.as_view(), name='password_change'),
     path('senha/alterada/', auth_views.PasswordChangeDoneView.as_view(template_name='registration/password_change_done.html'), name='password_change_done'),
-    path('relatorio/historico.csv', views.history_csv, name='history_csv'),
 ]

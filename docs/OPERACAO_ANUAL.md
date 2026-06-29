@@ -158,7 +158,6 @@ Validar:
 - [ ] Sistema sobe.
 - [ ] Login administrativo funciona.
 - [ ] Usuários e tipos/cargos aparecem.
-- [ ] Histórico do ano aparece.
 - [ ] Auditoria administrativa aparece.
 - [ ] CSV exporta dados.
 - [ ] Dashboard administrativo e indicadores/metas abrem.
@@ -215,10 +214,10 @@ Gerar CSVs anuais, guardar com backup e desligar.
 Exportar:
 
 ```text
-/relatorio/historico.csv
 /relatorio/mensal.csv?ano=2026&mes=01
 ...
 /relatorio/mensal.csv?ano=2026&mes=12
+/auditoria.csv
 ```
 
 ## 7. Criar nova instância para o próximo ano

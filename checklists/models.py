@@ -611,21 +611,20 @@ class Lesson(models.Model):
         (TRIAL_KIND_PLAY, 'Play'),
     ]
 
-    STATUS_SCHEDULED = 'scheduled'
     STATUS_DONE = 'done'
-    STATUS_CANCELLED = 'cancelled'
     STATUS_ABSENT = 'absent'
-    STATUS_RESCHEDULED = 'rescheduled'
     STATUS_NOT_GIVEN = 'not_given'
+    STATUS_CANCELLED = 'cancelled'
+    # Backward-compatible aliases for older code/tests and pre-0036 rows.
+    STATUS_SCHEDULED = STATUS_NOT_GIVEN
+    STATUS_RESCHEDULED = STATUS_CANCELLED
     STATUS_CHOICES = [
-        (STATUS_SCHEDULED, 'Agendada'),
-        (STATUS_DONE, 'Realizada'),
-        (STATUS_CANCELLED, 'Cancelada'),
+        (STATUS_DONE, 'Presença'),
         (STATUS_ABSENT, 'Falta'),
-        (STATUS_RESCHEDULED, 'Reagendada'),
         (STATUS_NOT_GIVEN, 'Não dada'),
+        (STATUS_CANCELLED, 'Cancelada'),
     ]
-    OCCUPYING_STATUSES = [STATUS_SCHEDULED, STATUS_DONE, STATUS_ABSENT]
+    OCCUPYING_STATUSES = [STATUS_DONE, STATUS_ABSENT, STATUS_NOT_GIVEN]
 
     student = models.ForeignKey(PedagogicalStudent, on_delete=models.PROTECT, related_name='lessons', verbose_name='Aluno', null=True, blank=True)
     student_name_snapshot = models.CharField('Nome do aluno/interessado', max_length=160, blank=True)
@@ -639,7 +638,7 @@ class Lesson(models.Model):
     date = models.DateField('Data')
     start_time = models.TimeField('Início')
     end_time = models.TimeField('Fim')
-    status = models.CharField('Status', max_length=20, choices=STATUS_CHOICES, default=STATUS_SCHEDULED)
+    status = models.CharField('Status', max_length=20, choices=STATUS_CHOICES, default=STATUS_NOT_GIVEN)
     notes = models.TextField('Observação', blank=True)
     source = models.CharField('Origem', max_length=30, choices=SOURCE_CHOICES, default=SOURCE_LOCAL)
     external_id = models.CharField('ID externo', max_length=160, blank=True)

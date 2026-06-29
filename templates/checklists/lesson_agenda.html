@@ -115,7 +115,7 @@
                   {% else %}
                     <span class="badge pending">Checklist</span>
                   {% endif %}
-                  <span class="badge {% if lesson.status == 'scheduled' %}pending{% elif lesson.status == 'done' %}done{% elif lesson.status == 'cancelled' %}blocked{% elif lesson.status == 'absent' %}overdue{% elif lesson.status == 'not_given' %}neutral{% else %}neutral{% endif %}">{{ lesson.get_status_display }}</span>
+                  <span class="badge {% if lesson.status == 'not_given' %}pending{% elif lesson.status == 'done' %}done{% elif lesson.status == 'cancelled' %}blocked{% elif lesson.status == 'absent' %}overdue{% else %}neutral{% endif %}">{{ lesson.get_status_display }}</span>
                 </div>
                 <div class="lesson-card-meta">
                   <span>{% if lesson.course %}{{ lesson.course.name }}{% else %}Definir durante a aula{% endif %}</span>
