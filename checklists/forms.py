@@ -7,9 +7,10 @@ from django.forms.models import BaseInlineFormSet
 from django.utils.text import slugify
 from .backup import build_remote_path, split_remote_path
 from .models import (
-    ActivitySuggestion, BackupConfiguration, ChecklistOccurrence, CommercialFunnel, DailyNote,
-    EmployeeAbsence, FunnelModel, FunnelModelField, FunnelStage, FunnelType,
-    MetricRecord, MetricType, OpportunityOrigin, Position, TaskTemplate, UserProfile,
+    ActivitySuggestion, BackupConfiguration, ChecklistOccurrence, CommercialFunnel,
+    CommercialOpportunity, DailyNote, EmployeeAbsence, FunnelModel,
+    FunnelModelField, FunnelStage, FunnelType, MetricRecord, MetricType,
+    OpportunityOrigin, Position, TaskTemplate, UserProfile,
 )
 from .security import generate_temporary_password, should_force_password_change_on_first_login
 
@@ -665,6 +666,194 @@ class CommercialFunnelForm(forms.ModelForm):
         if commit:
             funnel.save()
         return funnel
+
+
+class CommercialOpportunityForm(forms.ModelForm):
+    STATUS_ACTIVE = 'active'
+    STATUS_INACTIVE = 'inactive'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Ativada'),
+        (STATUS_INACTIVE, 'Desativada'),
+    ]
+
+    status = forms.ChoiceField(
+        label='Status',
+        choices=STATUS_CHOICES,
+        widget=forms.Select(attrs={'class': 'input'}),
+    )
+
+    class Meta:
+        model = CommercialOpportunity
+        fields = ['title', 'commercial_funnel', 'contact_name', 'contact_phone', 'notes']
+        widgets = {
+            'title': forms.TextInput(attrs={'class': 'input'}),
+            'commercial_funnel': forms.Select(attrs={'class': 'input'}),
+            'contact_name': forms.TextInput(attrs={'class': 'input'}),
+            'contact_phone': forms.TextInput(attrs={'class': 'input'}),
+            'notes': forms.Textarea(attrs={'class': 'input', 'rows': 4}),
+        }
+        labels = {
+            'title': 'Nome da oportunidade',
+            'commercial_funnel': 'Funil',
+            'contact_name': 'Nome do responsável',
+            'contact_phone': 'Telefone do responsável',
+            'notes': 'Observações',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dynamic_field_names = []
+        self.selected_funnel = None
+        self.fields['status'].initial = self.STATUS_ACTIVE if self.instance.active else self.STATUS_INACTIVE
+
+        funnels = (
+            CommercialFunnel.objects.filter(active=True)
+            .select_related('funnel_model', 'funnel_model__funnel_type', 'funnel_model__stage', 'funnel_model__origin')
+            .order_by('name')
+        )
+        if self.instance and self.instance.pk and self.instance.commercial_funnel_id:
+            funnels = (
+                CommercialFunnel.objects.filter(
+                    pk__in=list(funnels.values_list('pk', flat=True)) + [self.instance.commercial_funnel_id]
+                )
+                .select_related('funnel_model', 'funnel_model__funnel_type', 'funnel_model__stage', 'funnel_model__origin')
+                .order_by('name')
+            )
+        self.fields['commercial_funnel'].queryset = funnels
+
+        selected_funnel_id = self._selected_funnel_id()
+        if selected_funnel_id:
+            self.selected_funnel = (
+                CommercialFunnel.objects.select_related(
+                    'funnel_model',
+                    'funnel_model__funnel_type',
+                    'funnel_model__stage',
+                    'funnel_model__origin',
+                )
+                .prefetch_related('funnel_model__fields')
+                .filter(pk=selected_funnel_id)
+                .first()
+            )
+        if self.selected_funnel:
+            self._add_model_fields()
+
+    @property
+    def custom_bound_fields(self):
+        return [self[name] for name in self.dynamic_field_names]
+
+    def _selected_funnel_id(self):
+        if self.is_bound:
+            value = self.data.get(self.add_prefix('commercial_funnel'))
+        elif self.instance and self.instance.pk:
+            value = self.instance.commercial_funnel_id
+        else:
+            value = self.initial.get('commercial_funnel')
+            if isinstance(value, CommercialFunnel):
+                value = value.pk
+        try:
+            return int(value) if value else None
+        except (TypeError, ValueError):
+            return None
+
+    def _custom_initial(self, field):
+        values = self.instance.field_values or {}
+        value = values.get(str(field.pk), '')
+        if field.field_type == FunnelModelField.TYPE_DATETIME and isinstance(value, str):
+            return value[:16]
+        if field.field_type == FunnelModelField.TYPE_BOOLEAN:
+            if value is True:
+                return 'true'
+            if value is False:
+                return 'false'
+        return value
+
+    def _add_model_fields(self):
+        for model_field in self.selected_funnel.funnel_model.fields.all().order_by('order', 'id'):
+            field_name = f'custom_{model_field.pk}'
+            self.dynamic_field_names.append(field_name)
+            label = model_field.name
+            required = model_field.required
+            initial = self._custom_initial(model_field)
+            if model_field.field_type == FunnelModelField.TYPE_TEXT:
+                self.fields[field_name] = forms.CharField(
+                    label=label,
+                    required=required,
+                    initial=initial,
+                    widget=forms.Textarea(attrs={'class': 'input', 'rows': 2}),
+                )
+            elif model_field.field_type == FunnelModelField.TYPE_DATETIME:
+                self.fields[field_name] = forms.DateTimeField(
+                    label=label,
+                    required=required,
+                    initial=initial,
+                    input_formats=['%Y-%m-%dT%H:%M', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M'],
+                    widget=forms.DateTimeInput(attrs={'class': 'input', 'type': 'datetime-local'}),
+                )
+            elif model_field.field_type == FunnelModelField.TYPE_BOOLEAN:
+                choices = [('', 'Selecione'), ('true', 'Sim'), ('false', 'Não')]
+                self.fields[field_name] = forms.ChoiceField(
+                    label=label,
+                    choices=choices,
+                    required=required,
+                    initial=initial,
+                    widget=forms.Select(attrs={'class': 'input'}),
+                )
+            elif model_field.field_type == FunnelModelField.TYPE_SELECT:
+                choices = [(option, option) for option in model_field.options]
+                if not required:
+                    choices = [('', 'Selecione')] + choices
+                self.fields[field_name] = forms.ChoiceField(
+                    label=label,
+                    choices=choices,
+                    required=required,
+                    initial=initial,
+                    widget=forms.Select(attrs={'class': 'input'}),
+                )
+            elif model_field.field_type == FunnelModelField.TYPE_INTEGER:
+                self.fields[field_name] = forms.IntegerField(
+                    label=label,
+                    required=required,
+                    initial=initial,
+                    widget=forms.NumberInput(attrs={'class': 'input'}),
+                )
+
+    def clean_title(self):
+        value = (self.cleaned_data.get('title') or '').strip()
+        if not value:
+            raise forms.ValidationError('Informe o nome da oportunidade.')
+        return value
+
+    def clean_contact_name(self):
+        value = (self.cleaned_data.get('contact_name') or '').strip()
+        if not value:
+            raise forms.ValidationError('Informe o nome do responsável.')
+        return value
+
+    def clean_contact_phone(self):
+        value = (self.cleaned_data.get('contact_phone') or '').strip()
+        if not value:
+            raise forms.ValidationError('Informe o telefone do responsável.')
+        return value
+
+    def save(self, commit=True):
+        opportunity = super().save(commit=False)
+        opportunity.active = self.cleaned_data.get('status') == self.STATUS_ACTIVE
+        values = {}
+        if self.selected_funnel:
+            for model_field in self.selected_funnel.funnel_model.fields.all().order_by('order', 'id'):
+                field_name = f'custom_{model_field.pk}'
+                value = self.cleaned_data.get(field_name)
+                if value in (None, ''):
+                    continue
+                if model_field.field_type == FunnelModelField.TYPE_BOOLEAN:
+                    value = value == 'true'
+                elif hasattr(value, 'isoformat'):
+                    value = value.isoformat()
+                values[str(model_field.pk)] = value
+        opportunity.field_values = values
+        if commit:
+            opportunity.save()
+        return opportunity
 
 
 class EmployeeAbsenceForm(forms.ModelForm):

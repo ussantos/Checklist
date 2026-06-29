@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>{{ title }}</h1>
+    <p class="muted">Registre a entrada no funil e preencha os campos definidos no modelo selecionado.</p>
+  </div>
+  <a class="btn" href="{% url 'commercial_opportunities' %}">Voltar</a>
+</div>
+
+<form method="post" class="form-stack" id="commercial-opportunity-form">
+  {% csrf_token %}
+  <section class="panel">
+    <h2>Dados da oportunidade</h2>
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="form-grid">
+      <p>
+        {{ form.title.label_tag }}
+        {{ form.title }}
+        {{ form.title.errors }}
+      </p>
+      <p>
+        {{ form.commercial_funnel.label_tag }}
+        {{ form.commercial_funnel }}
+        {{ form.commercial_funnel.errors }}
+      </p>
+      <p>
+        {{ form.contact_name.label_tag }}
+        {{ form.contact_name }}
+        {{ form.contact_name.errors }}
+      </p>
+      <p>
+        {{ form.contact_phone.label_tag }}
+        {{ form.contact_phone }}
+        {{ form.contact_phone.errors }}
+      </p>
+      <p>
+        {{ form.status.label_tag }}
+        {{ form.status }}
+        {{ form.status.errors }}
+      </p>
+      <p>
+        {{ form.notes.label_tag }}
+        {{ form.notes }}
+        {{ form.notes.errors }}
+      </p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Campos do modelo</h2>
+    {% if form.selected_funnel %}
+      <p class="muted">
+        Modelo: {{ form.selected_funnel.funnel_model }}.
+      </p>
+      {% if form.custom_bound_fields %}
+        <div class="form-grid">
+          {% for field in form.custom_bound_fields %}
+            <p>
+              {{ field.label_tag }}
+              {{ field }}
+              {{ field.errors }}
+            </p>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted">O modelo deste funil não possui campos adicionais.</p>
+      {% endif %}
+    {% else %}
+      <p class="muted">Selecione um funil para carregar os campos adicionais do modelo.</p>
+    {% endif %}
+  </section>
+
+  <div class="form-actions">
+    <button class="btn primary" type="submit">{{ submit_label }}</button>
+  </div>
+</form>
+
+{% if not opportunity %}
+<script>
+  (() => {
+    const select = document.getElementById('id_commercial_funnel');
+    if (!select) return;
+    select.addEventListener('change', () => {
+      if (!select.value) return;
+      const url = new URL("{% url 'commercial_opportunity_create' %}", window.location.origin);
+      url.searchParams.set('funil', select.value);
+      window.location.href = url.toString();
+    });
+  })();
+</script>
+{% endif %}
+{% endblock %}

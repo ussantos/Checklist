@@ -7,10 +7,13 @@ from django.views.decorators.http import require_POST
 
 from .audit import changed_values, log_activity, snapshot_instance
 from .forms import (
-    CommercialFunnelForm, FunnelModelFieldFormSet, FunnelModelForm, FunnelStageForm,
-    FunnelTypeForm, OpportunityOriginForm,
+    CommercialFunnelForm, CommercialOpportunityForm, FunnelModelFieldFormSet,
+    FunnelModelForm, FunnelStageForm, FunnelTypeForm, OpportunityOriginForm,
 )
-from .models import CommercialFunnel, FunnelModel, FunnelStage, FunnelType, OpportunityOrigin
+from .models import (
+    CommercialFunnel, CommercialOpportunity, FunnelModel, FunnelModelField,
+    FunnelStage, FunnelType, OpportunityOrigin,
+)
 from .services import is_admin_user
 
 
@@ -19,6 +22,10 @@ FUNNEL_STAGE_AUDIT_FIELDS = ['name', 'code', 'description', 'order', 'active']
 OPPORTUNITY_ORIGIN_AUDIT_FIELDS = ['name', 'code', 'description', 'active']
 FUNNEL_MODEL_AUDIT_FIELDS = ['funnel_type', 'stage', 'origin', 'responsible_name', 'responsible_phone', 'active']
 COMMERCIAL_FUNNEL_AUDIT_FIELDS = ['name', 'funnel_model', 'active']
+COMMERCIAL_OPPORTUNITY_AUDIT_FIELDS = [
+    'title', 'commercial_funnel', 'contact_name', 'contact_phone',
+    'field_values', 'notes', 'active',
+]
 
 
 def _admin_check(user):
@@ -38,6 +45,35 @@ def _funnel_model_snapshot(funnel_model):
         for field in funnel_model.fields.all().order_by('order', 'id')
     ]
     return data
+
+
+def _commercial_opportunity_queryset():
+    return CommercialOpportunity.objects.select_related(
+        'commercial_funnel',
+        'commercial_funnel__funnel_model',
+        'commercial_funnel__funnel_model__funnel_type',
+        'commercial_funnel__funnel_model__stage',
+        'commercial_funnel__funnel_model__origin',
+    ).prefetch_related('commercial_funnel__funnel_model__fields')
+
+
+def _commercial_opportunity_snapshot(opportunity):
+    return snapshot_instance(opportunity, COMMERCIAL_OPPORTUNITY_AUDIT_FIELDS)
+
+
+def _opportunity_custom_values(opportunity):
+    values = opportunity.field_values or {}
+    display_values = []
+    for field in opportunity.commercial_funnel.funnel_model.fields.all().order_by('order', 'id'):
+        raw_value = values.get(str(field.pk), '')
+        if raw_value in (None, ''):
+            continue
+        if field.field_type == FunnelModelField.TYPE_BOOLEAN:
+            value = 'Sim' if raw_value else 'Não'
+        else:
+            value = raw_value
+        display_values.append({'label': field.name, 'value': value})
+    return display_values
 
 
 def _confirm_delete(request, *, title, object_label, warning, cancel_url):
@@ -700,18 +736,15 @@ def commercial_opportunities_list(request):
     status = request.GET.get('status', 'ativos')
     funnel_type_id = request.GET.get('tipo', '')
     stage_id = request.GET.get('etapa', '')
+    funnel_id = request.GET.get('funil', '')
     opportunities = (
-        CommercialFunnel.objects.select_related(
-            'funnel_model',
-            'funnel_model__funnel_type',
-            'funnel_model__stage',
-            'funnel_model__origin',
-        )
+        _commercial_opportunity_queryset()
         .order_by(
-            'funnel_model__funnel_type__name',
-            'funnel_model__stage__order',
-            'funnel_model__stage__name',
-            'name',
+            'commercial_funnel__funnel_model__funnel_type__name',
+            'commercial_funnel__funnel_model__stage__order',
+            'commercial_funnel__funnel_model__stage__name',
+            'commercial_funnel__name',
+            'title',
         )
     )
 
@@ -722,25 +755,137 @@ def commercial_opportunities_list(request):
         opportunities = opportunities.filter(active=True)
 
     if funnel_type_id and funnel_type_id.isdigit():
-        opportunities = opportunities.filter(funnel_model__funnel_type_id=funnel_type_id)
+        opportunities = opportunities.filter(commercial_funnel__funnel_model__funnel_type_id=funnel_type_id)
     else:
         funnel_type_id = ''
 
     if stage_id and stage_id.isdigit():
-        opportunities = opportunities.filter(funnel_model__stage_id=stage_id)
+        opportunities = opportunities.filter(commercial_funnel__funnel_model__stage_id=stage_id)
     else:
         stage_id = ''
 
+    if funnel_id and funnel_id.isdigit():
+        opportunities = opportunities.filter(commercial_funnel_id=funnel_id)
+    else:
+        funnel_id = ''
+
+    opportunities = list(opportunities)
+    for opportunity in opportunities:
+        opportunity.custom_values = _opportunity_custom_values(opportunity)
+
     return render(request, 'checklists/commercial_opportunities_list.html', {
         'opportunities': opportunities,
-        'opportunity_count': opportunities.count(),
+        'opportunity_count': len(opportunities),
         'funnel_types': FunnelType.objects.all().order_by('name'),
         'stages': FunnelStage.objects.all().order_by('order', 'name'),
+        'funnels': CommercialFunnel.objects.select_related('funnel_model').order_by('name'),
         'status': status,
         'funnel_type_id': funnel_type_id,
         'stage_id': stage_id,
+        'funnel_id': funnel_id,
         'is_admin': True,
     })
+
+
+@user_passes_test(_admin_check)
+def commercial_opportunity_create(request):
+    if request.method == 'POST':
+        form = CommercialOpportunityForm(request.POST)
+        if form.is_valid():
+            opportunity = form.save()
+            opportunity = _commercial_opportunity_queryset().get(pk=opportunity.pk)
+            log_activity(
+                actor=request.user,
+                obj=opportunity,
+                action='Oportunidade comercial criada',
+                object_label=opportunity.title,
+                details=f'Oportunidade: {opportunity.title}; funil: {opportunity.commercial_funnel}; ativa: {opportunity.active}',
+                new_values=_commercial_opportunity_snapshot(opportunity),
+            )
+            messages.success(request, 'Oportunidade criada.')
+            return redirect('commercial_opportunities')
+    else:
+        initial = {}
+        funnel_id = request.GET.get('funil')
+        if funnel_id and funnel_id.isdigit():
+            initial['commercial_funnel'] = funnel_id
+        form = CommercialOpportunityForm(initial=initial)
+
+    return render(request, 'checklists/commercial_opportunity_form.html', {
+        'form': form,
+        'title': 'Criar oportunidade',
+        'submit_label': 'Criar oportunidade',
+        'is_admin': True,
+    })
+
+
+@user_passes_test(_admin_check)
+def commercial_opportunity_edit(request, opportunity_id):
+    opportunity = get_object_or_404(_commercial_opportunity_queryset(), pk=opportunity_id)
+    previous_active = opportunity.active
+    previous_values_full = _commercial_opportunity_snapshot(opportunity)
+    if request.method == 'POST':
+        form = CommercialOpportunityForm(request.POST, instance=opportunity)
+        if form.is_valid():
+            opportunity = form.save()
+            opportunity = _commercial_opportunity_queryset().get(pk=opportunity.pk)
+            previous_values, new_values = changed_values(
+                previous_values_full,
+                _commercial_opportunity_snapshot(opportunity),
+            )
+            if previous_active and not opportunity.active:
+                action = 'Oportunidade comercial desativada'
+            elif not previous_active and opportunity.active:
+                action = 'Oportunidade comercial ativada'
+            else:
+                action = 'Oportunidade comercial atualizada'
+            log_activity(
+                actor=request.user,
+                obj=opportunity,
+                action=action,
+                object_label=opportunity.title,
+                details=f'Oportunidade: {opportunity.title}; funil: {opportunity.commercial_funnel}; ativa: {opportunity.active}',
+                previous_values=previous_values,
+                new_values=new_values,
+            )
+            messages.success(request, 'Oportunidade atualizada.')
+            return redirect('commercial_opportunities')
+    else:
+        form = CommercialOpportunityForm(instance=opportunity)
+
+    return render(request, 'checklists/commercial_opportunity_form.html', {
+        'form': form,
+        'title': f'Editar oportunidade - {opportunity.title}',
+        'submit_label': 'Salvar alterações',
+        'opportunity': opportunity,
+        'is_admin': True,
+    })
+
+
+@require_POST
+@user_passes_test(_admin_check)
+def commercial_opportunity_toggle(request, opportunity_id):
+    opportunity = get_object_or_404(_commercial_opportunity_queryset(), pk=opportunity_id)
+    previous_values_full = _commercial_opportunity_snapshot(opportunity)
+    opportunity.active = not opportunity.active
+    opportunity.save(update_fields=['active', 'updated_at'])
+    opportunity = _commercial_opportunity_queryset().get(pk=opportunity.pk)
+    previous_values, new_values = changed_values(
+        previous_values_full,
+        _commercial_opportunity_snapshot(opportunity),
+    )
+    action = 'Oportunidade comercial ativada' if opportunity.active else 'Oportunidade comercial desativada'
+    log_activity(
+        actor=request.user,
+        obj=opportunity,
+        action=action,
+        object_label=opportunity.title,
+        details=f'Oportunidade: {opportunity.title}; funil: {opportunity.commercial_funnel}; ativa: {opportunity.active}',
+        previous_values=previous_values,
+        new_values=new_values,
+    )
+    messages.success(request, f'Oportunidade {"ativada" if opportunity.active else "desativada"}.')
+    return redirect('commercial_opportunities')
 
 
 @user_passes_test(_admin_check)

@@ -231,6 +231,49 @@ class CommercialFunnel(models.Model):
         return self.name
 
 
+class CommercialOpportunity(models.Model):
+    """Entrada/lead acompanhado dentro de um funil comercial."""
+
+    title = models.CharField('Oportunidade', max_length=160)
+    commercial_funnel = models.ForeignKey(CommercialFunnel, on_delete=models.PROTECT, related_name='opportunities', verbose_name='Funil')
+    contact_name = models.CharField('Nome do responsável', max_length=120)
+    contact_phone = models.CharField('Telefone do responsável', max_length=30)
+    field_values = models.JSONField('Campos adicionais preenchidos', default=dict, blank=True)
+    notes = models.TextField('Observações', blank=True)
+    active = models.BooleanField('Ativa', default=True)
+    created_at = models.DateTimeField('Criada em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizada em', auto_now=True)
+
+    class Meta:
+        ordering = [
+            'commercial_funnel__funnel_model__funnel_type__name',
+            'commercial_funnel__funnel_model__stage__order',
+            'commercial_funnel__funnel_model__stage__name',
+            'title',
+        ]
+        verbose_name = 'Oportunidade comercial'
+        verbose_name_plural = 'Oportunidades comerciais'
+
+    def __str__(self):
+        return self.title
+
+    @property
+    def funnel_model(self):
+        return self.commercial_funnel.funnel_model
+
+    @property
+    def funnel_type(self):
+        return self.funnel_model.funnel_type
+
+    @property
+    def stage(self):
+        return self.funnel_model.stage
+
+    @property
+    def origin(self):
+        return self.funnel_model.origin
+
+
 class UserProfile(models.Model):
     """Perfil local do usuário autenticado.
 

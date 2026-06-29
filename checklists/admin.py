@@ -3,7 +3,11 @@ from django.contrib.admin.sites import NotRegistered
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-from .models import ActivityLog, CommercialFunnel, FunnelModel, FunnelModelField, FunnelStage, FunnelType, OpportunityOrigin, Position, UserProfile
+from .models import (
+    ActivityLog, CommercialFunnel, CommercialOpportunity, FunnelModel,
+    FunnelModelField, FunnelStage, FunnelType, OpportunityOrigin, Position,
+    UserProfile,
+)
 
 
 User = get_user_model()
@@ -81,6 +85,25 @@ class CommercialFunnelAdmin(admin.ModelAdmin):
     list_display = ('name', 'funnel_model', 'active')
     search_fields = ('name', 'funnel_model__funnel_type__name', 'funnel_model__stage__name')
     list_filter = ('active', 'funnel_model__funnel_type', 'funnel_model__stage')
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(CommercialOpportunity)
+class CommercialOpportunityAdmin(admin.ModelAdmin):
+    list_display = ('title', 'commercial_funnel', 'contact_name', 'contact_phone', 'active')
+    search_fields = (
+        'title', 'contact_name', 'contact_phone', 'commercial_funnel__name',
+        'commercial_funnel__funnel_model__funnel_type__name',
+        'commercial_funnel__funnel_model__stage__name',
+    )
+    list_filter = (
+        'active',
+        'commercial_funnel__funnel_model__funnel_type',
+        'commercial_funnel__funnel_model__stage',
+        'commercial_funnel',
+    )
 
     def has_delete_permission(self, request, obj=None):
         return False

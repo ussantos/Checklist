@@ -3,9 +3,12 @@
 <div class="page-title">
   <div>
     <h1>Oportunidades</h1>
-    <p class="muted">Entradas dos funis classificadas por tipo e etapa.</p>
+    <p class="muted">Entradas reais dos funis classificadas por tipo e etapa.</p>
   </div>
-  <a class="btn small" href="{% url 'commercial_funnels' %}">Gestão de Funis</a>
+  <div class="row-actions">
+    <a class="btn primary" href="{% url 'commercial_opportunity_create' %}">Nova oportunidade</a>
+    <a class="btn small" href="{% url 'commercial_funnels' %}">Gestão de Funis</a>
+  </div>
 </div>
 
 <form method="get" class="filters panel">
@@ -32,6 +35,14 @@
       {% endfor %}
     </select>
   </label>
+  <label>Funil
+    <select class="input" name="funil">
+      <option value="">Todos</option>
+      {% for funnel in funnels %}
+        <option value="{{ funnel.id }}" {% if funnel_id == funnel.id|stringformat:"s" %}selected{% endif %}>{{ funnel.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
   <button class="btn">Filtrar</button>
 </form>
 
@@ -40,35 +51,55 @@
   <p class="muted">{{ opportunity_count }} registro{{ opportunity_count|pluralize }} encontrado{{ opportunity_count|pluralize }}.</p>
 </section>
 
-{% regroup opportunities by funnel_model.funnel_type.name as type_groups %}
+{% regroup opportunities by commercial_funnel.funnel_model.funnel_type.name as type_groups %}
 <div class="opportunity-groups">
 {% for type_group in type_groups %}
 <section class="opportunity-group">
   <h2>{{ type_group.grouper }}</h2>
-  {% regroup type_group.list by funnel_model.stage.name as stage_groups %}
+  {% regroup type_group.list by commercial_funnel.funnel_model.stage.name as stage_groups %}
   {% for stage_group in stage_groups %}
     <h3 class="opportunity-stage-title">{{ stage_group.grouper }}</h3>
     <table class="panel-table">
       <thead>
         <tr>
           <th>Oportunidade</th>
-          <th>Modelo</th>
+          <th>Funil</th>
           <th>Origem</th>
           <th>Responsável</th>
+          <th>Campos adicionais</th>
           <th>Status</th>
+          <th>Ações</th>
         </tr>
       </thead>
       <tbody>
         {% for opportunity in stage_group.list %}
         <tr>
-          <td>{{ opportunity.name }}</td>
-          <td>{{ opportunity.funnel_model }}</td>
-          <td>{{ opportunity.funnel_model.origin.name }}</td>
+          <td>{{ opportunity.title }}</td>
+          <td>{{ opportunity.commercial_funnel.name }}</td>
+          <td>{{ opportunity.commercial_funnel.funnel_model.origin.name }}</td>
           <td>
-            {{ opportunity.funnel_model.responsible_name }}<br>
-            <span class="muted">{{ opportunity.funnel_model.responsible_phone }}</span>
+            {{ opportunity.contact_name }}<br>
+            <span class="muted">{{ opportunity.contact_phone }}</span>
+          </td>
+          <td>
+            {% if opportunity.custom_values %}
+              {% for item in opportunity.custom_values %}
+                <div><strong>{{ item.label }}:</strong> {{ item.value }}</div>
+              {% endfor %}
+            {% else %}
+              <span class="muted">-</span>
+            {% endif %}
           </td>
           <td>{% if opportunity.active %}<span class="badge done">Ativa</span>{% else %}<span class="badge blocked">Inativa</span>{% endif %}</td>
+          <td>
+            <div class="row-actions">
+              <a class="btn small" href="{% url 'commercial_opportunity_edit' opportunity.id %}">Editar</a>
+              <form method="post" action="{% url 'commercial_opportunity_toggle' opportunity.id %}" class="inline-form">
+                {% csrf_token %}
+                <button class="btn small" type="submit">{% if opportunity.active %}Desativar{% else %}Ativar{% endif %}</button>
+              </form>
+            </div>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
