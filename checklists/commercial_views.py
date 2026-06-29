@@ -4,7 +4,6 @@ from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Count
 from django.db.models.deletion import ProtectedError
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -112,6 +111,73 @@ def _opportunity_custom_values(opportunity):
             value = raw_value
         display_values.append({'label': field.name, 'value': value})
     return display_values
+
+
+def _group_opportunities_by_funnel_stage(opportunities, *, max_per_stage=None):
+    groups = []
+    funnel_index = {}
+    stage_index_by_funnel = {}
+    for opportunity in opportunities:
+        funnel_key = opportunity.commercial_funnel_id or 0
+        if funnel_key not in funnel_index:
+            group = {
+                'funnel': opportunity.commercial_funnel,
+                'total': 0,
+                'stages': [],
+            }
+            funnel_index[funnel_key] = group
+            stage_index_by_funnel[funnel_key] = {}
+            groups.append(group)
+
+        group = funnel_index[funnel_key]
+        group['total'] += 1
+        stage_key = opportunity.stage_id or 0
+        if stage_key not in stage_index_by_funnel[funnel_key]:
+            stage_group = {
+                'stage': opportunity.stage,
+                'total': 0,
+                'opportunities': [],
+            }
+            stage_index_by_funnel[funnel_key][stage_key] = stage_group
+            group['stages'].append(stage_group)
+
+        stage_group = stage_index_by_funnel[funnel_key][stage_key]
+        stage_group['total'] += 1
+        if max_per_stage is None or len(stage_group['opportunities']) < max_per_stage:
+            stage_group['opportunities'].append(opportunity)
+    return groups
+
+
+def _kanban_columns_for_funnel(opportunities):
+    stages = list(FunnelStage.objects.filter(active=True).order_by('order', 'name'))
+    stage_ids = {stage.id for stage in stages}
+    extra_stage_ids = {opportunity.stage_id for opportunity in opportunities if opportunity.stage_id and opportunity.stage_id not in stage_ids}
+    if extra_stage_ids:
+        stages.extend(FunnelStage.objects.filter(pk__in=extra_stage_ids).order_by('order', 'name'))
+
+    columns = []
+    index = {}
+    for stage in stages:
+        column = {
+            'stage': stage,
+            'opportunities': [],
+        }
+        columns.append(column)
+        index[stage.id] = column
+
+    without_stage = {
+        'stage': None,
+        'opportunities': [],
+    }
+    for opportunity in opportunities:
+        if opportunity.stage_id and opportunity.stage_id in index:
+            index[opportunity.stage_id]['opportunities'].append(opportunity)
+        else:
+            without_stage['opportunities'].append(opportunity)
+
+    if without_stage['opportunities']:
+        columns.append(without_stage)
+    return columns
 
 
 def _record_follow_up_event(*, opportunity, actor, previous_date=None, note=''):
@@ -397,11 +463,16 @@ def commercial_dashboard(request):
     stale = opportunities.filter(updated_at__lt=stale_threshold).order_by('updated_at', 'title')
     critical = stale.filter(next_follow_up_date__lt=today).order_by('next_follow_up_date', 'updated_at')
 
-    by_stage = (
-        opportunities.values('stage__name', 'stage__order')
-        .annotate(total=Count('id'))
-        .order_by('stage__order', 'stage__name')
+    dashboard_opportunities = list(
+        opportunities.order_by(
+            'commercial_funnel__name',
+            'stage__order',
+            'stage__name',
+            'next_follow_up_date',
+            'title',
+        )
     )
+    opportunity_funnel_groups = _group_opportunities_by_funnel_stage(dashboard_opportunities, max_per_stage=4)
 
     return render(request, 'checklists/commercial_dashboard.html', {
         'today': today,
@@ -411,11 +482,62 @@ def commercial_dashboard(request):
         'overdue_count': overdue.count(),
         'critical_count': critical.count(),
         'stale_count': stale.count(),
-        'by_stage': by_stage,
+        'opportunity_funnel_groups': opportunity_funnel_groups,
         'follow_up_today': follow_up_today[:8],
+        'follow_up_tomorrow': follow_up_tomorrow[:8],
         'overdue': overdue[:10],
         'critical_opportunities': critical[:10],
         'stale_opportunities': stale[:10],
+        'is_admin': _is_commercial_admin_context(request.user),
+        'is_commercial_operator': _is_commercial_operator(request.user),
+    })
+
+
+@user_passes_test(_commercial_access_check)
+def commercial_funnel_board(request):
+    funnels = list(CommercialFunnel.objects.filter(active=True).select_related('funnel_model').order_by('name'))
+    selected_funnel_id = request.GET.get('funil', '')
+    selected_funnel = None
+    if selected_funnel_id and selected_funnel_id.isdigit():
+        selected_funnel = CommercialFunnel.objects.filter(pk=selected_funnel_id).select_related('funnel_model').first()
+    if not selected_funnel and funnels:
+        selected_funnel = funnels[0]
+        selected_funnel_id = str(selected_funnel.id)
+    elif selected_funnel:
+        selected_funnel_id = str(selected_funnel.id)
+        if selected_funnel not in funnels:
+            funnels.append(selected_funnel)
+            funnels.sort(key=lambda item: item.name.casefold())
+    else:
+        selected_funnel_id = ''
+
+    opportunities = _scope_commercial_opportunities(
+        _commercial_opportunity_queryset().filter(active=True),
+        request.user,
+    )
+    if selected_funnel:
+        opportunities = opportunities.filter(commercial_funnel=selected_funnel)
+    opportunities = list(opportunities.order_by('stage__order', 'stage__name', 'next_follow_up_date', 'title'))
+    columns = _kanban_columns_for_funnel(opportunities) if selected_funnel else []
+    today = timezone.localdate()
+    for opportunity in opportunities:
+        if opportunity.next_follow_up_date < today:
+            opportunity.follow_up_state = 'overdue'
+            opportunity.follow_up_state_label = 'Atrasado'
+        elif opportunity.next_follow_up_date == today:
+            opportunity.follow_up_state = 'today'
+            opportunity.follow_up_state_label = 'Hoje'
+        else:
+            opportunity.follow_up_state = 'future'
+            opportunity.follow_up_state_label = opportunity.next_follow_up_date.strftime('%d/%m')
+
+    return render(request, 'checklists/commercial_funnel_board.html', {
+        'funnels': funnels,
+        'selected_funnel': selected_funnel,
+        'selected_funnel_id': selected_funnel_id,
+        'columns': columns,
+        'opportunity_count': len(opportunities),
+        'today': today,
         'is_admin': _is_commercial_admin_context(request.user),
         'is_commercial_operator': _is_commercial_operator(request.user),
     })

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Funis</h1>
+    <p class="muted">Visualize um funil por vez. Cada coluna representa uma etapa do fluxo comercial.</p>
+  </div>
+  <div class="row-actions">
+    <a class="btn primary" href="{% url 'commercial_opportunity_create' %}{% if selected_funnel %}?funil={{ selected_funnel.id }}{% endif %}">Nova oportunidade</a>
+    <a class="btn" href="{% url 'commercial_dashboard' %}">Painel</a>
+  </div>
+</div>
+
+<form method="get" class="filters panel funnel-board-filter" data-auto-submit>
+  <label>Funil
+    <select class="input" name="funil">
+      {% for funnel in funnels %}
+        <option value="{{ funnel.id }}" {% if selected_funnel_id == funnel.id|stringformat:"s" %}selected{% endif %}>{{ funnel.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <span class="funnel-board-total">{{ opportunity_count }} oportunidade{{ opportunity_count|pluralize }}</span>
+  <button class="btn">Abrir</button>
+</form>
+
+{% if selected_funnel %}
+<section class="panel funnel-board-heading">
+  <div>
+    <span class="section-eyebrow">Kanban</span>
+    <h2>{{ selected_funnel.name }}</h2>
+    <p class="muted">Clique em qualquer oportunidade para editar, registrar follow-up ou agendar Aula Experimental/Play.</p>
+  </div>
+</section>
+
+<div class="commercial-kanban">
+  {% for column in columns %}
+    <section class="kanban-col commercial-kanban-col">
+      <h2>
+        {{ column.stage.name|default:"Sem etapa" }}
+        <span>{{ column.opportunities|length }}</span>
+      </h2>
+      <div class="kanban-card-list">
+        {% for opportunity in column.opportunities %}
+          <a class="kanban-card followup-{{ opportunity.follow_up_state }}" href="{% url 'commercial_opportunity_edit' opportunity.id %}">
+            <span class="kanban-card-code">{{ opportunity.title }}</span>
+            <strong>{{ opportunity.contact_name }}</strong>
+            <small>{{ opportunity.contact_phone|default:"Sem telefone" }}</small>
+            <span class="kanban-card-meta">
+              <span>{{ opportunity.origin.name|default:"Sem origem" }}</span>
+              <span class="badge {{ opportunity.follow_up_state }}">{{ opportunity.follow_up_state_label }}</span>
+            </span>
+          </a>
+        {% empty %}
+          <div class="kanban-empty">Sem oportunidades nesta etapa.</div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+</div>
+{% else %}
+<section class="panel empty-state">Nenhum funil ativo encontrado.</section>
+{% endif %}
+
+<script>
+  (() => {
+    document.querySelectorAll('[data-auto-submit] select').forEach((select) => {
+      select.addEventListener('change', () => select.form.submit());
+    });
+  })();
+</script>
+{% endblock %}

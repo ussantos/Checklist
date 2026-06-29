@@ -84,7 +84,11 @@
         {{ lesson.student_name_snapshot }}<br>
         <span class="muted">{{ lesson.responsible_name_snapshot|default:"-" }}{% if lesson.whatsapp_snapshot %} · {{ lesson.whatsapp_snapshot }}{% endif %}</span>
         {% if lesson.commercial_opportunity %}
-          <br><span class="muted">Oportunidade: {{ lesson.commercial_opportunity.title }}</span>
+          <br><span class="muted">Oportunidade:
+            <a class="opportunity-link" href="{% url 'commercial_opportunity_edit' lesson.commercial_opportunity.id %}">
+              {{ lesson.commercial_opportunity.title }}
+            </a>
+          </span>
         {% endif %}
       </td>
       <td>

@@ -3,176 +3,155 @@
 <div class="page-title">
   <div>
     <h1>Painel Comercial</h1>
-    <p class="muted">Follow-ups, oportunidades por etapa e pontos críticos do funil.</p>
+    <p class="muted">Follow-ups em cima para ação rápida; oportunidades por funil embaixo para leitura do pipeline.</p>
   </div>
   <div class="row-actions">
     <a class="btn primary" href="{% url 'commercial_opportunity_create' %}">Cadastrar oportunidade</a>
-    <a class="btn" href="{% url 'commercial_opportunities' %}">Ver oportunidades</a>
+    <a class="btn" href="{% url 'commercial_funnel_board' %}">Abrir funis</a>
+    <a class="btn" href="{% url 'commercial_opportunities' %}">Ver lista</a>
   </div>
 </div>
 
-<div class="commercial-kpi-grid">
-  <section class="commercial-kpi-card kpi-today">
-    <span>Follow-ups hoje</span>
-    <strong>{{ follow_up_today_count }}</strong>
-    <small>{{ today|date:"d/m/Y" }}</small>
-  </section>
-  <section class="commercial-kpi-card kpi-tomorrow">
-    <span>Follow-ups amanhã</span>
-    <strong>{{ follow_up_tomorrow_count }}</strong>
-    <small>{{ tomorrow|date:"d/m/Y" }}</small>
-  </section>
-  <section class="commercial-kpi-card kpi-overdue">
-    <span>Atrasados</span>
-    <strong>{{ overdue_count }}</strong>
-    <small>Follow-up vencido</small>
-  </section>
-  <section class="commercial-kpi-card kpi-critical">
-    <span>Críticos</span>
-    <strong>{{ critical_count }}</strong>
-    <small>Atrasados e sem atualização há mais de 3 dias</small>
-  </section>
-</div>
-
-<div class="commercial-dashboard-grid">
-  <section class="panel">
-    <div class="section-heading">
-      <div>
-        <h2>Hoje</h2>
-        <p class="muted">Oportunidades com follow-up para hoje.</p>
-      </div>
+<section class="commercial-workspace">
+  <div class="section-title">
+    <div>
+      <span class="section-eyebrow">Follow-ups</span>
+      <h2>Fila de atendimento</h2>
+      <p class="muted">Comece pelos atrasados e críticos; depois avance para hoje e amanhã.</p>
     </div>
-    <table class="panel-table compact-table">
-      <thead>
-        <tr>
-          <th>Oportunidade</th>
-          <th>Etapa</th>
-          <th>Contato</th>
-          <th>Ação</th>
-        </tr>
-      </thead>
-      <tbody>
+  </div>
+
+  <div class="commercial-kpi-grid">
+    <a class="commercial-kpi-card kpi-today" href="#followups-hoje">
+      <span>Hoje</span>
+      <strong>{{ follow_up_today_count }}</strong>
+      <small>{{ today|date:"d/m/Y" }}</small>
+    </a>
+    <a class="commercial-kpi-card kpi-tomorrow" href="#followups-amanha">
+      <span>Amanhã</span>
+      <strong>{{ follow_up_tomorrow_count }}</strong>
+      <small>{{ tomorrow|date:"d/m/Y" }}</small>
+    </a>
+    <a class="commercial-kpi-card kpi-overdue" href="#followups-atrasados">
+      <span>Atrasados</span>
+      <strong>{{ overdue_count }}</strong>
+      <small>Follow-up vencido</small>
+    </a>
+    <a class="commercial-kpi-card kpi-critical" href="#followups-criticos">
+      <span>Críticos</span>
+      <strong>{{ critical_count }}</strong>
+      <small>Atrasados e parados há mais de 3 dias</small>
+    </a>
+  </div>
+
+  <div class="followup-board">
+    <section class="followup-lane" id="followups-hoje">
+      <h3>Hoje</h3>
+      <div class="followup-list">
         {% for opportunity in follow_up_today %}
-        <tr>
-          <td>{{ opportunity.title }}</td>
-          <td>{{ opportunity.stage.name|default:"-" }}</td>
-          <td>{{ opportunity.contact_name }}<br><span class="muted">{{ opportunity.contact_phone }}</span></td>
-          <td><a class="btn small" href="{% url 'commercial_opportunity_edit' opportunity.id %}">Abrir</a></td>
-        </tr>
+          <a class="followup-card" href="{% url 'commercial_opportunity_edit' opportunity.id %}">
+            <strong>{{ opportunity.title }}</strong>
+            <span>{{ opportunity.contact_name }}</span>
+            <small>{{ opportunity.commercial_funnel.name }} · {{ opportunity.stage.name|default:"Sem etapa" }}</small>
+          </a>
         {% empty %}
-        <tr><td colspan="4">Nenhum follow-up para hoje.</td></tr>
+          <p class="muted">Nenhum follow-up para hoje.</p>
         {% endfor %}
-      </tbody>
-    </table>
-  </section>
-
-  <section class="panel danger-light">
-    <div class="section-heading">
-      <div>
-        <h2>Críticos</h2>
-        <p class="muted">Follow-up atrasado e oportunidade sem atualização recente.</p>
       </div>
-    </div>
-    <table class="panel-table compact-table">
-      <thead>
-        <tr>
-          <th>Oportunidade</th>
-          <th>Follow-up</th>
-          <th>Última atualização</th>
-          <th>Ação</th>
-        </tr>
-      </thead>
-      <tbody>
+    </section>
+
+    <section class="followup-lane" id="followups-atrasados">
+      <h3>Atrasados</h3>
+      <div class="followup-list">
+        {% for opportunity in overdue %}
+          <a class="followup-card is-overdue" href="{% url 'commercial_opportunity_edit' opportunity.id %}">
+            <strong>{{ opportunity.title }}</strong>
+            <span>{{ opportunity.contact_name }}</span>
+            <small>{{ opportunity.next_follow_up_date|date:"d/m/Y" }} · {{ opportunity.stage.name|default:"Sem etapa" }}</small>
+          </a>
+        {% empty %}
+          <p class="muted">Nenhum follow-up atrasado.</p>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="followup-lane" id="followups-criticos">
+      <h3>Críticos</h3>
+      <div class="followup-list">
         {% for opportunity in critical_opportunities %}
-        <tr>
-          <td>{{ opportunity.title }}<br><span class="muted">{{ opportunity.stage.name|default:"Sem etapa" }}</span></td>
-          <td>{{ opportunity.next_follow_up_date|date:"d/m/Y" }}</td>
-          <td>{{ opportunity.updated_at|date:"d/m/Y H:i" }}</td>
-          <td><a class="btn small" href="{% url 'commercial_opportunity_edit' opportunity.id %}">Resolver</a></td>
-        </tr>
+          <a class="followup-card is-critical" href="{% url 'commercial_opportunity_edit' opportunity.id %}">
+            <strong>{{ opportunity.title }}</strong>
+            <span>{{ opportunity.contact_name }}</span>
+            <small>Atualizado em {{ opportunity.updated_at|date:"d/m/Y H:i" }}</small>
+          </a>
         {% empty %}
-        <tr><td colspan="4">Nenhuma oportunidade crítica no momento.</td></tr>
+          <p class="muted">Nenhuma oportunidade crítica.</p>
         {% endfor %}
-      </tbody>
-    </table>
-  </section>
-</div>
+      </div>
+    </section>
 
-<div class="commercial-dashboard-grid">
-  <section class="panel">
-    <h2>Oportunidades por etapa</h2>
-    <table class="panel-table compact-table">
-      <thead>
-        <tr>
-          <th>Etapa</th>
-          <th>Quantidade</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in by_stage %}
-        <tr>
-          <td>{{ row.stage__name|default:"Sem etapa" }}</td>
-          <td><span class="badge neutral">{{ row.total }}</span></td>
-        </tr>
+    <section class="followup-lane" id="followups-amanha">
+      <h3>Amanhã</h3>
+      <div class="followup-list">
+        {% for opportunity in follow_up_tomorrow %}
+          <a class="followup-card" href="{% url 'commercial_opportunity_edit' opportunity.id %}">
+            <strong>{{ opportunity.title }}</strong>
+            <span>{{ opportunity.contact_name }}</span>
+            <small>{{ opportunity.commercial_funnel.name }} · {{ opportunity.stage.name|default:"Sem etapa" }}</small>
+          </a>
         {% empty %}
-        <tr><td colspan="2">Nenhuma oportunidade ativa.</td></tr>
+          <p class="muted">Nenhum follow-up para amanhã.</p>
         {% endfor %}
-      </tbody>
-    </table>
-  </section>
+      </div>
+    </section>
+  </div>
+</section>
 
-  <section class="panel">
-    <h2>Sem atualização há mais de 3 dias</h2>
-    <table class="panel-table compact-table">
-      <thead>
-        <tr>
-          <th>Oportunidade</th>
-          <th>Etapa</th>
-          <th>Follow-up</th>
-          <th>Ação</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for opportunity in stale_opportunities %}
-        <tr>
-          <td>{{ opportunity.title }}</td>
-          <td>{{ opportunity.stage.name|default:"-" }}</td>
-          <td>{{ opportunity.next_follow_up_date|date:"d/m/Y" }}</td>
-          <td><a class="btn small" href="{% url 'commercial_opportunity_edit' opportunity.id %}">Atualizar</a></td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="4">Nenhuma oportunidade parada há mais de 3 dias.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </section>
-</div>
+<section class="commercial-workspace">
+  <div class="section-title">
+    <div>
+      <span class="section-eyebrow">Oportunidades</span>
+      <h2>Pipeline por funil e etapa</h2>
+      <p class="muted">Acompanhe o volume por funil. Para operar em colunas, abra a tela Funis.</p>
+    </div>
+  </div>
 
-<section class="panel">
-  <h2>Atrasados</h2>
-  <table class="panel-table compact-table">
-    <thead>
-      <tr>
-        <th>Oportunidade</th>
-        <th>Etapa</th>
-        <th>Contato</th>
-        <th>Follow-up</th>
-        <th>Ação</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for opportunity in overdue %}
-      <tr>
-        <td>{{ opportunity.title }}</td>
-        <td>{{ opportunity.stage.name|default:"-" }}</td>
-        <td>{{ opportunity.contact_name }}<br><span class="muted">{{ opportunity.contact_phone }}</span></td>
-        <td>{{ opportunity.next_follow_up_date|date:"d/m/Y" }}</td>
-        <td><a class="btn small" href="{% url 'commercial_opportunity_edit' opportunity.id %}">Abrir</a></td>
-      </tr>
-      {% empty %}
-      <tr><td colspan="5">Nenhum follow-up atrasado.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="dashboard-funnel-groups">
+    {% for funnel_group in opportunity_funnel_groups %}
+      <section class="dashboard-funnel-group">
+        <div class="dashboard-funnel-header">
+          <div>
+            <h3>{{ funnel_group.funnel.name|default:"Sem funil" }}</h3>
+            <span>{{ funnel_group.total }} oportunidade{{ funnel_group.total|pluralize }}</span>
+          </div>
+          {% if funnel_group.funnel %}
+            <a class="btn small" href="{% url 'commercial_funnel_board' %}?funil={{ funnel_group.funnel.id }}">Abrir kanban</a>
+          {% endif %}
+        </div>
+        <div class="dashboard-stage-grid">
+          {% for stage_group in funnel_group.stages %}
+            <article class="dashboard-stage-card">
+              <div class="dashboard-stage-card-head">
+                <strong>{{ stage_group.stage.name|default:"Sem etapa" }}</strong>
+                <span>{{ stage_group.total }}</span>
+              </div>
+              <div class="dashboard-stage-list">
+                {% for opportunity in stage_group.opportunities %}
+                  <a href="{% url 'commercial_opportunity_edit' opportunity.id %}">
+                    {{ opportunity.title }}
+                    <small>{{ opportunity.contact_name }} · {{ opportunity.next_follow_up_date|date:"d/m" }}</small>
+                  </a>
+                {% empty %}
+                  <span class="muted">Sem oportunidades.</span>
+                {% endfor %}
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      </section>
+    {% empty %}
+      <section class="panel empty-state">Nenhuma oportunidade ativa.</section>
+    {% endfor %}
+  </div>
 </section>
 {% endblock %}

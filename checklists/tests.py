@@ -736,7 +736,26 @@ class CommercialDashboardTests(TestCase):
         self.assertEqual(response.context['follow_up_tomorrow_count'], 1)
         self.assertEqual(response.context['overdue_count'], 1)
         self.assertEqual(response.context['critical_count'], 1)
+        self.assertEqual(response.context['opportunity_funnel_groups'][0]['funnel'], self.funnel)
         self.assertContains(response, 'Lead crítico')
+        self.assertNotContains(response, 'Lead de outro atendente')
+
+    def test_commercial_funnel_board_groups_scoped_opportunities_by_stage(self):
+        today = timezone.localdate()
+        second_stage = FunnelStage.objects.create(code='negociando-board', name='Negociando', active=True, order=2)
+        self._opportunity(title='Lead contato', owner=self.user, next_follow_up_date=today)
+        self._opportunity(title='Lead negociando', owner=self.user, next_follow_up_date=today, updated_at=timezone.now())
+        CommercialOpportunity.objects.filter(title='Lead negociando').update(stage=second_stage)
+        self._opportunity(title='Lead de outro atendente', owner=self.other_user, next_follow_up_date=today)
+        self.client.force_login(self.user)
+
+        response = self.client.get(f"{reverse('commercial_funnel_board')}?funil={self.funnel.id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['selected_funnel'], self.funnel)
+        self.assertContains(response, 'Lead contato')
+        self.assertContains(response, 'Lead negociando')
+        self.assertContains(response, 'Negociando')
         self.assertNotContains(response, 'Lead de outro atendente')
 
     def test_operator_can_open_opportunity_create_form(self):

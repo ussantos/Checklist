@@ -6,6 +6,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Checklist</title>
   <meta name="theme-color" content="#ff8400">
+  <script>
+    (() => {
+      const savedTheme = localStorage.getItem('checklist-theme');
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.dataset.theme = savedTheme || (prefersDark ? 'dark' : 'light');
+    })();
+  </script>
   <link rel="icon" href="{% static 'img/favicon.png' %}" type="image/png">
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
 </head>
@@ -42,6 +49,7 @@
         <summary>Acompanhamento</summary>
         <div class="nav-submenu nav-submenu-groups">
           <div class="nav-group">
+            <a href="{% url 'commercial_funnel_board' %}">Funis</a>
             <a href="{% url 'commercial_opportunities' %}">Oportunidades</a>
             <a href="{% url 'commercial_indicators' %}">Indicadores</a>
             <a href="{% url 'commercial_goals' %}">Metas</a>
@@ -76,6 +84,7 @@
     {% else %}
       {% if user.userprofile.position.code == "atendente-comercial" %}
         <a href="{% url 'commercial_dashboard' %}">Início</a>
+        <a href="{% url 'commercial_funnel_board' %}">Funis</a>
         <a href="{% url 'commercial_opportunities' %}">Oportunidades</a>
       {% else %}
         <a href="{% url 'operational_home' %}">Início</a>
@@ -84,6 +93,7 @@
         <a href="{% url 'pedagogical_lesson_feedbacks' %}">Feedback de Aula</a>
       {% endif %}
     {% endif %}
+    <button class="theme-toggle" type="button" data-theme-toggle aria-label="Alternar tema claro ou escuro">Tema</button>
     <a href="{% url 'password_change' %}">Trocar senha</a>
     {% if user.is_staff %}<a href="/admin/">Admin Django</a>{% endif %}
     <form method="post" action="{% url 'logout' %}" class="inline-form">{% csrf_token %}<button class="linkbutton" type="submit">Sair</button></form>
@@ -99,6 +109,25 @@
   {% block content %}{% endblock %}
 </main>
 <footer class="footer">Sistema interno. Não expor publicamente sem VPN/firewall.</footer>
+<script>
+  (() => {
+    const button = document.querySelector('[data-theme-toggle]');
+    const applyLabel = () => {
+      if (!button) return;
+      const theme = document.documentElement.dataset.theme || 'light';
+      button.textContent = theme === 'dark' ? 'Claro' : 'Escuro';
+      button.setAttribute('aria-label', theme === 'dark' ? 'Ativar tema claro' : 'Ativar tema escuro');
+    };
+    applyLabel();
+    if (!button) return;
+    button.addEventListener('click', () => {
+      const next = (document.documentElement.dataset.theme || 'light') === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem('checklist-theme', next);
+      applyLabel();
+    });
+  })();
+</script>
 </body>
 </html>
 

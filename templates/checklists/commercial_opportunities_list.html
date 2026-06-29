@@ -84,7 +84,11 @@
       <tbody>
         {% for opportunity in stage_group.list %}
         <tr>
-          <td>{{ opportunity.title }}</td>
+          <td>
+            <a class="opportunity-link" href="{% url 'commercial_opportunity_edit' opportunity.id %}">
+              {{ opportunity.title }}
+            </a>
+          </td>
           <td>{{ opportunity.created_at|date:"d/m/Y" }}</td>
           <td>{{ opportunity.commercial_funnel.name }}</td>
           <td>{{ opportunity.origin.name|default:"-" }}</td>
