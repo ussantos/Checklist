@@ -5,7 +5,13 @@
     <h1>Gestão de Cursos</h1>
     <p class="muted">Cursos disponíveis para organização pedagógica interna.</p>
   </div>
-  <a class="btn primary" href="{% url 'pedagogical_course_create' %}">Inserir curso</a>
+  <div class="row-actions">
+    <form method="post" action="{% url 'pedagogical_courses_sync_sponte' %}" class="inline-form">
+      {% csrf_token %}
+      <button class="btn" type="submit">Sincronizar Sponte</button>
+    </form>
+    <a class="btn primary" href="{% url 'pedagogical_course_create' %}">Inserir curso</a>
+  </div>
 </div>
 
 <form method="get" class="filters panel">
@@ -27,6 +33,7 @@
       <th>Kits</th>
       <th>Máx. por horário</th>
       <th>Status</th>
+      <th>Origem</th>
       <th>Ações</th>
     </tr>
   </thead>
@@ -39,6 +46,13 @@
       <td>{{ course.max_students_per_slot|default:"-" }}</td>
       <td>{% if course.active %}<span class="badge done">Ativo</span>{% else %}<span class="badge blocked">Desativado</span>{% endif %}</td>
       <td>
+        {% if course.source == "sponte" %}
+          <span class="badge neutral">Sponte</span>
+        {% else %}
+          <span class="badge neutral">Checklist</span>
+        {% endif %}
+      </td>
+      <td>
         <div class="row-actions">
           <a class="btn small" href="{% url 'pedagogical_course_edit' course.id %}">Editar</a>
           <form method="post" action="{% url 'pedagogical_course_toggle' course.id %}" class="inline-form">
@@ -49,7 +63,7 @@
       </td>
     </tr>
     {% empty %}
-    <tr><td colspan="6">Nenhum curso cadastrado.</td></tr>
+    <tr><td colspan="7">Nenhum curso cadastrado.</td></tr>
     {% endfor %}
   </tbody>
 </table>

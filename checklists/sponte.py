@@ -1,12 +1,10 @@
 import os
+import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Callable
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
 from django.conf import settings
@@ -14,11 +12,16 @@ from django.db import transaction
 from django.utils import timezone
 
 from .models import Course, Lesson, PedagogicalStudent, Room
+from .sponte_client import (
+    DEFAULT_SPONTE_API_BASE_URL, SponteAPIConfigurationError, SponteAPIDisabledError,
+    SponteAPIError, SponteAPITimeoutError, SponteSOAPClient,
+)
 
 
 SPONTE_SOURCE = 'Sponte'
-DEFAULT_API_URL = 'https://api.sponteeducacional.net.br/WSAPIEdu.asmx'
+DEFAULT_API_URL = DEFAULT_SPONTE_API_BASE_URL
 DEFAULT_STUDENT_SEARCH_PARAMS = 'Nome=%'
+DEFAULT_COURSE_SEARCH_PARAMS = 'Situacao=1'
 LEGACY_STUDENT_SEARCH_PARAMS = {'Situacao=1'}
 
 
@@ -32,6 +35,19 @@ class SponteClientError(Exception):
 
 @dataclass
 class SponteStudentImportResult:
+    created: int = 0
+    updated: int = 0
+    unchanged: int = 0
+    skipped: int = 0
+    errors: list[str] = field(default_factory=list)
+
+    @property
+    def total_processed(self):
+        return self.created + self.updated + self.unchanged
+
+
+@dataclass
+class SponteCourseImportResult:
     created: int = 0
     updated: int = 0
     unchanged: int = 0
@@ -93,6 +109,18 @@ def _status_from_sponte(value):
     if any(marker in normalized for marker in inactive_markers):
         return PedagogicalStudent.STATUS_INACTIVE
     return PedagogicalStudent.STATUS_ACTIVE
+
+
+def _active_from_sponte(value):
+    normalized = _normalize(value)
+    if not normalized:
+        return True
+    if normalized in {'0', 'false', 'falso', 'nao', 'n', 'no'}:
+        return False
+    if normalized in {'1', 'true', 'verdadeiro', 'sim', 's', 'yes', 'y'}:
+        return True
+    inactive_markers = ('inativo', 'cancelad', 'trancad', 'desistent', 'encerrad', 'bloquead', 'desativ')
+    return not any(marker in normalized for marker in inactive_markers)
 
 
 def _lesson_status_from_sponte(value):
@@ -196,6 +224,98 @@ def _is_not_found_message(value):
     return (value or '').strip().startswith('43')
 
 
+def _parse_sponte_decimal(value):
+    value = (value or '').strip()
+    if not value:
+        return None
+    cleaned = re.sub(r'[^\d,.-]', '', value)
+    if not cleaned:
+        return None
+    if ',' in cleaned and '.' in cleaned:
+        cleaned = cleaned.replace('.', '').replace(',', '.')
+    elif ',' in cleaned:
+        cleaned = cleaned.replace(',', '.')
+    try:
+        return Decimal(cleaned)
+    except Exception:
+        return None
+
+
+def _course_conflict_key(name):
+    normalized = _normalize(name)
+    normalized = re.sub(r'\b[12](?:[,.]0)?\b', '', normalized)
+    return ''.join(char for char in normalized if char.isalnum())
+
+
+def _course_has_version_two(name):
+    return bool(re.search(r'(?<!\d)2(?:[,.]0)?(?!\d)', _normalize(name or '')))
+
+
+def _course_is_legacy_version(name):
+    return bool(re.search(r'(?<!\d)1(?:[,.]0)?(?!\d)', _normalize(name or '')))
+
+
+COURSE_NAME_FIELDS = ('NomeCurso', 'Curso', 'Nome', 'DescricaoCurso', 'Descricao')
+COURSE_ID_FIELDS = ('CursoID', 'IDCurso', 'CodigoCurso', 'Codigo')
+COURSE_STATUS_FIELDS = ('Situacao', 'Status', 'StatusCurso')
+COURSE_VALUE_FIELDS = ('Valor', 'ValorCurso', 'ValorMensalidade', 'Preco', 'Preço')
+
+
+def _first_present_field(fields, candidates):
+    for field_name in candidates:
+        value = fields.get(field_name, '').strip()
+        if value:
+            return value
+    return ''
+
+
+def parse_sponte_courses(xml_text):
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as exc:
+        raise SponteClientError(f'Resposta XML inválida do Sponte: {exc}') from exc
+
+    records_by_key = {}
+    api_messages = []
+    for item in root.iter():
+        local_name = _local_name(item.tag)
+        fields = _children_text_map(item)
+        if 'curso' not in _normalize(local_name) and not any(field in fields for field in COURSE_ID_FIELDS):
+            continue
+
+        operation_return = fields.get('RetornoOperacao', '')
+        if operation_return and not _is_success_message(operation_return):
+            api_messages.append(operation_return)
+            if not _first_present_field(fields, COURSE_NAME_FIELDS):
+                continue
+
+        name = _first_present_field(fields, COURSE_NAME_FIELDS)
+        if not name:
+            continue
+        if _course_is_legacy_version(name):
+            continue
+
+        conflict_key = _course_conflict_key(name)
+        if not conflict_key:
+            continue
+
+        record = {
+            'name': name,
+            'external_id': _first_present_field(fields, COURSE_ID_FIELDS),
+            'active': _active_from_sponte(_first_present_field(fields, COURSE_STATUS_FIELDS)),
+            'value': _parse_sponte_decimal(_first_present_field(fields, COURSE_VALUE_FIELDS)),
+        }
+        previous = records_by_key.get(conflict_key)
+        if previous is None or (_course_has_version_two(name) and not _course_has_version_two(previous['name'])):
+            records_by_key[conflict_key] = record
+
+    if not records_by_key and api_messages:
+        unique_messages = sorted(set(api_messages))
+        if not any(_is_not_found_message(message) for message in unique_messages):
+            raise SponteClientError('; '.join(unique_messages))
+    return list(records_by_key.values())
+
+
 def _responsible_name(student_element):
     for container in student_element.iter():
         if _local_name(container.tag) != 'wsResponsaveis':
@@ -249,14 +369,14 @@ def _sponte_setting(name, default=''):
 
 
 def _sponte_auth_config():
-    api_url = (_sponte_setting('SPONTE_API_URL', DEFAULT_API_URL) or DEFAULT_API_URL).rstrip('/')
-    client_code = str(_sponte_setting('SPONTE_CODIGO_CLIENTE', '') or '').strip()
-    token = str(_sponte_setting('SPONTE_TOKEN', '') or '').strip()
-    timeout = int(_sponte_setting('SPONTE_TIMEOUT_SECONDS', 30) or 30)
+    api_url = (_sponte_setting('SPONTE_API_BASE_URL', '') or _sponte_setting('SPONTE_API_URL', DEFAULT_API_URL) or DEFAULT_API_URL).rstrip('/')
+    client_code = str(_sponte_setting('SPONTE_API_CLIENT_CODE', '') or _sponte_setting('SPONTE_CODIGO_CLIENTE', '') or '').strip()
+    token = str(_sponte_setting('SPONTE_API_TOKEN', '') or _sponte_setting('SPONTE_TOKEN', '') or '').strip()
+    timeout = int(_sponte_setting('SPONTE_API_TIMEOUT_SECONDS', '') or _sponte_setting('SPONTE_TIMEOUT_SECONDS', 30) or 30)
 
     if not client_code or not token:
         raise SponteConfigurationError(
-            'Configure SPONTE_CODIGO_CLIENTE e SPONTE_TOKEN no .env antes de usar a integração com o Sponte.'
+            'Configure SPONTE_API_CLIENT_CODE e SPONTE_API_TOKEN no .env antes de usar a integração com o Sponte.'
         )
     return api_url, client_code, token, timeout
 
@@ -270,27 +390,13 @@ def _sponte_config():
 
 
 def fetch_sponte_students_xml():
-    api_url, client_code, token, search_params, timeout = _sponte_config()
-    payload = urlencode({
-        'nCodigoCliente': client_code,
-        'sToken': token,
-        'sParametrosBusca': search_params,
-    }).encode('utf-8')
-    request = Request(
-        f'{api_url}/GetAlunos',
-        data=payload,
-        headers={'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8'},
-        method='POST',
+    *_, search_params, _timeout = _sponte_config()
+    return _post_sponte_form(
+        'GetAlunos',
+        {'sParametrosBusca': search_params},
+        'importar alunos do Sponte',
+        use_cache=False,
     )
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            return response.read().decode('utf-8')
-    except HTTPError as exc:
-        raise SponteClientError(f'Sponte retornou HTTP {exc.code} ao importar alunos.') from exc
-    except URLError as exc:
-        raise SponteClientError(f'Não foi possível conectar ao Sponte: {exc.reason}') from exc
-    except TimeoutError as exc:
-        raise SponteClientError('Tempo esgotado ao conectar ao Sponte.') from exc
 
 
 def _student_lookup(record):
@@ -354,6 +460,121 @@ def import_sponte_students(fetcher: Callable[[], str] | None = None):
     xml_text = (fetcher or fetch_sponte_students_xml)()
     records = parse_sponte_students(xml_text)
     return import_sponte_student_records(records)
+
+
+def fetch_sponte_courses_xml():
+    search_params = str(_sponte_setting('SPONTE_COURSE_SEARCH_PARAMS', DEFAULT_COURSE_SEARCH_PARAMS) or '').strip()
+    return _post_sponte_form(
+        'GetCursos',
+        {'sParametrosBusca': search_params},
+        'sincronizar cursos do Sponte',
+        use_cache=False,
+    )
+
+
+def _course_lookup(record):
+    external_id = _truncate(record.get('external_id'), 120)
+    if external_id:
+        course = Course.objects.filter(source=Course.SOURCE_SPONTE, external_id=external_id).first()
+        if course:
+            return course
+
+    name = _truncate(record.get('name'), 160)
+    if name:
+        course = Course.objects.filter(name__iexact=name).first()
+        if course:
+            return course
+
+    conflict_key = _course_conflict_key(name)
+    if not conflict_key:
+        return None
+
+    for course in Course.objects.order_by('-active', 'name'):
+        if _course_conflict_key(course.name) == conflict_key:
+            return course
+    return None
+
+
+def _deactivate_conflicting_courses(course, record, now):
+    conflict_key = _course_conflict_key(record.get('name'))
+    if not conflict_key:
+        return 0
+    count = 0
+    for candidate in Course.objects.exclude(pk=course.pk).order_by('name'):
+        if _course_conflict_key(candidate.name) != conflict_key:
+            continue
+        if not candidate.active:
+            continue
+        candidate.active = False
+        candidate.synced_at = now
+        candidate.save(update_fields=['active', 'synced_at', 'updated_at'])
+        count += 1
+    return count
+
+
+def import_sponte_course_records(records):
+    result = SponteCourseImportResult()
+    now = timezone.now()
+    with transaction.atomic():
+        for record in records:
+            name = _truncate(record.get('name'), 160)
+            external_id = _truncate(record.get('external_id'), 120)
+            if not name:
+                result.skipped += 1
+                result.errors.append('Curso ignorado porque veio sem nome.')
+                continue
+
+            course = _course_lookup({'name': name, 'external_id': external_id})
+            if course is None:
+                Course.objects.create(
+                    name=name,
+                    description='Criado automaticamente pela sincronização de cursos do Sponte.',
+                    value=record.get('value') if record.get('value') is not None else Decimal('0.00'),
+                    kit_quantity=1,
+                    max_students_per_slot=1,
+                    active=record.get('active', True),
+                    source=Course.SOURCE_SPONTE,
+                    external_id=external_id,
+                    synced_at=now,
+                )
+                result.created += 1
+                continue
+
+            exact_name_conflict = Course.objects.filter(name__iexact=name).exclude(pk=course.pk).first()
+            if exact_name_conflict:
+                course = exact_name_conflict
+
+            values = {
+                'name': name,
+                'active': record.get('active', True),
+                'source': Course.SOURCE_SPONTE,
+                'external_id': external_id,
+                'synced_at': now,
+            }
+            if course.value == Decimal('0.00') and record.get('value') is not None:
+                values['value'] = record['value']
+
+            changed = False
+            for field_name, value in values.items():
+                if getattr(course, field_name) != value:
+                    setattr(course, field_name, value)
+                    changed = True
+
+            deactivated = _deactivate_conflicting_courses(course, {'name': name}, now)
+            if changed:
+                course.save(update_fields=[*values.keys(), 'updated_at'])
+                result.updated += 1
+            elif deactivated:
+                result.updated += 1
+            else:
+                result.unchanged += 1
+    return result
+
+
+def import_sponte_courses(fetcher: Callable[[], str] | None = None):
+    xml_text = (fetcher or fetch_sponte_courses_xml)()
+    records = parse_sponte_courses(xml_text)
+    return import_sponte_course_records(records)
 
 
 def _parse_sponte_date(value):
@@ -425,33 +646,26 @@ def parse_sponte_free_class_schedule(xml_text, *, student_external_id=''):
 
     if not records and api_messages:
         unique_messages = sorted(set(api_messages))
-        if not any(message.startswith('43') for message in unique_messages):
-            raise SponteClientError('; '.join(unique_messages))
+        unexpected_messages = [
+            message for message in unique_messages
+            if not (_is_success_message(message) or _is_not_found_message(message))
+        ]
+        if unexpected_messages:
+            raise SponteClientError('; '.join(unexpected_messages))
     return records
 
 
-def _post_sponte_form(operation, data, error_context):
-    api_url, client_code, token, timeout = _sponte_auth_config()
-    payload = urlencode({
-        'nCodigoCliente': client_code,
-        'sToken': token,
-        **data,
-    }).encode('utf-8')
-    request = Request(
-        f'{api_url}/{operation}',
-        data=payload,
-        headers={'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8'},
-        method='POST',
-    )
+def _post_sponte_form(operation, data, error_context, *, use_cache=True):
     try:
-        with urlopen(request, timeout=timeout) as response:
-            return response.read().decode('utf-8')
-    except HTTPError as exc:
-        raise SponteClientError(f'Sponte retornou HTTP {exc.code} ao {error_context}.') from exc
-    except URLError as exc:
-        raise SponteClientError(f'Não foi possível conectar ao Sponte: {exc.reason}') from exc
-    except TimeoutError as exc:
+        return SponteSOAPClient().call(operation, data, use_cache=use_cache).xml_text
+    except SponteAPIDisabledError as exc:
+        raise SponteConfigurationError(str(exc)) from exc
+    except SponteAPIConfigurationError as exc:
+        raise SponteConfigurationError(str(exc)) from exc
+    except SponteAPITimeoutError as exc:
         raise SponteClientError(f'Tempo esgotado ao {error_context}.') from exc
+    except SponteAPIError as exc:
+        raise SponteClientError(f'{error_context}: {exc}') from exc
 
 
 def fetch_sponte_student_schedule_xml(student_external_id, start_date, end_date):
@@ -465,21 +679,43 @@ def fetch_sponte_student_schedule_xml(student_external_id, start_date, end_date)
             'dDataTermino': end_date.strftime('%d/%m/%Y'),
         },
         'sincronizar agenda do Sponte',
+        use_cache=False,
     )
 
 
 def _course_for_schedule(record):
     name = _truncate(record.get('course_name') or 'Curso Sponte', 160)
-    course, _ = Course.objects.get_or_create(
-        name=name,
-        defaults={
-            'description': 'Criado automaticamente pela sincronização de agenda do Sponte.',
-            'value': Decimal('0.00'),
-            'kit_quantity': 1,
-            'max_students_per_slot': 1,
-            'active': True,
-        },
-    )
+    external_id = _truncate(record.get('course_external_id'), 120)
+    lookup_record = {'name': name, 'external_id': external_id}
+    course = _course_lookup(lookup_record)
+    if course is None:
+        course = Course.objects.create(
+            name=name,
+            description='Criado automaticamente pela sincronização de agenda do Sponte.',
+            value=Decimal('0.00'),
+            kit_quantity=1,
+            max_students_per_slot=1,
+            active=True,
+            source=Course.SOURCE_SPONTE,
+            external_id=external_id,
+            synced_at=timezone.now(),
+        )
+        return course
+
+    values = {
+        'source': Course.SOURCE_SPONTE,
+        'external_id': external_id,
+        'synced_at': timezone.now(),
+    }
+    if name and _course_has_version_two(name) and not _course_has_version_two(course.name):
+        values['name'] = name
+    changed = False
+    for field_name, value in values.items():
+        if getattr(course, field_name) != value:
+            setattr(course, field_name, value)
+            changed = True
+    if changed:
+        course.save(update_fields=[*values.keys(), 'updated_at'])
     return course
 
 
@@ -560,17 +796,18 @@ def import_sponte_free_class_records(student, records, *, start_date, end_date):
             date__lte=end_date,
             status__in=Lesson.OCCUPYING_STATUSES,
         ).exclude(external_id__in=seen_external_ids)
-        result.cancelled = stale_lessons.update(status=Lesson.STATUS_CANCELLED, synced_at=now)
+        result.cancelled = stale_lessons.update(status=Lesson.STATUS_CANCELLED, synced_at=now, updated_at=now)
     return result
 
 
 def sync_sponte_free_class_schedule(start_date, end_date, fetcher=None):
-    students = PedagogicalStudent.objects.filter(
+    students = list(PedagogicalStudent.objects.filter(
         source=SPONTE_SOURCE,
         external_id__gt='',
         status=PedagogicalStudent.STATUS_ACTIVE,
-    ).order_by('name')
+    ).order_by('name'))
     result = SponteScheduleSyncResult()
+    attempted_student_ids = {student.pk for student in students}
     for student in students:
         try:
             xml_text = (fetcher or fetch_sponte_student_schedule_xml)(student.external_id, start_date, end_date)
@@ -591,6 +828,14 @@ def sync_sponte_free_class_schedule(start_date, end_date, fetcher=None):
         result.skipped += student_result.skipped
         result.students_synced += student_result.students_synced
         result.errors.extend(student_result.errors)
+    now = timezone.now()
+    orphan_stale_lessons = Lesson.objects.filter(
+        source=Lesson.SOURCE_SPONTE,
+        date__gte=start_date,
+        date__lte=end_date,
+        status__in=Lesson.OCCUPYING_STATUSES,
+    ).exclude(student_id__in=attempted_student_ids)
+    result.cancelled += orphan_stale_lessons.update(status=Lesson.STATUS_CANCELLED, synced_at=now, updated_at=now)
     return result
 
 

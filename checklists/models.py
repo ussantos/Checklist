@@ -415,17 +415,34 @@ class CommercialOpportunityStageEvent(models.Model):
 class Course(models.Model):
     """Curso pedagógico administrado internamente."""
 
+    SOURCE_LOCAL = 'local'
+    SOURCE_SPONTE = 'sponte'
+    SOURCE_CHOICES = [
+        (SOURCE_LOCAL, 'Checklist'),
+        (SOURCE_SPONTE, 'Sponte'),
+    ]
+
     name = models.CharField('Nome', max_length=160, unique=True)
     description = models.TextField('Descrição', blank=True)
     value = models.DecimalField('Valor', max_digits=10, decimal_places=2)
     kit_quantity = models.PositiveIntegerField('Quantidade de kits', default=1)
     max_students_per_slot = models.PositiveIntegerField('Máximo de alunos por horário', null=True, blank=True)
     active = models.BooleanField('Ativo', default=True)
+    source = models.CharField('Origem', max_length=30, choices=SOURCE_CHOICES, default=SOURCE_LOCAL)
+    external_id = models.CharField('ID externo', max_length=120, blank=True)
+    synced_at = models.DateTimeField('Sincronizado em', null=True, blank=True)
     created_at = models.DateTimeField('Criado em', auto_now_add=True)
     updated_at = models.DateTimeField('Atualizado em', auto_now=True)
 
     class Meta:
         ordering = ['name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['source', 'external_id'],
+                condition=~models.Q(external_id=''),
+                name='unique_course_source_external',
+            ),
+        ]
         verbose_name = 'Curso'
         verbose_name_plural = 'Cursos'
 

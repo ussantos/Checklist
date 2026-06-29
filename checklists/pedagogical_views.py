@@ -17,11 +17,14 @@ from .models import CommercialOpportunity, Course, Lesson, LessonFeedback, Pedag
 from .services import get_user_position, is_admin_user
 from .sponte import (
     SponteClientError, SponteConfigurationError, default_sponte_schedule_window,
-    import_sponte_students, sync_sponte_free_class_schedule,
+    import_sponte_courses, import_sponte_students, sync_sponte_free_class_schedule,
 )
 
 
-COURSE_AUDIT_FIELDS = ['name', 'description', 'value', 'kit_quantity', 'max_students_per_slot', 'active']
+COURSE_AUDIT_FIELDS = [
+    'name', 'description', 'value', 'kit_quantity', 'max_students_per_slot',
+    'active', 'source', 'external_id', 'synced_at',
+]
 ROOM_AUDIT_FIELDS = ['name', 'capacity', 'active']
 TIME_SLOT_AUDIT_FIELDS = ['weekday', 'start_time', 'end_time', 'active']
 HOLIDAY_AUDIT_FIELDS = ['description', 'kind', 'start_date', 'end_date', 'active']
@@ -131,6 +134,51 @@ def courses_list(request):
         'status': status,
         'is_admin': True,
     })
+
+
+@require_POST
+@user_passes_test(_admin_check)
+def courses_sync_sponte(request):
+    try:
+        result = import_sponte_courses()
+    except SponteConfigurationError as exc:
+        messages.error(request, str(exc))
+        return redirect('pedagogical_courses')
+    except SponteClientError as exc:
+        messages.error(request, f'Sincronização de cursos do Sponte não concluída: {exc}')
+        return redirect('pedagogical_courses')
+
+    if result.total_processed:
+        messages.success(
+            request,
+            'Cursos do Sponte sincronizados: '
+            f'{result.created} criado(s), {result.updated} atualizado(s), '
+            f'{result.unchanged} sem alteração.'
+        )
+    else:
+        messages.warning(request, 'Sincronização de cursos do Sponte concluída sem cursos processados.')
+    if result.skipped:
+        messages.warning(request, f'{result.skipped} curso(s) foram ignorados por dados incompletos ou versão legada.')
+    for error in result.errors[:5]:
+        messages.warning(request, error)
+
+    log_activity(
+        actor=request.user,
+        action='Sincronização de cursos Sponte',
+        object_type='Course',
+        object_label='Cursos Sponte',
+        details=(
+            f'Cursos criados: {result.created}; atualizados: {result.updated}; '
+            f'sem alteração: {result.unchanged}; ignorados: {result.skipped}.'
+        ),
+        new_values={
+            'created': result.created,
+            'updated': result.updated,
+            'unchanged': result.unchanged,
+            'skipped': result.skipped,
+        },
+    )
+    return redirect('pedagogical_courses')
 
 
 @user_passes_test(_admin_check)

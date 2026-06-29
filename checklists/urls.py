@@ -53,6 +53,7 @@ urlpatterns = [
     path('gestao-pedagogica/feedback-aula/', pedagogical_views.lesson_feedbacks, name='pedagogical_lesson_feedbacks'),
     path('gestao-pedagogica/feedback-aula/<int:lesson_id>/', pedagogical_views.lesson_feedback_edit, name='pedagogical_lesson_feedback_edit'),
     path('gestao-pedagogica/cursos/', pedagogical_views.courses_list, name='pedagogical_courses'),
+    path('gestao-pedagogica/cursos/sincronizar-sponte/', pedagogical_views.courses_sync_sponte, name='pedagogical_courses_sync_sponte'),
     path('gestao-pedagogica/cursos/novo/', pedagogical_views.course_create, name='pedagogical_course_create'),
     path('gestao-pedagogica/cursos/<int:course_id>/editar/', pedagogical_views.course_edit, name='pedagogical_course_edit'),
     path('gestao-pedagogica/cursos/<int:course_id>/alternar-status/', pedagogical_views.course_toggle, name='pedagogical_course_toggle'),

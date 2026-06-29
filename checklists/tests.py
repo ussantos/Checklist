@@ -3,20 +3,24 @@ from datetime import date, timedelta, time
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .forms import CommercialOpportunityForm, add_months
+from .forms import CommercialOpportunityForm, CourseForm, add_months
 from .models import (
     CommercialFunnel, CommercialOpportunity, Course, FunnelModel, FunnelStage,
     FunnelType, Lesson, LessonFeedback, OpportunityOrigin, PedagogicalStudent, Position,
     Room, SchoolHoliday, TimeSlot, UserProfile,
 )
 from .sponte import (
-    _sponte_config, import_sponte_free_class_records, import_sponte_student_records,
-    parse_sponte_free_class_schedule, parse_sponte_students,
+    _sponte_config, import_sponte_course_records, import_sponte_free_class_records,
+    import_sponte_student_records, parse_sponte_courses, parse_sponte_free_class_schedule, parse_sponte_students,
     sync_sponte_free_class_schedule,
+)
+from .sponte_client import (
+    SponteAPIDisabledError, SponteAPIRateLimitError, SponteSOAPClient, normalize_students,
 )
 
 
@@ -376,6 +380,239 @@ class SponteStudentImportTests(TestCase):
         self.assertEqual(search_params, 'Nome=%')
 
 
+class SponteCourseImportTests(TestCase):
+    SAMPLE_XML = '''<?xml version="1.0" encoding="utf-8"?>
+    <ArrayOfWsCurso xmlns="http://api.sponteeducacional.net.br/">
+      <wsCurso>
+        <CursoID>10</CursoID>
+        <Nome>FIRSTBOT 1.0</Nome>
+        <Situacao>Ativo</Situacao>
+      </wsCurso>
+      <wsCurso>
+        <CursoID>11</CursoID>
+        <Nome>FIRSTBOT 2.0</Nome>
+        <Situacao>Ativo</Situacao>
+      </wsCurso>
+      <wsCurso>
+        <CursoID>12</CursoID>
+        <Nome>ELECTROBOT 2.0</Nome>
+        <Situacao>Ativo</Situacao>
+      </wsCurso>
+    </ArrayOfWsCurso>
+    '''
+    ELECTROBOT_XML = '''<?xml version="1.0" encoding="utf-8"?>
+    <ArrayOfWsCurso xmlns="http://api.sponteeducacional.net.br/">
+      <wsCurso>
+        <CursoID>12</CursoID>
+        <Nome>ELECTROBOT 2.0</Nome>
+        <Situacao>Ativo</Situacao>
+      </wsCurso>
+    </ArrayOfWsCurso>
+    '''
+
+    def test_parse_keeps_version_two_and_ignores_legacy_courses(self):
+        records = parse_sponte_courses(self.SAMPLE_XML)
+
+        names = {record['name'] for record in records}
+        self.assertIn('FIRSTBOT 2.0', names)
+        self.assertIn('ELECTROBOT 2.0', names)
+        self.assertNotIn('FIRSTBOT 1.0', names)
+
+    def test_import_replaces_manual_conflicting_course_with_sponte_course(self):
+        Course.objects.create(
+            name='Electrobot',
+            value=Decimal('3690.00'),
+            kit_quantity=1,
+            max_students_per_slot=1,
+            active=True,
+        )
+
+        records = parse_sponte_courses(self.ELECTROBOT_XML)
+        result = import_sponte_course_records(records)
+
+        course = Course.objects.get()
+        self.assertEqual(result.updated, 1)
+        self.assertEqual(course.name, 'ELECTROBOT 2.0')
+        self.assertEqual(course.source, Course.SOURCE_SPONTE)
+        self.assertEqual(course.external_id, '12')
+        self.assertEqual(course.value, Decimal('3690.00'))
+        self.assertEqual(course.kit_quantity, 1)
+
+
+class CourseFormTests(TestCase):
+    def _form_data(self, name='ELECTROBOT', value='3690'):
+        return {
+            'name': name,
+            'description': 'Criado automaticamente pela sincronização de agenda do Sponte.',
+            'value': value,
+            'kit_quantity': '1',
+            'max_students_per_slot': '1',
+            'status': CourseForm.STATUS_ACTIVE,
+        }
+
+    def test_edit_allows_same_name_when_legacy_inactive_duplicate_exists(self):
+        Course.objects.create(
+            name='Electrobot',
+            value=Decimal('3690.00'),
+            kit_quantity=1,
+            max_students_per_slot=1,
+            active=False,
+        )
+        course = Course.objects.create(
+            name='ELECTROBOT',
+            value=Decimal('0.00'),
+            kit_quantity=1,
+            max_students_per_slot=1,
+            active=True,
+            source=Course.SOURCE_SPONTE,
+            external_id='-24',
+        )
+
+        form = CourseForm(data=self._form_data(), instance=course)
+
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_edit_blocks_renaming_to_existing_course_name(self):
+        Course.objects.create(
+            name='FIRSTBOT 2.0',
+            value=Decimal('3690.00'),
+            kit_quantity=2,
+            max_students_per_slot=2,
+            active=True,
+        )
+        course = Course.objects.create(
+            name='ELECTROBOT',
+            value=Decimal('3690.00'),
+            kit_quantity=1,
+            max_students_per_slot=1,
+            active=True,
+        )
+
+        form = CourseForm(data=self._form_data(name='FIRSTBOT 2.0'), instance=course)
+
+        self.assertFalse(form.is_valid())
+        self.assertIn('name', form.errors)
+
+
+@override_settings(
+    SPONTE_API_ENABLED=True,
+    SPONTE_API_BASE_URL='https://api.sponteeducacional.net.br/WSAPIEdu.asmx',
+    SPONTE_API_CLIENT_CODE='client-123',
+    SPONTE_API_TOKEN='very-secret-token',
+    SPONTE_API_TIMEOUT_SECONDS=5,
+    SPONTE_API_CACHE_TTL_MINUTES=30,
+    SPONTE_API_MAX_REQUESTS_PER_MINUTE=30,
+)
+class SponteSOAPClientSafetyTests(TestCase):
+    STUDENTS_XML = '''<?xml version="1.0" encoding="utf-8"?>
+    <ArrayOfWsAluno xmlns="http://api.sponteeducacional.net.br/">
+      <wsAluno>
+        <RetornoOperacao>01 - Operação Realizada com Sucesso.</RetornoOperacao>
+        <AlunoID>123</AlunoID>
+        <Nome>Aluno Sponte</Nome>
+        <NumeroMatricula>M123</NumeroMatricula>
+        <CPF>00000000000</CPF>
+        <SenhaPortal>segredo-do-portal</SenhaPortal>
+      </wsAluno>
+    </ArrayOfWsAluno>
+    '''
+
+    COURSES_XML = '''<?xml version="1.0" encoding="utf-8"?>
+    <ArrayOfWsCurso xmlns="http://api.sponteeducacional.net.br/">
+      <wsCurso>
+        <RetornoOperacao>01 - Operação Realizada com Sucesso.</RetornoOperacao>
+        <CursoID>10</CursoID>
+        <Nome>FIRSTBOT 2.0</Nome>
+      </wsCurso>
+    </ArrayOfWsCurso>
+    '''
+
+    def setUp(self):
+        cache.clear()
+
+    def test_safe_log_never_contains_token_or_client_code(self):
+        client = SponteSOAPClient(fetcher=lambda _request, _timeout: self.STUDENTS_XML)
+
+        with self.assertLogs('checklists.sponte', level='INFO') as captured:
+            client.get_students('Nome=%')
+
+        log_output = '\n'.join(captured.output)
+        self.assertIn('GetAlunos', log_output)
+        self.assertNotIn('very-secret-token', log_output)
+        self.assertNotIn('client-123', log_output)
+
+    def test_cache_prevents_second_external_call(self):
+        calls = []
+
+        def fetcher(_request, _timeout):
+            calls.append(1)
+            return self.COURSES_XML
+
+        client = SponteSOAPClient(fetcher=fetcher)
+        first = client.get_courses('Situacao=1')
+        second = client.get_courses('Situacao=1')
+
+        self.assertEqual(len(calls), 1)
+        self.assertFalse(first.from_cache)
+        self.assertTrue(second.from_cache)
+
+    def test_forced_refresh_bypasses_and_updates_cache(self):
+        responses = [self.STUDENTS_XML, self.COURSES_XML]
+
+        def fetcher(_request, _timeout):
+            return responses.pop(0)
+
+        client = SponteSOAPClient(fetcher=fetcher)
+        first = client.get_courses('Situacao=1')
+        refreshed = client.call('GetCursos', {'sParametrosBusca': 'Situacao=1'}, use_cache=False)
+        cached_after_refresh = client.get_courses('Situacao=1')
+
+        self.assertFalse(first.from_cache)
+        self.assertFalse(refreshed.from_cache)
+        self.assertTrue(cached_after_refresh.from_cache)
+        self.assertIn('FIRSTBOT 2.0', refreshed.xml_text)
+        self.assertIn('FIRSTBOT 2.0', cached_after_refresh.xml_text)
+
+    def test_timeout_uses_last_valid_cache_when_available(self):
+        client = SponteSOAPClient(fetcher=lambda _request, _timeout: self.COURSES_XML)
+        client.get_courses('Situacao=1')
+        cache.delete(client._cache_key('GetCursos', {'sParametrosBusca': 'Situacao=1'}))
+
+        failing_client = SponteSOAPClient(fetcher=lambda _request, _timeout: (_ for _ in ()).throw(TimeoutError()))
+        response = failing_client.get_courses('Situacao=1')
+
+        self.assertTrue(response.from_cache)
+        self.assertTrue(response.stale_cache)
+        self.assertIn('FIRSTBOT 2.0', response.xml_text)
+
+    @override_settings(SPONTE_API_MAX_REQUESTS_PER_MINUTE=1)
+    def test_rate_limit_blocks_when_cache_cannot_be_used(self):
+        client = SponteSOAPClient(fetcher=lambda _request, _timeout: self.STUDENTS_XML)
+        client.get_students('Nome=A')
+
+        with self.assertRaises(SponteAPIRateLimitError):
+            client.get_students('Nome=B')
+
+    def test_normalizer_discards_sensitive_fields(self):
+        snapshots = normalize_students(self.STUDENTS_XML)
+
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual(snapshots[0].name, 'Aluno Sponte')
+        self.assertIn('CPF', snapshots[0].discarded_sensitive_fields)
+        self.assertIn('SenhaPortal', snapshots[0].discarded_sensitive_fields)
+        self.assertFalse(hasattr(snapshots[0], 'password'))
+
+    @override_settings(SPONTE_API_ENABLED=False)
+    def test_disabled_integration_fails_before_external_request(self):
+        calls = []
+        client = SponteSOAPClient(fetcher=lambda _request, _timeout: calls.append(1))
+
+        with self.assertRaises(SponteAPIDisabledError):
+            client.get_courses('Situacao=1')
+
+        self.assertEqual(calls, [])
+
+
 class SponteFreeClassScheduleSyncTests(TestCase):
     SAMPLE_XML = '''<?xml version="1.0" encoding="utf-8"?>
     <ArrayOfWsAgendaAluno xmlns="http://api.sponteeducacional.net.br/">
@@ -483,6 +720,21 @@ class SponteFreeClassScheduleSyncTests(TestCase):
         self.assertEqual(lesson.room.name, 'Sala Maker')
         self.assertTrue(lesson.is_sponte_synced)
 
+    def test_parse_success_response_without_lessons_is_empty_schedule(self):
+        xml_text = '''<?xml version="1.0" encoding="utf-8"?>
+        <ArrayOfWsAgendaAluno xmlns="http://api.sponteeducacional.net.br/">
+          <wsAgendaAluno>
+            <RetornoOperacao>01 - Operação Realizada com Sucesso.</RetornoOperacao>
+            <AlunoID>123</AlunoID>
+            <AulasLivres />
+          </wsAgendaAluno>
+        </ArrayOfWsAgendaAluno>
+        '''
+
+        records = parse_sponte_free_class_schedule(xml_text, student_external_id='123')
+
+        self.assertEqual(records, [])
+
     def test_import_updates_lesson_status_from_sponte_situation(self):
         records = parse_sponte_free_class_schedule(self.SAMPLE_XML, student_external_id='123')
         import_sponte_free_class_records(
@@ -543,6 +795,85 @@ class SponteFreeClassScheduleSyncTests(TestCase):
         )
 
         lesson = Lesson.objects.get(external_id='aula_livre:123:900:2026-07-07')
+        self.assertEqual(result.cancelled, 1)
+        self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
+
+    def test_sync_frees_old_slot_when_student_changes_schedule_in_sponte(self):
+        records = parse_sponte_free_class_schedule(self.SAMPLE_XML, student_external_id='123')
+        import_sponte_free_class_records(
+            self.student,
+            records,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+        )
+        changed_schedule_xml = '''<?xml version="1.0" encoding="utf-8"?>
+        <ArrayOfWsAgendaAluno xmlns="http://api.sponteeducacional.net.br/">
+          <wsAgendaAluno>
+            <AlunoID>123</AlunoID>
+            <AulasLivres>
+              <wsAulasLivresAluno>
+                <AulaLivreID>901</AulaLivreID>
+                <DataAula>07/07/2026</DataAula>
+                <HorarioInicial>16:00</HorarioInicial>
+                <HorarioFinal>18:00</HorarioFinal>
+                <CursoID>77</CursoID>
+                <NomeCurso>Techbot</NomeCurso>
+                <DisciplinaID>88</DisciplinaID>
+                <NomeDisciplina>Robótica</NomeDisciplina>
+                <ProfessorID>99</ProfessorID>
+                <NomeProfessor>Professor Sponte</NomeProfessor>
+                <Sala>Sala Maker</Sala>
+              </wsAulasLivresAluno>
+            </AulasLivres>
+          </wsAgendaAluno>
+        </ArrayOfWsAgendaAluno>
+        '''
+
+        result = sync_sponte_free_class_schedule(
+            date(2026, 7, 1),
+            date(2026, 7, 31),
+            fetcher=lambda student_id, start, end: changed_schedule_xml,
+        )
+
+        old_lesson = Lesson.objects.get(external_id='aula_livre:123:900:2026-07-07')
+        new_lesson = Lesson.objects.get(external_id='aula_livre:123:901:2026-07-07')
+        self.assertEqual(result.created, 1)
+        self.assertEqual(result.cancelled, 1)
+        self.assertEqual(old_lesson.status, Lesson.STATUS_CANCELLED)
+        self.assertEqual(new_lesson.status, Lesson.STATUS_SCHEDULED)
+        self.assertEqual(new_lesson.start_time, time(16, 0))
+
+    def test_sync_cancels_future_sponte_lessons_outside_active_student_scope(self):
+        inactive_student = PedagogicalStudent.objects.create(
+            name='Aluno Inativo Sponte',
+            responsible_name='Responsável',
+            whatsapp='21999990001',
+            source='Sponte',
+            external_id='999',
+            status=PedagogicalStudent.STATUS_INACTIVE,
+        )
+        course = Course.objects.create(name='Curso Sponte Inativo', value=Decimal('0.00'), kit_quantity=1)
+        room = Room.objects.create(name='Sala Sponte', capacity=1)
+        lesson = Lesson.objects.create(
+            lesson_type=Lesson.TYPE_REGULAR,
+            student=inactive_student,
+            course=course,
+            room=room,
+            date=date(2026, 7, 8),
+            start_time=time(9, 0),
+            end_time=time(11, 0),
+            status=Lesson.STATUS_SCHEDULED,
+            source=Lesson.SOURCE_SPONTE,
+            external_id='aula_livre:999:800:2026-07-08',
+        )
+
+        result = sync_sponte_free_class_schedule(
+            date(2026, 7, 1),
+            date(2026, 7, 31),
+            fetcher=lambda student_id, start, end: self.EMPTY_XML,
+        )
+
+        lesson.refresh_from_db()
         self.assertEqual(result.cancelled, 1)
         self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
 

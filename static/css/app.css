@@ -1127,6 +1127,11 @@ th {
   font-weight: 800;
 }
 
+.trial-slot-card .trial-slot-course-reason[hidden],
+.trial-slot-card .trial-slot-blocked-reason[hidden] {
+  display: none !important;
+}
+
 .trial-slot-card-empty {
   max-width: 260px;
   min-height: 48px;
@@ -2220,10 +2225,12 @@ th {
   display: inline-block;
   padding: 10px 12px;
   border-radius: 8px;
-  background: var(--dark);
-  color: #fff;
+  background: #111827;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #f8fafc;
   font-family: Consolas, "Courier New", monospace;
   font-size: 1.05rem;
+  font-weight: 800;
   word-break: break-all;
 }
 
@@ -2234,6 +2241,28 @@ th {
 
 html[data-theme="dark"] .brand-text strong {
   color: var(--primary);
+}
+
+html[data-theme="dark"] .info-light {
+  color: #dbeafe;
+}
+
+html[data-theme="dark"] .info-light .muted {
+  color: #bfdbfe;
+}
+
+html[data-theme="dark"] .danger-light {
+  color: #fee2e2;
+}
+
+html[data-theme="dark"] .danger-light .muted {
+  color: #fecaca;
+}
+
+html[data-theme="dark"] .temporary-password {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
 
 html[data-theme="dark"] .form-errors {
@@ -2271,6 +2300,29 @@ html[data-theme="dark"] .info-light {
 
 html[data-theme="dark"] .danger-light {
   border-color: #7f1d1d;
+}
+
+html[data-theme="dark"] .standard-field-list span,
+html[data-theme="dark"] .task-details div,
+html[data-theme="dark"] .task-card pre,
+html[data-theme="dark"] .task-readonly pre,
+html[data-theme="dark"] .calendar-day.outside-period,
+html[data-theme="dark"] .calendar-note {
+  background: var(--field-soft);
+  border-color: var(--line);
+  color: var(--text);
+}
+
+html[data-theme="dark"] .calendar-weekdays span,
+html[data-theme="dark"] .calendar-note span {
+  color: var(--muted);
+}
+
+html[data-theme="dark"] .message,
+html[data-theme="dark"] .badge {
+  background: #173244;
+  border-color: #255a72;
+  color: #bfdbfe;
 }
 
 html[data-theme="dark"] .panel-table {
@@ -2325,6 +2377,12 @@ html[data-theme="dark"] .trial-slot-card {
   background: var(--field-soft);
 }
 
+html[data-theme="dark"] .trial-slot-card:hover,
+html[data-theme="dark"] .trial-slot-card:has(input:checked) {
+  background: var(--card-hover);
+  border-color: var(--primary);
+}
+
 html[data-theme="dark"] .trial-slot-card.is-disabled {
   background: #451a1a;
   border-color: #7f1d1d;
@@ -2343,6 +2401,45 @@ html[data-theme="dark"] .dashboard-stage-list a,
 html[data-theme="dark"] .followup-card,
 html[data-theme="dark"] .kanban-card {
   background: var(--field-soft);
+}
+
+html[data-theme="dark"] .task-card.status-planned,
+html[data-theme="dark"] .mini-task.status-planned {
+  background: #2b2412;
+  border-color: #fbbf24;
+}
+
+html[data-theme="dark"] .task-card.status-in_progress,
+html[data-theme="dark"] .mini-task.status-in_progress {
+  background: #12351f;
+  border-color: #166534;
+}
+
+html[data-theme="dark"] .task-card.status-blocked,
+html[data-theme="dark"] .mini-task.status-blocked {
+  background: #451a1a;
+  border-color: #7f1d1d;
+}
+
+html[data-theme="dark"] .task-card.status-done,
+html[data-theme="dark"] .mini-task.status-done {
+  background: #17395f;
+  border-color: #2563eb;
+}
+
+html[data-theme="dark"] .evidence-guidance {
+  background: #173244;
+  border-color: #255a72;
+  color: #dbeafe;
+}
+
+html[data-theme="dark"] .evidence-guidance span {
+  color: #bfdbfe;
+}
+
+html[data-theme="dark"] .mini-card:hover {
+  background: var(--card-hover);
+  border-color: var(--primary);
 }
 
 @media (max-width: 1100px) {

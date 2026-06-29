@@ -606,6 +606,8 @@ class CourseForm(forms.ModelForm):
         name = (self.cleaned_data.get('name') or '').strip()
         if not name:
             raise forms.ValidationError('Informe o nome do curso.')
+        if self.instance and self.instance.pk and name == (self.instance.name or '').strip():
+            return name
         qs = Course.objects.filter(name__iexact=name)
         if self.instance and self.instance.pk:
             qs = qs.exclude(pk=self.instance.pk)
