@@ -71,9 +71,9 @@ class OpportunityOriginAdmin(admin.ModelAdmin):
 
 @admin.register(FunnelModel)
 class FunnelModelAdmin(admin.ModelAdmin):
-    list_display = ('funnel_type', 'stage', 'origin', 'responsible_name', 'responsible_phone', 'active')
-    search_fields = ('responsible_name', 'responsible_phone', 'funnel_type__name', 'stage__name', 'origin__name')
-    list_filter = ('active', 'funnel_type', 'stage', 'origin')
+    list_display = ('name', 'active')
+    search_fields = ('name',)
+    list_filter = ('active',)
     inlines = [FunnelModelFieldInline]
 
     def has_delete_permission(self, request, obj=None):
@@ -83,8 +83,8 @@ class FunnelModelAdmin(admin.ModelAdmin):
 @admin.register(CommercialFunnel)
 class CommercialFunnelAdmin(admin.ModelAdmin):
     list_display = ('name', 'funnel_model', 'active')
-    search_fields = ('name', 'funnel_model__funnel_type__name', 'funnel_model__stage__name')
-    list_filter = ('active', 'funnel_model__funnel_type', 'funnel_model__stage')
+    search_fields = ('name', 'funnel_model__name')
+    list_filter = ('active', 'funnel_model')
 
     def has_delete_permission(self, request, obj=None):
         return False
@@ -92,16 +92,16 @@ class CommercialFunnelAdmin(admin.ModelAdmin):
 
 @admin.register(CommercialOpportunity)
 class CommercialOpportunityAdmin(admin.ModelAdmin):
-    list_display = ('title', 'commercial_funnel', 'contact_name', 'contact_phone', 'active')
+    list_display = ('title', 'commercial_funnel', 'funnel_type', 'stage', 'origin', 'contact_name', 'contact_phone', 'active')
     search_fields = (
         'title', 'contact_name', 'contact_phone', 'commercial_funnel__name',
-        'commercial_funnel__funnel_model__funnel_type__name',
-        'commercial_funnel__funnel_model__stage__name',
+        'funnel_type__name', 'stage__name', 'origin__name',
     )
     list_filter = (
         'active',
-        'commercial_funnel__funnel_model__funnel_type',
-        'commercial_funnel__funnel_model__stage',
+        'funnel_type',
+        'stage',
+        'origin',
         'commercial_funnel',
     )
 

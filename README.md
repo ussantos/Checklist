@@ -129,6 +129,8 @@ bash scripts/build_installer_package.sh
 
 Depois copie o `.tar.gz` de `dist/` para o servidor e siga `docs/INSTALACAO_UBUNTU26.md`.
 
+O pacote instala o código, mas não carrega automaticamente os dados cadastrados no computador atual. Para instalar em outro computador mantendo cadastros, gere um backup completo em **Backups** ou com `docker compose exec web python manage.py run_configured_backup`, copie o `backup_package.tar.gz` para o novo servidor e restaure pela tela **Backups**. Em reinstalações no mesmo servidor, o instalador preserva `.env`, volume PostgreSQL, `media/`, `backups/`, `logs/`, `staticfiles/` e `rclone/`, além de tentar criar backup local antes da atualização.
+
 Variável obrigatória para o administrador inicial:
 
 ```env
@@ -416,6 +418,8 @@ bash scripts/build_installer_package.sh
 ```
 
 Then copy the `.tar.gz` from `dist/` to the server and follow `docs/INSTALACAO_UBUNTU26.md`.
+
+The package installs the code, but it does not automatically carry data entered on the current computer. To install on another computer while keeping records, create a full backup in **Backups** or with `docker compose exec web python manage.py run_configured_backup`, copy the generated `backup_package.tar.gz` to the new server, and restore it from **Backups**. For reinstalls on the same server, the installer preserves `.env`, the PostgreSQL volume, `media/`, `backups/`, `logs/`, `staticfiles/`, and `rclone/`, and it tries to create a local backup before updating.
 
 Required variable for the initial administrator:
 

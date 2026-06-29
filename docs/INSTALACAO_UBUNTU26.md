@@ -88,7 +88,11 @@ docker compose exec web python manage.py makemigrations --check --dry-run
 
 Use este procedimento quando o servidor ja tem o Checklist instalado em `/opt/checklist` e voce quer aplicar um pacote novo sem apagar banco, `.env`, evidencias, backups ou configuracao rclone.
 
-Antes de atualizar, gere um backup local e, se a nuvem ja estiver funcionando, confirme o envio:
+O banco fica no volume Docker `postgres_data`. Evidencias, backups, logs, arquivos estaticos e configuracao `rclone` ficam em diretorios locais montados em `/opt/checklist`. O instalador nao usa `docker compose down -v` e nao apaga esses caminhos.
+
+Por seguranca, o instalador tenta gerar automaticamente um backup local antes de atualizar uma instalacao existente. Se esse backup falhar, a atualizacao para. Para continuar mesmo assim, use `CHECKLIST_SKIP_PRE_UPDATE_BACKUP=True` somente quando voce ja tiver um backup valido.
+
+Voce tambem pode gerar um backup manual antes de atualizar e, se a nuvem ja estiver funcionando, confirmar o envio:
 
 ```bash
 cd /opt/checklist
@@ -113,6 +117,23 @@ O instalador preserva estes caminhos:
 /opt/checklist/logs/
 /opt/checklist/staticfiles/
 ```
+
+## Levar dados para outro computador
+
+O pacote `checklist-ubuntu26-installer-*.tar.gz` instala codigo e infraestrutura, mas nao inclui os dados cadastrados no banco do computador atual. Para instalar em outro computador mantendo cadastros:
+
+1. No computador atual, gere um backup completo:
+
+```bash
+cd /opt/checklist
+docker compose exec web python manage.py run_configured_backup
+```
+
+2. Copie o `backup_package.tar.gz` gerado dentro de `/opt/checklist/backups/...` para o novo servidor.
+
+3. Instale o sistema normalmente no novo servidor.
+
+4. Acesse **Backups** como administrador, envie o `backup_package.tar.gz` pela area de restore e restaure o backup.
 
 Depois da reinstalacao, force o rebuild e confira a versao do rclone dentro dos containers:
 

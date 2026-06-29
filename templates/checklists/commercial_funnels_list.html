@@ -36,16 +36,13 @@
 
 <table class="panel-table">
   <thead>
-    <tr><th>Nome</th><th>Modelo</th><th>Tipo</th><th>Etapa</th><th>Origem</th><th>Status</th><th>Ações</th></tr>
+    <tr><th>Nome</th><th>Modelo</th><th>Status</th><th>Ações</th></tr>
   </thead>
   <tbody>
     {% for funnel in funnels %}
     <tr>
       <td>{{ funnel.name }}</td>
       <td>{{ funnel.funnel_model }}</td>
-      <td>{{ funnel.funnel_model.funnel_type.name }}</td>
-      <td>{{ funnel.funnel_model.stage.name }}</td>
-      <td>{{ funnel.funnel_model.origin.name }}</td>
       <td>{% if funnel.active %}<span class="badge done">Ativo</span>{% else %}<span class="badge blocked">Inativo</span>{% endif %}</td>
       <td>
         <div class="row-actions">
@@ -58,7 +55,7 @@
       </td>
     </tr>
     {% empty %}
-    <tr><td colspan="7">Nenhum funil cadastrado.</td></tr>
+    <tr><td colspan="4">Nenhum funil cadastrado.</td></tr>
     {% endfor %}
   </tbody>
 </table>

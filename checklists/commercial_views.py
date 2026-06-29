@@ -20,10 +20,10 @@ from .services import is_admin_user
 FUNNEL_TYPE_AUDIT_FIELDS = ['name', 'code', 'active']
 FUNNEL_STAGE_AUDIT_FIELDS = ['name', 'code', 'description', 'order', 'active']
 OPPORTUNITY_ORIGIN_AUDIT_FIELDS = ['name', 'code', 'description', 'active']
-FUNNEL_MODEL_AUDIT_FIELDS = ['funnel_type', 'stage', 'origin', 'responsible_name', 'responsible_phone', 'active']
+FUNNEL_MODEL_AUDIT_FIELDS = ['name', 'active']
 COMMERCIAL_FUNNEL_AUDIT_FIELDS = ['name', 'funnel_model', 'active']
 COMMERCIAL_OPPORTUNITY_AUDIT_FIELDS = [
-    'title', 'commercial_funnel', 'contact_name', 'contact_phone',
+    'title', 'commercial_funnel', 'funnel_type', 'stage', 'origin', 'contact_name', 'contact_phone',
     'field_values', 'notes', 'active',
 ]
 
@@ -51,9 +51,9 @@ def _commercial_opportunity_queryset():
     return CommercialOpportunity.objects.select_related(
         'commercial_funnel',
         'commercial_funnel__funnel_model',
-        'commercial_funnel__funnel_model__funnel_type',
-        'commercial_funnel__funnel_model__stage',
-        'commercial_funnel__funnel_model__origin',
+        'funnel_type',
+        'stage',
+        'origin',
     ).prefetch_related('commercial_funnel__funnel_model__fields')
 
 
@@ -543,28 +543,22 @@ def opportunity_origin_delete(request, origin_id):
 @user_passes_test(_admin_check)
 def funnel_models_list(request):
     status = request.GET.get('status', 'ativos')
-    funnel_type_id = request.GET.get('tipo')
     models = (
-        FunnelModel.objects.select_related('funnel_type', 'stage', 'origin')
-        .prefetch_related('fields')
-        .order_by('funnel_type__name', 'stage__order', 'stage__name', 'responsible_name')
+        FunnelModel.objects.prefetch_related('fields')
+        .order_by('name')
     )
     if status == 'inativos':
         models = models.filter(active=False)
     elif status != 'todos':
         status = 'ativos'
         models = models.filter(active=True)
-    if funnel_type_id and funnel_type_id.isdigit():
-        models = models.filter(funnel_type_id=funnel_type_id)
     models = list(models)
     for funnel_model in models:
         funnel_model.can_delete_from_ui = funnel_model.can_be_deleted()
 
     return render(request, 'checklists/funnel_models_list.html', {
         'funnel_models': models,
-        'funnel_types': FunnelType.objects.all().order_by('name'),
         'status': status,
-        'funnel_type_id': funnel_type_id or '',
         'is_admin': True,
     })
 
@@ -606,7 +600,7 @@ def funnel_model_create(request):
 @user_passes_test(_admin_check)
 def funnel_model_edit(request, model_id):
     funnel_model = get_object_or_404(
-        FunnelModel.objects.select_related('funnel_type', 'stage', 'origin').prefetch_related('fields'),
+        FunnelModel.objects.prefetch_related('fields'),
         pk=model_id,
     )
     previous_active = funnel_model.active
@@ -619,9 +613,7 @@ def funnel_model_edit(request, model_id):
                 funnel_model = form.save()
                 formset.save()
                 funnel_model = (
-                    FunnelModel.objects.select_related('funnel_type', 'stage', 'origin')
-                    .prefetch_related('fields')
-                    .get(pk=funnel_model.pk)
+                    FunnelModel.objects.prefetch_related('fields').get(pk=funnel_model.pk)
                 )
                 previous_values, new_values = changed_values(
                     previous_values_full,
@@ -662,16 +654,14 @@ def funnel_model_edit(request, model_id):
 @user_passes_test(_admin_check)
 def funnel_model_toggle(request, model_id):
     funnel_model = get_object_or_404(
-        FunnelModel.objects.select_related('funnel_type', 'stage', 'origin').prefetch_related('fields'),
+        FunnelModel.objects.prefetch_related('fields'),
         pk=model_id,
     )
     previous_values_full = _funnel_model_snapshot(funnel_model)
     funnel_model.active = not funnel_model.active
     funnel_model.save(update_fields=['active', 'updated_at'])
     funnel_model = (
-        FunnelModel.objects.select_related('funnel_type', 'stage', 'origin')
-        .prefetch_related('fields')
-        .get(pk=funnel_model.pk)
+        FunnelModel.objects.prefetch_related('fields').get(pk=funnel_model.pk)
     )
     previous_values, new_values = changed_values(
         previous_values_full,
@@ -694,7 +684,7 @@ def funnel_model_toggle(request, model_id):
 @user_passes_test(_admin_check)
 def funnel_model_delete(request, model_id):
     funnel_model = get_object_or_404(
-        FunnelModel.objects.select_related('funnel_type', 'stage', 'origin').prefetch_related('fields'),
+        FunnelModel.objects.prefetch_related('fields'),
         pk=model_id,
     )
     if funnel_model.has_instantiated_funnels():
@@ -740,9 +730,9 @@ def commercial_opportunities_list(request):
     opportunities = (
         _commercial_opportunity_queryset()
         .order_by(
-            'commercial_funnel__funnel_model__funnel_type__name',
-            'commercial_funnel__funnel_model__stage__order',
-            'commercial_funnel__funnel_model__stage__name',
+            'funnel_type__name',
+            'stage__order',
+            'stage__name',
             'commercial_funnel__name',
             'title',
         )
@@ -755,12 +745,12 @@ def commercial_opportunities_list(request):
         opportunities = opportunities.filter(active=True)
 
     if funnel_type_id and funnel_type_id.isdigit():
-        opportunities = opportunities.filter(commercial_funnel__funnel_model__funnel_type_id=funnel_type_id)
+        opportunities = opportunities.filter(funnel_type_id=funnel_type_id)
     else:
         funnel_type_id = ''
 
     if stage_id and stage_id.isdigit():
-        opportunities = opportunities.filter(commercial_funnel__funnel_model__stage_id=stage_id)
+        opportunities = opportunities.filter(stage_id=stage_id)
     else:
         stage_id = ''
 
@@ -893,12 +883,7 @@ def commercial_funnels_list(request):
     status = request.GET.get('status', 'ativos')
     model_id = request.GET.get('modelo')
     funnels = (
-        CommercialFunnel.objects.select_related(
-            'funnel_model',
-            'funnel_model__funnel_type',
-            'funnel_model__stage',
-            'funnel_model__origin',
-        )
+        CommercialFunnel.objects.select_related('funnel_model')
         .order_by('name')
     )
     if status == 'inativos':
@@ -911,9 +896,7 @@ def commercial_funnels_list(request):
 
     return render(request, 'checklists/commercial_funnels_list.html', {
         'funnels': funnels,
-        'models': FunnelModel.objects.select_related('funnel_type', 'stage', 'origin').order_by(
-            'funnel_type__name', 'stage__order', 'stage__name', 'responsible_name'
-        ),
+        'models': FunnelModel.objects.order_by('name'),
         'status': status,
         'model_id': model_id or '',
         'is_admin': True,
@@ -950,12 +933,7 @@ def commercial_funnel_create(request):
 @user_passes_test(_admin_check)
 def commercial_funnel_edit(request, funnel_id):
     funnel = get_object_or_404(
-        CommercialFunnel.objects.select_related(
-            'funnel_model',
-            'funnel_model__funnel_type',
-            'funnel_model__stage',
-            'funnel_model__origin',
-        ),
+        CommercialFunnel.objects.select_related('funnel_model'),
         pk=funnel_id,
     )
     previous_active = funnel.active

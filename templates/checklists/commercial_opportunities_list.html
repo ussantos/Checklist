@@ -51,14 +51,14 @@
   <p class="muted">{{ opportunity_count }} registro{{ opportunity_count|pluralize }} encontrado{{ opportunity_count|pluralize }}.</p>
 </section>
 
-{% regroup opportunities by commercial_funnel.funnel_model.funnel_type.name as type_groups %}
+{% regroup opportunities by funnel_type.name as type_groups %}
 <div class="opportunity-groups">
 {% for type_group in type_groups %}
 <section class="opportunity-group">
-  <h2>{{ type_group.grouper }}</h2>
-  {% regroup type_group.list by commercial_funnel.funnel_model.stage.name as stage_groups %}
+  <h2>{{ type_group.grouper|default:"Sem tipo" }}</h2>
+  {% regroup type_group.list by stage.name as stage_groups %}
   {% for stage_group in stage_groups %}
-    <h3 class="opportunity-stage-title">{{ stage_group.grouper }}</h3>
+    <h3 class="opportunity-stage-title">{{ stage_group.grouper|default:"Sem etapa" }}</h3>
     <table class="panel-table">
       <thead>
         <tr>
@@ -76,7 +76,7 @@
         <tr>
           <td>{{ opportunity.title }}</td>
           <td>{{ opportunity.commercial_funnel.name }}</td>
-          <td>{{ opportunity.commercial_funnel.funnel_model.origin.name }}</td>
+          <td>{{ opportunity.origin.name|default:"-" }}</td>
           <td>
             {{ opportunity.contact_name }}<br>
             <span class="muted">{{ opportunity.contact_phone }}</span>

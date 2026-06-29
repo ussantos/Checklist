@@ -494,6 +494,22 @@ th {
   margin: 6px 0 0;
 }
 
+.standard-field-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.standard-field-list span {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font-weight: 700;
+  padding: 8px 10px;
+}
+
 .restore-form {
   display: flex;
   align-items: center;

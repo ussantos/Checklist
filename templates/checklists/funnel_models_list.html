@@ -3,7 +3,7 @@
 <div class="page-title">
   <div>
     <h1>Modelos de Funis</h1>
-    <p class="muted">Modelos usados como base para futuras instâncias de funis do time comercial.</p>
+    <p class="muted">Modelos usados como base para futuras oportunidades do time comercial.</p>
   </div>
   <a class="btn primary" href="{% url 'funnel_model_create' %}">Inserir modelo</a>
 </div>
@@ -16,28 +16,18 @@
       <option value="todos" {% if status == "todos" %}selected{% endif %}>Todos</option>
     </select>
   </label>
-  <label>Tipo
-    <select class="input" name="tipo">
-      <option value="">Todos</option>
-      {% for funnel_type in funnel_types %}
-        <option value="{{ funnel_type.id }}" {% if funnel_type_id == funnel_type.id|stringformat:"s" %}selected{% endif %}>{{ funnel_type.name }}</option>
-      {% endfor %}
-    </select>
-  </label>
   <button class="btn">Filtrar</button>
 </form>
 
 <table class="panel-table">
   <thead>
-    <tr><th>Tipo</th><th>Etapa</th><th>Origem</th><th>Responsável</th><th>Campos adicionais</th><th>Status</th><th>Ações</th></tr>
+    <tr><th>Modelo</th><th>Campos padrão</th><th>Campos adicionais</th><th>Status</th><th>Ações</th></tr>
   </thead>
   <tbody>
     {% for model in funnel_models %}
     <tr>
-      <td>{{ model.funnel_type.name }}</td>
-      <td>{{ model.stage.name }}</td>
-      <td>{{ model.origin.name }}</td>
-      <td>{{ model.responsible_name }}<br><span class="muted">{{ model.responsible_phone }}</span></td>
+      <td>{{ model.name }}</td>
+      <td>Tipo, etapa, origem, responsável, telefone e status</td>
       <td>
         {% if model.fields.all %}
           {{ model.fields.all|length }}
@@ -62,7 +52,7 @@
       </td>
     </tr>
     {% empty %}
-    <tr><td colspan="7">Nenhum modelo de funil cadastrado.</td></tr>
+    <tr><td colspan="5">Nenhum modelo de funil cadastrado.</td></tr>
     {% endfor %}
   </tbody>
 </table>

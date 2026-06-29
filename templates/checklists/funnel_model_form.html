@@ -3,7 +3,7 @@
 <div class="page-title">
   <div>
     <h1>{{ title }}</h1>
-    <p class="muted">Campos adicionais podem ser criados livremente conforme a necessidade do modelo.</p>
+    <p class="muted">Defina o nome do modelo e, se necessário, os campos adicionais. Os campos padrão existem em todo funil.</p>
   </div>
   <a class="btn" href="{% url 'commercial_funnel_models' %}">Voltar</a>
 </div>
@@ -11,10 +11,23 @@
 <form method="post" class="form-stack" id="funnel-model-form">
   {% csrf_token %}
   <section class="panel">
-    <h2>Campos obrigatórios do modelo</h2>
+    <h2>Identificação do modelo</h2>
     {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
     <div class="form-grid">
       {{ form.as_p }}
+    </div>
+  </section>
+
+  <section class="panel info-light">
+    <h2>Campos padrão de todo funil</h2>
+    <p class="muted">Estes campos sempre farão parte das oportunidades criadas a partir deste modelo. Os valores serão preenchidos no cadastro da oportunidade.</p>
+    <div class="standard-field-list">
+      <span>Tipo</span>
+      <span>Etapa</span>
+      <span>Origem</span>
+      <span>Nome do responsável</span>
+      <span>Telefone do responsável</span>
+      <span>Status</span>
     </div>
   </section>
 

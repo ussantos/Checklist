@@ -114,6 +114,22 @@ copy_application() {
   chmod 700 "${APP_DIR}/backups" "${APP_DIR}/rclone"
 }
 
+run_pre_update_backup() {
+  if [[ ! -f "${APP_DIR}/docker-compose.yml" || ! -f "${APP_DIR}/.env" ]]; then
+    return
+  fi
+  if is_true "${CHECKLIST_SKIP_PRE_UPDATE_BACKUP:-False}"; then
+    log "Backup automatico pre-atualizacao ignorado por CHECKLIST_SKIP_PRE_UPDATE_BACKUP=True"
+    return
+  fi
+
+  log "Instalacao existente detectada. Gerando backup local de seguranca antes da atualizacao"
+  cd "${APP_DIR}"
+  if ! docker compose exec -T web python manage.py run_configured_backup; then
+    fail "Nao foi possivel gerar backup antes da atualizacao. Verifique o sistema atual ou defina CHECKLIST_SKIP_PRE_UPDATE_BACKUP=True se voce ja tem backup valido."
+  fi
+}
+
 detect_first_ip() {
   hostname -I 2>/dev/null | awk '{print $1}'
 }
@@ -169,7 +185,7 @@ MAX_EVIDENCE_FILE_SIZE_MB=5
 
 RCLONE_REMOTE=gdrive:MyRobotBackups/checklist
 BACKUP_RETENTION_DAYS=30
-BACKUP_SCHEDULER_INTERVAL_SECONDS=60
+BACKUP_SCHEDULER_INTERVAL_SECONDS=900
 EOF
   chmod 600 "${APP_DIR}/.env"
 
@@ -310,6 +326,7 @@ main() {
   check_ubuntu
   install_base_packages
   install_docker
+  run_pre_update_backup
   copy_application
   write_env_file
   compose_up

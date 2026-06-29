@@ -449,81 +449,21 @@ class OpportunityOriginForm(forms.ModelForm):
 
 
 class FunnelModelForm(forms.ModelForm):
-    STATUS_ACTIVE = 'active'
-    STATUS_INACTIVE = 'inactive'
-    STATUS_CHOICES = [
-        (STATUS_ACTIVE, 'Ativado'),
-        (STATUS_INACTIVE, 'Desativado'),
-    ]
-
-    status = forms.ChoiceField(
-        label='Status',
-        choices=STATUS_CHOICES,
-        widget=forms.Select(attrs={'class': 'input'}),
-    )
-
     class Meta:
         model = FunnelModel
-        fields = ['funnel_type', 'stage', 'origin', 'responsible_name', 'responsible_phone']
+        fields = ['name']
         widgets = {
-            'funnel_type': forms.Select(attrs={'class': 'input'}),
-            'stage': forms.Select(attrs={'class': 'input'}),
-            'origin': forms.Select(attrs={'class': 'input'}),
-            'responsible_name': forms.TextInput(attrs={'class': 'input'}),
-            'responsible_phone': forms.TextInput(attrs={'class': 'input'}),
+            'name': forms.TextInput(attrs={'class': 'input'}),
         }
         labels = {
-            'funnel_type': 'Tipo',
-            'stage': 'Etapa',
-            'origin': 'Origem',
-            'responsible_name': 'Nome do responsável',
-            'responsible_phone': 'Telefone do responsável',
+            'name': 'Nome do modelo',
         }
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields['status'].initial = self.STATUS_ACTIVE if self.instance.active else self.STATUS_INACTIVE
-
-        funnel_types = FunnelType.objects.filter(active=True).order_by('name')
-        stages = FunnelStage.objects.filter(active=True).order_by('order', 'name')
-        origins = OpportunityOrigin.objects.filter(active=True).order_by('name')
-
-        if self.instance and self.instance.pk:
-            if self.instance.funnel_type_id:
-                funnel_types = FunnelType.objects.filter(
-                    pk__in=list(funnel_types.values_list('pk', flat=True)) + [self.instance.funnel_type_id]
-                ).order_by('name')
-            if self.instance.stage_id:
-                stages = FunnelStage.objects.filter(
-                    pk__in=list(stages.values_list('pk', flat=True)) + [self.instance.stage_id]
-                ).order_by('order', 'name')
-            if self.instance.origin_id:
-                origins = OpportunityOrigin.objects.filter(
-                    pk__in=list(origins.values_list('pk', flat=True)) + [self.instance.origin_id]
-                ).order_by('name')
-
-        self.fields['funnel_type'].queryset = funnel_types
-        self.fields['stage'].queryset = stages
-        self.fields['origin'].queryset = origins
-
-    def clean_responsible_name(self):
-        value = (self.cleaned_data.get('responsible_name') or '').strip()
+    def clean_name(self):
+        value = (self.cleaned_data.get('name') or '').strip()
         if not value:
-            raise forms.ValidationError('Informe o nome do responsável.')
+            raise forms.ValidationError('Informe o nome do modelo.')
         return value
-
-    def clean_responsible_phone(self):
-        value = (self.cleaned_data.get('responsible_phone') or '').strip()
-        if not value:
-            raise forms.ValidationError('Informe o telefone do responsável.')
-        return value
-
-    def save(self, commit=True):
-        obj = super().save(commit=False)
-        obj.active = self.cleaned_data.get('status') == self.STATUS_ACTIVE
-        if commit:
-            obj.save()
-        return obj
 
 
 class FunnelModelFieldForm(forms.ModelForm):
@@ -636,16 +576,14 @@ class CommercialFunnelForm(forms.ModelForm):
         self.fields['status'].initial = self.STATUS_ACTIVE if self.instance.active else self.STATUS_INACTIVE
         models = (
             FunnelModel.objects.filter(active=True)
-            .select_related('funnel_type', 'stage', 'origin')
-            .order_by('funnel_type__name', 'stage__order', 'stage__name', 'responsible_name')
+            .order_by('name')
         )
         if self.instance and self.instance.pk and self.instance.funnel_model_id:
             models = (
                 FunnelModel.objects.filter(
                     pk__in=list(models.values_list('pk', flat=True)) + [self.instance.funnel_model_id]
                 )
-                .select_related('funnel_type', 'stage', 'origin')
-                .order_by('funnel_type__name', 'stage__order', 'stage__name', 'responsible_name')
+                .order_by('name')
             )
         self.fields['funnel_model'].queryset = models
 
@@ -684,10 +622,13 @@ class CommercialOpportunityForm(forms.ModelForm):
 
     class Meta:
         model = CommercialOpportunity
-        fields = ['title', 'commercial_funnel', 'contact_name', 'contact_phone', 'notes']
+        fields = ['title', 'commercial_funnel', 'funnel_type', 'stage', 'origin', 'contact_name', 'contact_phone', 'notes']
         widgets = {
             'title': forms.TextInput(attrs={'class': 'input'}),
             'commercial_funnel': forms.Select(attrs={'class': 'input'}),
+            'funnel_type': forms.Select(attrs={'class': 'input'}),
+            'stage': forms.Select(attrs={'class': 'input'}),
+            'origin': forms.Select(attrs={'class': 'input'}),
             'contact_name': forms.TextInput(attrs={'class': 'input'}),
             'contact_phone': forms.TextInput(attrs={'class': 'input'}),
             'notes': forms.Textarea(attrs={'class': 'input', 'rows': 4}),
@@ -695,6 +636,9 @@ class CommercialOpportunityForm(forms.ModelForm):
         labels = {
             'title': 'Nome da oportunidade',
             'commercial_funnel': 'Funil',
+            'funnel_type': 'Tipo',
+            'stage': 'Etapa',
+            'origin': 'Origem',
             'contact_name': 'Nome do responsável',
             'contact_phone': 'Telefone do responsável',
             'notes': 'Observações',
@@ -708,7 +652,7 @@ class CommercialOpportunityForm(forms.ModelForm):
 
         funnels = (
             CommercialFunnel.objects.filter(active=True)
-            .select_related('funnel_model', 'funnel_model__funnel_type', 'funnel_model__stage', 'funnel_model__origin')
+            .select_related('funnel_model')
             .order_by('name')
         )
         if self.instance and self.instance.pk and self.instance.commercial_funnel_id:
@@ -716,26 +660,45 @@ class CommercialOpportunityForm(forms.ModelForm):
                 CommercialFunnel.objects.filter(
                     pk__in=list(funnels.values_list('pk', flat=True)) + [self.instance.commercial_funnel_id]
                 )
-                .select_related('funnel_model', 'funnel_model__funnel_type', 'funnel_model__stage', 'funnel_model__origin')
+                .select_related('funnel_model')
                 .order_by('name')
             )
         self.fields['commercial_funnel'].queryset = funnels
+        self._configure_standard_field_querysets()
 
         selected_funnel_id = self._selected_funnel_id()
         if selected_funnel_id:
             self.selected_funnel = (
-                CommercialFunnel.objects.select_related(
-                    'funnel_model',
-                    'funnel_model__funnel_type',
-                    'funnel_model__stage',
-                    'funnel_model__origin',
-                )
+                CommercialFunnel.objects.select_related('funnel_model')
                 .prefetch_related('funnel_model__fields')
                 .filter(pk=selected_funnel_id)
                 .first()
             )
         if self.selected_funnel:
             self._add_model_fields()
+
+    def _configure_standard_field_querysets(self):
+        funnel_types = FunnelType.objects.filter(active=True).order_by('name')
+        stages = FunnelStage.objects.filter(active=True).order_by('order', 'name')
+        origins = OpportunityOrigin.objects.filter(active=True).order_by('name')
+
+        if self.instance and self.instance.pk:
+            if self.instance.funnel_type_id:
+                funnel_types = FunnelType.objects.filter(
+                    pk__in=list(funnel_types.values_list('pk', flat=True)) + [self.instance.funnel_type_id]
+                ).order_by('name')
+            if self.instance.stage_id:
+                stages = FunnelStage.objects.filter(
+                    pk__in=list(stages.values_list('pk', flat=True)) + [self.instance.stage_id]
+                ).order_by('order', 'name')
+            if self.instance.origin_id:
+                origins = OpportunityOrigin.objects.filter(
+                    pk__in=list(origins.values_list('pk', flat=True)) + [self.instance.origin_id]
+                ).order_by('name')
+
+        self.fields['funnel_type'].queryset = funnel_types
+        self.fields['stage'].queryset = stages
+        self.fields['origin'].queryset = origins
 
     @property
     def custom_bound_fields(self):

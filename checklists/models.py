@@ -53,8 +53,14 @@ class FunnelType(models.Model):
             if (
                 'funnel' not in accessor_lower
                 and 'funil' not in accessor_lower
+                and 'opportunit' not in accessor_lower
+                and 'oportunidade' not in accessor_lower
+                and 'lead' not in accessor_lower
                 and 'funnel' not in related_name
                 and 'funil' not in related_name
+                and 'opportunit' not in related_name
+                and 'oportunidade' not in related_name
+                and 'lead' not in related_name
             ):
                 continue
             try:
@@ -93,7 +99,7 @@ class FunnelStage(models.Model):
         return self.name
 
     def has_usage(self):
-        return self.funnel_models.exists()
+        return self.legacy_funnel_models.exists() or self.opportunities.exists()
 
     def can_be_deleted(self):
         return not self.has_usage()
@@ -118,7 +124,7 @@ class OpportunityOrigin(models.Model):
         return self.name
 
     def has_usage(self):
-        return self.funnel_models.exists()
+        return self.legacy_funnel_models.exists() or self.opportunities.exists()
 
     def can_be_deleted(self):
         return not self.has_usage()
@@ -127,22 +133,52 @@ class OpportunityOrigin(models.Model):
 class FunnelModel(models.Model):
     """Modelo que define os campos usados para criar funis comerciais."""
 
-    funnel_type = models.ForeignKey(FunnelType, on_delete=models.PROTECT, related_name='funnel_models', verbose_name='Tipo')
-    stage = models.ForeignKey(FunnelStage, on_delete=models.PROTECT, related_name='funnel_models', verbose_name='Etapa')
-    origin = models.ForeignKey(OpportunityOrigin, on_delete=models.PROTECT, related_name='funnel_models', verbose_name='Origem')
-    responsible_name = models.CharField('Nome do responsável', max_length=120)
-    responsible_phone = models.CharField('Telefone do responsável', max_length=30)
+    name = models.CharField('Nome do modelo', max_length=160, default='')
+    funnel_type = models.ForeignKey(
+        FunnelType,
+        on_delete=models.PROTECT,
+        related_name='legacy_funnel_models',
+        verbose_name='Tipo legado',
+        null=True,
+        blank=True,
+    )
+    stage = models.ForeignKey(
+        FunnelStage,
+        on_delete=models.PROTECT,
+        related_name='legacy_funnel_models',
+        verbose_name='Etapa legada',
+        null=True,
+        blank=True,
+    )
+    origin = models.ForeignKey(
+        OpportunityOrigin,
+        on_delete=models.PROTECT,
+        related_name='legacy_funnel_models',
+        verbose_name='Origem legada',
+        null=True,
+        blank=True,
+    )
+    responsible_name = models.CharField('Nome do responsável legado', max_length=120, blank=True)
+    responsible_phone = models.CharField('Telefone do responsável legado', max_length=30, blank=True)
     active = models.BooleanField('Ativado', default=True)
     created_at = models.DateTimeField('Criado em', auto_now_add=True)
     updated_at = models.DateTimeField('Atualizado em', auto_now=True)
 
     class Meta:
-        ordering = ['funnel_type__name', 'stage__order', 'stage__name', 'responsible_name']
+        ordering = ['name']
         verbose_name = 'Modelo de funil'
         verbose_name_plural = 'Modelos de funis'
 
     def __str__(self):
-        return f'{self.funnel_type.name} - {self.stage.name} - {self.responsible_name}'
+        if self.name:
+            return self.name
+        parts = [
+            getattr(self.funnel_type, 'name', ''),
+            getattr(self.stage, 'name', ''),
+            self.responsible_name,
+        ]
+        label = ' - '.join(part for part in parts if part)
+        return label or f'Modelo de funil {self.pk}'
 
     @property
     def status_label(self):
@@ -236,6 +272,9 @@ class CommercialOpportunity(models.Model):
 
     title = models.CharField('Oportunidade', max_length=160)
     commercial_funnel = models.ForeignKey(CommercialFunnel, on_delete=models.PROTECT, related_name='opportunities', verbose_name='Funil')
+    funnel_type = models.ForeignKey(FunnelType, on_delete=models.PROTECT, related_name='opportunities', verbose_name='Tipo', null=True, blank=True)
+    stage = models.ForeignKey(FunnelStage, on_delete=models.PROTECT, related_name='opportunities', verbose_name='Etapa', null=True, blank=True)
+    origin = models.ForeignKey(OpportunityOrigin, on_delete=models.PROTECT, related_name='opportunities', verbose_name='Origem', null=True, blank=True)
     contact_name = models.CharField('Nome do responsável', max_length=120)
     contact_phone = models.CharField('Telefone do responsável', max_length=30)
     field_values = models.JSONField('Campos adicionais preenchidos', default=dict, blank=True)
@@ -246,9 +285,9 @@ class CommercialOpportunity(models.Model):
 
     class Meta:
         ordering = [
-            'commercial_funnel__funnel_model__funnel_type__name',
-            'commercial_funnel__funnel_model__stage__order',
-            'commercial_funnel__funnel_model__stage__name',
+            'funnel_type__name',
+            'stage__order',
+            'stage__name',
             'title',
         ]
         verbose_name = 'Oportunidade comercial'
@@ -260,19 +299,6 @@ class CommercialOpportunity(models.Model):
     @property
     def funnel_model(self):
         return self.commercial_funnel.funnel_model
-
-    @property
-    def funnel_type(self):
-        return self.funnel_model.funnel_type
-
-    @property
-    def stage(self):
-        return self.funnel_model.stage
-
-    @property
-    def origin(self):
-        return self.funnel_model.origin
-
 
 class UserProfile(models.Model):
     """Perfil local do usuário autenticado.
