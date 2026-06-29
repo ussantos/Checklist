@@ -583,19 +583,54 @@ th {
 
 .trial-slot-grid {
   display: grid;
-  gap: 14px;
+  gap: 16px;
   margin-top: 14px;
 }
 
 .trial-slot-day {
   display: grid;
-  gap: 8px;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-left: 6px solid #d1d5db;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
 }
 
 .trial-slot-day h3 {
   color: var(--dark);
   font-size: 0.95rem;
   margin: 0;
+}
+
+.trial-slot-day.weekday-1 {
+  background: #fff8dc;
+  border-left-color: #facc15;
+}
+
+.trial-slot-day.weekday-2 {
+  background: #ecfeff;
+  border-left-color: #67e8f9;
+}
+
+.trial-slot-day.weekday-3 {
+  background: #f0fdf4;
+  border-left-color: #86efac;
+}
+
+.trial-slot-day.weekday-4 {
+  background: #f5f3ff;
+  border-left-color: #c4b5fd;
+}
+
+.trial-slot-day.weekday-5 {
+  background: #fff1f2;
+  border-left-color: #fda4af;
+}
+
+.trial-slot-day.weekday-6 {
+  background: #eff6ff;
+  border-left-color: #93c5fd;
 }
 
 .trial-slot-options {
@@ -610,7 +645,7 @@ th {
   gap: 8px 10px;
   align-items: center;
   min-height: 64px;
-  background: #fff;
+  background: rgba(255, 255, 255, 0.86);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px;
@@ -620,7 +655,8 @@ th {
 .trial-slot-card:hover,
 .trial-slot-card:has(input:checked) {
   border-color: var(--primary);
-  background: #fff8f1;
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(33, 31, 32, 0.08);
 }
 
 .trial-slot-card input {
@@ -648,6 +684,31 @@ th {
 .trial-slot-card-empty {
   max-width: 260px;
   min-height: 48px;
+}
+
+.opportunity-form-panel {
+  overflow: visible;
+}
+
+.opportunity-main-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.form-grid-wide {
+  grid-column: 1 / -1;
+}
+
+.form-note {
+  border-top: 1px solid var(--line);
+  margin: 14px 0 0;
+  padding-top: 12px;
+}
+
+.readonly-code {
+  background: #f8fafc;
+  color: var(--dark);
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
 .standard-field-list {

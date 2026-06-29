@@ -1,4 +1,5 @@
 import json
+from calendar import monthrange
 from datetime import datetime
 from pathlib import Path
 from django import forms
@@ -7,6 +8,7 @@ from django.contrib.auth import get_user_model
 from django.forms import inlineformset_factory
 from django.forms.models import BaseInlineFormSet
 from django.forms.formsets import DELETION_FIELD_NAME
+from django.utils import timezone
 from django.utils.text import slugify
 from .backup import build_remote_path, split_remote_path
 from .models import (
@@ -25,6 +27,18 @@ ALLOWED_METRIC_EVIDENCE_EXTENSIONS = ALLOWED_EVIDENCE_EXTENSIONS | {
     '.txt', '.csv', '.tsv', '.xls', '.xlsx', '.ods', '.doc', '.docx',
     '.ppt', '.pptx', '.zip',
 }
+
+
+def add_months(value, months):
+    month = value.month - 1 + months
+    year = value.year + month // 12
+    month = month % 12 + 1
+    day = min(value.day, monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
+
+
+def is_lost_stage(stage):
+    return bool(stage and 'perdido' in slugify(f'{stage.code} {stage.name}'))
 
 
 class MultipleFileInput(forms.ClearableFileInput):
@@ -971,6 +985,7 @@ class LessonForm(forms.ModelForm):
         self.fields['student_name_snapshot'].required = False
         self.fields['responsible_name_snapshot'].required = False
         self.fields['whatsapp_snapshot'].required = False
+        self.fields['course'].required = not self.trial_only
         self.fields['notes'].required = False
         self.fields['commercial_opportunity'].required = self.trial_only
         self.fields['trial_kind'].required = self.trial_only
@@ -985,9 +1000,12 @@ class LessonForm(forms.ModelForm):
         student = cleaned.get('student')
         opportunity = cleaned.get('commercial_opportunity')
         trial_kind = cleaned.get('trial_kind')
+        course = cleaned.get('course')
         student_name = (cleaned.get('student_name_snapshot') or '').strip()
         if lesson_type == Lesson.TYPE_REGULAR and not student:
             self.add_error('student', 'Selecione um aluno para aula de matriculado.')
+        if lesson_type == Lesson.TYPE_REGULAR and not course:
+            self.add_error('course', 'Selecione um curso para aula de matriculado.')
         if lesson_type == Lesson.TYPE_TRIAL:
             if not trial_kind:
                 self.add_error('trial_kind', 'Informe se a aula é Experimental ou Play.')
@@ -1090,6 +1108,7 @@ class CommercialOpportunityForm(forms.ModelForm):
         label='Curso da aula',
         required=False,
         queryset=Course.objects.none(),
+        empty_label='Definir durante a aula',
         widget=forms.Select(attrs={'class': 'input'}),
     )
     trial_lesson_slot = forms.ChoiceField(
@@ -1103,23 +1122,15 @@ class CommercialOpportunityForm(forms.ModelForm):
         required=False,
         widget=forms.Textarea(attrs={'class': 'input', 'rows': 2}),
     )
-    follow_up_note = forms.CharField(
-        label='Observação do follow-up',
-        required=False,
-        widget=forms.Textarea(attrs={'class': 'input', 'rows': 3}),
-        help_text='Opcional. Use para registrar contexto da mudança de follow-up.',
-    )
-
     class Meta:
         model = CommercialOpportunity
         fields = [
-            'title', 'commercial_funnel', 'funnel_type', 'stage', 'origin',
+            'title', 'commercial_funnel', 'stage', 'origin',
             'interest', 'value', 'contact_name', 'contact_phone', 'next_follow_up_date', 'notes',
         ]
         widgets = {
-            'title': forms.TextInput(attrs={'class': 'input'}),
+            'title': forms.TextInput(attrs={'class': 'input readonly-code', 'readonly': 'readonly', 'aria-readonly': 'true'}),
             'commercial_funnel': forms.Select(attrs={'class': 'input'}),
-            'funnel_type': forms.Select(attrs={'class': 'input'}),
             'stage': forms.Select(attrs={'class': 'input'}),
             'origin': forms.Select(attrs={'class': 'input'}),
             'value': forms.NumberInput(attrs={'class': 'input', 'min': '0', 'step': '0.01', 'data-opportunity-value': '1'}),
@@ -1129,9 +1140,8 @@ class CommercialOpportunityForm(forms.ModelForm):
             'notes': forms.Textarea(attrs={'class': 'input', 'rows': 4}),
         }
         labels = {
-            'title': 'Nome da oportunidade',
+            'title': 'Código da oportunidade',
             'commercial_funnel': 'Funil',
-            'funnel_type': 'Tipo',
             'stage': 'Etapa',
             'origin': 'Origem',
             'value': 'Valor',
@@ -1144,11 +1154,15 @@ class CommercialOpportunityForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.available_trial_slots = kwargs.pop('available_trial_slots', [])
         self.has_existing_trial_lesson = kwargs.pop('has_existing_trial_lesson', False)
+        self.generated_title = kwargs.pop('generated_title', '')
         super().__init__(*args, **kwargs)
         self.dynamic_field_names = []
         self.selected_funnel = None
         self.interest_value_map = {}
         self.trial_lesson_payload = None
+        if not self.is_bound and not (self.instance and self.instance.pk) and self.generated_title:
+            self.fields['title'].initial = self.generated_title
+        self.fields['next_follow_up_date'].required = False
         self.fields['status'].initial = self.STATUS_ACTIVE if self.instance.active else self.STATUS_INACTIVE
         self._configure_interest_choices()
         self._configure_trial_lesson_fields()
@@ -1248,15 +1262,10 @@ class CommercialOpportunityForm(forms.ModelForm):
         return ''
 
     def _configure_standard_field_querysets(self):
-        funnel_types = FunnelType.objects.filter(active=True).order_by('name')
         stages = FunnelStage.objects.filter(active=True).order_by('order', 'name')
         origins = OpportunityOrigin.objects.filter(active=True).order_by('name')
 
         if self.instance and self.instance.pk:
-            if self.instance.funnel_type_id:
-                funnel_types = FunnelType.objects.filter(
-                    pk__in=list(funnel_types.values_list('pk', flat=True)) + [self.instance.funnel_type_id]
-                ).order_by('name')
             if self.instance.stage_id:
                 stages = FunnelStage.objects.filter(
                     pk__in=list(stages.values_list('pk', flat=True)) + [self.instance.stage_id]
@@ -1266,7 +1275,6 @@ class CommercialOpportunityForm(forms.ModelForm):
                     pk__in=list(origins.values_list('pk', flat=True)) + [self.instance.origin_id]
                 ).order_by('name')
 
-        self.fields['funnel_type'].queryset = funnel_types
         self.fields['stage'].queryset = stages
         self.fields['origin'].queryset = origins
 
@@ -1352,8 +1360,10 @@ class CommercialOpportunityForm(forms.ModelForm):
 
     def clean_title(self):
         value = (self.cleaned_data.get('title') or '').strip()
+        if self.instance and self.instance.pk:
+            return self.instance.title
         if not value:
-            raise forms.ValidationError('Informe o nome da oportunidade.')
+            value = self.generated_title or self.initial.get('title') or 'Oportunidade automática'
         return value
 
     def clean_contact_name(self):
@@ -1372,8 +1382,17 @@ class CommercialOpportunityForm(forms.ModelForm):
         cleaned = super().clean()
         interest = cleaned.get('interest') or ''
         value = cleaned.get('value')
+        stage = cleaned.get('stage')
+        next_follow_up_date = cleaned.get('next_follow_up_date')
         cleaned['_interest_course'] = None
         cleaned['_interest_type'] = ''
+
+        if is_lost_stage(stage):
+            cleaned['status'] = self.STATUS_INACTIVE
+            if not next_follow_up_date:
+                cleaned['next_follow_up_date'] = add_months(timezone.localdate(), 3)
+        elif not next_follow_up_date:
+            self.add_error('next_follow_up_date', 'Informe a data do próximo follow-up.')
 
         if not interest:
             cleaned['value'] = None
@@ -1417,8 +1436,6 @@ class CommercialOpportunityForm(forms.ModelForm):
         if slot_value or lesson_kind or course:
             if not lesson_kind:
                 self.add_error('trial_lesson_kind', 'Informe se a aula é Experimental ou Play.')
-            if not course:
-                self.add_error('trial_lesson_course', 'Selecione o curso da aula.')
             if not slot_value:
                 self.add_error('trial_lesson_slot', 'Selecione um horário livre para a aula.')
 
@@ -1431,7 +1448,7 @@ class CommercialOpportunityForm(forms.ModelForm):
             self.add_error('trial_lesson_slot', 'Selecione um horário livre válido.')
             return
 
-        if lesson_kind and course:
+        if lesson_kind:
             self.trial_lesson_payload = {
                 'trial_kind': lesson_kind,
                 'course': course,
@@ -1442,9 +1459,21 @@ class CommercialOpportunityForm(forms.ModelForm):
                 'notes': notes,
             }
 
+    def _inferred_funnel_type(self):
+        if self.selected_funnel and self.selected_funnel.funnel_model.funnel_type_id:
+            return self.selected_funnel.funnel_model.funnel_type
+        funnel = self.selected_funnel
+        if not funnel and self.instance and self.instance.commercial_funnel_id:
+            funnel = self.instance.commercial_funnel
+        if not funnel:
+            return self.instance.funnel_type if self.instance and self.instance.pk else None
+        code = slugify(funnel.name)
+        return FunnelType.objects.filter(code=code).first() or FunnelType.objects.filter(name__iexact=funnel.name).first()
+
     def save(self, commit=True):
         opportunity = super().save(commit=False)
         opportunity.active = self.cleaned_data.get('status') == self.STATUS_ACTIVE
+        opportunity.funnel_type = self._inferred_funnel_type()
         opportunity.interest_course = self.cleaned_data.get('_interest_course')
         opportunity.interest_type = self.cleaned_data.get('_interest_type') or ''
         if not self.cleaned_data.get('interest'):

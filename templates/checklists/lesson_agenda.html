@@ -101,7 +101,7 @@
           <span class="badge pending">Checklist</span>
         {% endif %}
       </td>
-      <td>{{ lesson.course.name }}</td>
+      <td>{% if lesson.course %}{{ lesson.course.name }}{% else %}Definir durante a aula{% endif %}</td>
       <td>{{ lesson.room.name }}</td>
       <td><span class="badge {% if lesson.status == 'scheduled' %}pending{% elif lesson.status == 'done' %}done{% elif lesson.status == 'cancelled' %}blocked{% else %}neutral{% endif %}">{{ lesson.get_status_display }}</span></td>
       <td>

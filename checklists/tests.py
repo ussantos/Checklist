@@ -7,7 +7,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .forms import CommercialOpportunityForm
+from .forms import CommercialOpportunityForm, add_months
 from .models import (
     CommercialFunnel, CommercialOpportunity, Course, FunnelModel, FunnelStage,
     FunnelType, Lesson, LessonFeedback, OpportunityOrigin, PedagogicalStudent, Position,
@@ -483,9 +483,8 @@ class CommercialOpportunityInterestFormTests(TestCase):
 
     def _form_data(self, **kwargs):
         data = {
-            'title': 'Oportunidade teste',
+            'title': '06-2026-0001',
             'commercial_funnel': str(self.funnel.pk),
-            'funnel_type': str(self.funnel_type.pk),
             'stage': str(self.stage.pk),
             'origin': str(self.origin.pk),
             'interest': '',
@@ -494,7 +493,6 @@ class CommercialOpportunityInterestFormTests(TestCase):
             'contact_phone': '21999990000',
             'next_follow_up_date': '2026-07-10',
             'status': CommercialOpportunityForm.STATUS_ACTIVE,
-            'follow_up_note': '',
             'notes': '',
         }
         data.update(kwargs)
@@ -598,6 +596,53 @@ class CommercialOpportunityInterestFormTests(TestCase):
         self.assertEqual(form.trial_lesson_payload['course'], self.course)
         self.assertEqual(form.trial_lesson_payload['room'], self.room)
 
+    def test_trial_lesson_can_leave_course_to_define_during_class(self):
+        stage = FunnelStage.objects.create(
+            code='aula-experimental-sem-curso',
+            name='Aula Experimental Agendada sem curso',
+            active=True,
+            order=4,
+        )
+        selected_date = date(2026, 7, 15)
+        slot = {
+            'value': f'{selected_date.isoformat()}|09:00|11:00|{self.room.pk}',
+            'label': '15/07 09:00-11:00 · Sala Comercial',
+            'date': selected_date,
+            'start_time': time(9, 0),
+            'end_time': time(11, 0),
+            'room': self.room,
+        }
+        form = CommercialOpportunityForm(
+            data=self._form_data(
+                stage=str(stage.pk),
+                trial_lesson_kind=Lesson.TRIAL_KIND_EXPERIMENTAL,
+                trial_lesson_course='',
+                trial_lesson_slot=slot['value'],
+            ),
+            available_trial_slots=[slot],
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNone(form.trial_lesson_payload['course'])
+
+    def test_lost_stage_defaults_inactive_and_future_follow_up(self):
+        lost_stage = FunnelStage.objects.create(
+            code='5-perdido',
+            name='5 - Perdido',
+            active=True,
+            order=5,
+        )
+        form = CommercialOpportunityForm(data=self._form_data(
+            stage=str(lost_stage.pk),
+            next_follow_up_date='',
+            status=CommercialOpportunityForm.STATUS_ACTIVE,
+        ))
+
+        self.assertTrue(form.is_valid(), form.errors)
+        opportunity = form.save()
+        self.assertFalse(opportunity.active)
+        self.assertEqual(opportunity.next_follow_up_date, add_months(timezone.localdate(), 3))
+
 
 class CommercialDashboardTests(TestCase):
     def setUp(self):
@@ -628,8 +673,24 @@ class CommercialDashboardTests(TestCase):
             funnel_model=self.funnel_model,
             active=True,
         )
+        self.interested_type, _ = FunnelType.objects.get_or_create(
+            code='interessados',
+            defaults={'name': 'Interessados', 'active': True},
+        )
+        self.interested_model = FunnelModel.objects.create(
+            name='Modelo interessados',
+            funnel_type=self.interested_type,
+            active=True,
+        )
+        self.interested_funnel = CommercialFunnel.objects.create(
+            name='Interessados',
+            funnel_model=self.interested_model,
+            active=True,
+        )
         self.stage = FunnelStage.objects.create(code='novo-dashboard', name='Novo', active=True, order=1)
         self.origin = OpportunityOrigin.objects.create(code='whatsapp-dashboard', name='WhatsApp', active=True)
+        self.course = Course.objects.create(name='Gamebot', value=Decimal('3690.00'), kit_quantity=1, active=True)
+        self.room = Room.objects.create(name='Sala Comercial', capacity=2, active=True)
 
     def _opportunity(self, *, title, owner, next_follow_up_date, updated_at=None):
         opportunity = CommercialOpportunity.objects.create(
@@ -686,3 +747,76 @@ class CommercialDashboardTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Criar oportunidade')
         self.assertContains(response, 'Agenda da semana')
+
+    def _post_opportunity_data(self, **kwargs):
+        data = {
+            'title': '06-2026-0001',
+            'commercial_funnel': str(self.funnel.pk),
+            'stage': str(self.stage.pk),
+            'origin': str(self.origin.pk),
+            'interest': '',
+            'value': '',
+            'contact_name': 'Responsável Comercial',
+            'contact_phone': '21999990000',
+            'next_follow_up_date': timezone.localdate().isoformat(),
+            'status': CommercialOpportunityForm.STATUS_ACTIVE,
+            'notes': '',
+            'trial_lesson_week': timezone.localdate().isoformat(),
+            'trial_lesson_kind': '',
+            'trial_lesson_course': '',
+            'trial_lesson_slot': '',
+            'trial_lesson_notes': '',
+        }
+        data.update(kwargs)
+        return data
+
+    def test_create_generates_sequential_code_for_opportunity(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse('commercial_opportunity_create'), self._post_opportunity_data())
+
+        self.assertRedirects(response, reverse('commercial_dashboard'))
+        opportunity = CommercialOpportunity.objects.latest('id')
+        self.assertRegex(opportunity.title, r'^\d{2}-\d{4}-0001$')
+
+    def test_lost_stage_moves_to_interested_funnel_and_deactivates(self):
+        lost_stage = FunnelStage.objects.create(code='5-perdido', name='5 - Perdido', active=True, order=5)
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse('commercial_opportunity_create'), self._post_opportunity_data(
+            stage=str(lost_stage.pk),
+            next_follow_up_date='',
+        ))
+
+        self.assertRedirects(response, reverse('commercial_dashboard'))
+        opportunity = CommercialOpportunity.objects.latest('id')
+        self.assertEqual(opportunity.commercial_funnel, self.interested_funnel)
+        self.assertEqual(opportunity.funnel_type, self.interested_type)
+        self.assertFalse(opportunity.active)
+        self.assertEqual(opportunity.next_follow_up_date, add_months(timezone.localdate(), 3))
+
+    def test_scheduling_trial_lesson_moves_to_trial_stage_and_allows_undefined_course(self):
+        trial_stage = FunnelStage.objects.create(
+            code='3-aula-experimental',
+            name='3 - Aula Experimental',
+            active=True,
+            order=3,
+        )
+        target = timezone.localdate() + timedelta(days=((7 - timezone.localdate().weekday()) % 7 or 7))
+        week_start = target - timedelta(days=target.weekday())
+        TimeSlot.objects.create(weekday=target.weekday(), start_time=time(9, 0), end_time=time(11, 0), active=True)
+        slot_value = f'{target.isoformat()}|09:00|11:00|{self.room.pk}'
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse('commercial_opportunity_create'), self._post_opportunity_data(
+            trial_lesson_week=week_start.isoformat(),
+            trial_lesson_kind=Lesson.TRIAL_KIND_EXPERIMENTAL,
+            trial_lesson_course='',
+            trial_lesson_slot=slot_value,
+        ))
+
+        self.assertRedirects(response, reverse('commercial_dashboard'))
+        opportunity = CommercialOpportunity.objects.latest('id')
+        lesson = Lesson.objects.get(commercial_opportunity=opportunity)
+        self.assertEqual(opportunity.stage, trial_stage)
+        self.assertIsNone(lesson.course)

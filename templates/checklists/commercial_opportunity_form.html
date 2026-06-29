@@ -12,13 +12,26 @@
   {% endif %}
 </div>
 
-<form method="post" class="form-stack" id="commercial-opportunity-form">
+<form
+  method="post"
+  class="form-stack opportunity-form"
+  id="commercial-opportunity-form"
+  data-trial-stage-id="{{ trial_lesson_stage_id }}"
+  data-lost-stage-id="{{ lost_stage_id }}"
+  data-interested-funnel-id="{{ interested_funnel_id }}"
+  data-lost-follow-up-date="{{ lost_follow_up_date|date:'Y-m-d' }}"
+>
   {% csrf_token %}
   <input type="hidden" name="trial_lesson_week" value="{{ week_start|date:'Y-m-d' }}">
-  <section class="panel">
-    <h2>Dados da oportunidade</h2>
+  <section class="panel opportunity-form-panel">
+    <div class="section-heading">
+      <div>
+        <h2>Dados da oportunidade</h2>
+        <p class="muted">Preencha primeiro o funil, a etapa e o contato. O código é gerado automaticamente.</p>
+      </div>
+    </div>
     {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
-    <div class="form-grid">
+    <div class="form-grid opportunity-main-grid">
       <p>
         {{ form.title.label_tag }}
         {{ form.title }}
@@ -26,23 +39,12 @@
       </p>
       <p>
         <label>Data de criação da oportunidade</label>
-        <span class="readonly-field">
-          {% if opportunity %}
-            {{ opportunity.created_at|date:"d/m/Y" }}
-          {% else %}
-            Preenchida automaticamente ao criar
-          {% endif %}
-        </span>
+        <span class="readonly-field">{{ creation_date|date:"d/m/Y" }}</span>
       </p>
       <p>
         {{ form.commercial_funnel.label_tag }}
         {{ form.commercial_funnel }}
         {{ form.commercial_funnel.errors }}
-      </p>
-      <p>
-        {{ form.funnel_type.label_tag }}
-        {{ form.funnel_type }}
-        {{ form.funnel_type.errors }}
       </p>
       <p>
         {{ form.stage.label_tag }}
@@ -84,48 +86,33 @@
         {{ form.status }}
         {{ form.status.errors }}
       </p>
-      <p>
-        {{ form.follow_up_note.label_tag }}
-        {{ form.follow_up_note }}
-        {{ form.follow_up_note.errors }}
-      </p>
-      <p>
+      {% if form.selected_funnel and form.custom_bound_fields %}
+        {% for field in form.custom_bound_fields %}
+          <p>
+            {{ field.label_tag }}
+            {{ field }}
+            {{ field.errors }}
+          </p>
+        {% endfor %}
+      {% endif %}
+      <p class="form-grid-wide">
         {{ form.notes.label_tag }}
         {{ form.notes }}
         {{ form.notes.errors }}
       </p>
     </div>
-  </section>
-
-  <section class="panel">
-    <h2>Campos do modelo</h2>
     {% if form.selected_funnel %}
-      <p class="muted">
-        Modelo: {{ form.selected_funnel.funnel_model }}.
-      </p>
-      {% if form.custom_bound_fields %}
-        <div class="form-grid">
-          {% for field in form.custom_bound_fields %}
-            <p>
-              {{ field.label_tag }}
-              {{ field }}
-              {{ field.errors }}
-            </p>
-          {% endfor %}
-        </div>
-      {% else %}
-        <p class="muted">O modelo deste funil não possui campos adicionais.</p>
-      {% endif %}
+      <p class="muted form-note">Modelo: {{ form.selected_funnel.funnel_model }}.</p>
     {% else %}
-      <p class="muted">Selecione um funil para carregar os campos adicionais do modelo.</p>
+      <p class="muted form-note">Selecione um funil para carregar os campos adicionais do modelo.</p>
     {% endif %}
   </section>
 
-  <section class="panel">
+  <section class="panel opportunity-form-panel">
     <div class="section-heading">
       <div>
         <h2>Agenda da semana</h2>
-        <p class="muted">Horários livres para Aula Experimental ou Play.</p>
+        <p class="muted">Escolher um horário muda a etapa para 3 - Aula Experimental.</p>
       </div>
       <div class="row-actions">
         <a class="btn small" href="?semana={{ previous_week|date:'Y-m-d' }}{% if form.selected_funnel %}&funil={{ form.selected_funnel.id }}{% endif %}">Semana anterior</a>
@@ -159,7 +146,7 @@
         <span>Não agendar agora</span>
       </label>
       {% for day in available_trial_slots_by_day %}
-        <div class="trial-slot-day">
+        <div class="trial-slot-day weekday-{{ day.date|date:'w' }}">
           <h3>{{ day.date|date:"l, d/m" }}</h3>
           <div class="trial-slot-options">
             {% for slot in day.slots %}
@@ -209,7 +196,7 @@
         <td>{{ lesson.date|date:"d/m/Y" }}</td>
         <td>{{ lesson.start_time|time:"H:i" }} - {{ lesson.end_time|time:"H:i" }}</td>
         <td>{{ lesson.get_trial_kind_display|default:"-" }}</td>
-        <td>{{ lesson.course.name }}</td>
+        <td>{% if lesson.course %}{{ lesson.course.name }}{% else %}Definir durante a aula{% endif %}</td>
         <td>{{ lesson.room.name }}</td>
         <td>{{ lesson.get_status_display }}</td>
         <td><a class="btn small" href="{% url 'pedagogical_lesson_edit' lesson.id %}">Editar</a></td>
@@ -296,6 +283,56 @@
   })();
 </script>
 {% endif %}
+<script>
+  (() => {
+    const form = document.getElementById('commercial-opportunity-form');
+    if (!form) return;
+
+    const stageSelect = document.getElementById('id_stage');
+    const statusSelect = document.getElementById('id_status');
+    const funnelSelect = document.getElementById('id_commercial_funnel');
+    const followUpInput = document.getElementById('id_next_follow_up_date');
+    const trialStageId = form.dataset.trialStageId || '';
+    const lostStageId = form.dataset.lostStageId || '';
+    const interestedFunnelId = form.dataset.interestedFunnelId || '';
+    const lostFollowUpDate = form.dataset.lostFollowUpDate || '';
+
+    const markTrialStage = () => {
+      if (stageSelect && trialStageId) {
+        stageSelect.value = trialStageId;
+      }
+      if (statusSelect) {
+        statusSelect.value = 'active';
+      }
+    };
+
+    const applyLostStage = () => {
+      if (!stageSelect || !lostStageId || stageSelect.value !== lostStageId) return;
+      if (statusSelect) {
+        statusSelect.value = 'inactive';
+      }
+      if (followUpInput && lostFollowUpDate) {
+        followUpInput.value = lostFollowUpDate;
+      }
+      if (funnelSelect && interestedFunnelId) {
+        funnelSelect.value = interestedFunnelId;
+      }
+    };
+
+    document.querySelectorAll('input[name="{{ form.trial_lesson_slot.html_name }}"]').forEach((radio) => {
+      radio.addEventListener('change', () => {
+        if (radio.checked && radio.value) {
+          markTrialStage();
+        }
+      });
+    });
+
+    if (stageSelect) {
+      stageSelect.addEventListener('change', applyLostStage);
+      applyLostStage();
+    }
+  })();
+</script>
 <script id="interest-value-map" type="application/json">{{ form.interest_value_map_json|safe }}</script>
 <script>
   (() => {

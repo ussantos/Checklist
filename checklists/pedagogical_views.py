@@ -713,7 +713,7 @@ def lesson_create(request):
         if opportunity:
             initial.update({
                 'commercial_opportunity': opportunity.pk,
-                'student_name_snapshot': opportunity.title,
+                'student_name_snapshot': opportunity.contact_name,
                 'responsible_name_snapshot': opportunity.contact_name,
                 'whatsapp_snapshot': opportunity.contact_phone,
                 'course': opportunity.interest_course_id,

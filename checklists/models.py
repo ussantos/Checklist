@@ -123,7 +123,8 @@ class FunnelStage(models.Model):
         text = slugify(f'{self.code} {self.name}')
         has_trial = 'experimental' in text or 'experiental' in text
         has_scheduled = 'agendada' in text or 'agendado' in text
-        return 'aula' in text and has_trial and has_scheduled
+        is_standard_trial_stage = text.startswith('3-') and 'aula' in text and has_trial
+        return 'aula' in text and has_trial and (has_scheduled or is_standard_trial_stage)
 
     def has_usage(self):
         return self.legacy_funnel_models.exists() or self.opportunities.exists()
@@ -614,7 +615,7 @@ class Lesson(models.Model):
     lesson_type = models.CharField('Tipo', max_length=20, choices=TYPE_CHOICES, default=TYPE_REGULAR)
     trial_kind = models.CharField('Tipo de aula experimental ou Play', max_length=20, choices=TRIAL_KIND_CHOICES, blank=True)
     commercial_opportunity = models.ForeignKey(CommercialOpportunity, on_delete=models.PROTECT, related_name='trial_lessons', verbose_name='Oportunidade', null=True, blank=True)
-    course = models.ForeignKey(Course, on_delete=models.PROTECT, related_name='lessons', verbose_name='Curso')
+    course = models.ForeignKey(Course, on_delete=models.PROTECT, related_name='lessons', verbose_name='Curso', null=True, blank=True)
     room = models.ForeignKey(Room, on_delete=models.PROTECT, related_name='lessons', verbose_name='Sala')
     date = models.DateField('Data')
     start_time = models.TimeField('Início')
@@ -648,7 +649,8 @@ class Lesson(models.Model):
         verbose_name_plural = 'Aulas'
 
     def __str__(self):
-        return f'{self.student_name_snapshot} - {self.course} - {self.date:%d/%m/%Y} {self.start_time:%H:%M}'
+        course_label = self.course if self.course_id else 'Curso a definir'
+        return f'{self.student_name_snapshot} - {course_label} - {self.date:%d/%m/%Y} {self.start_time:%H:%M}'
 
     def _duration_hours(self):
         if not self.date or not self.start_time or not self.end_time:
@@ -694,6 +696,8 @@ class Lesson(models.Model):
 
         if self.lesson_type == self.TYPE_REGULAR and not self.student_id:
             errors['student'] = 'Selecione um aluno para aula de matriculado.'
+        if self.lesson_type == self.TYPE_REGULAR and not self.course_id:
+            errors['course'] = 'Selecione um curso para aula de matriculado.'
         if self.lesson_type == self.TYPE_TRIAL:
             if not self.trial_kind:
                 errors['trial_kind'] = 'Informe se a aula é Experimental ou Play.'

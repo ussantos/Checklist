@@ -8,12 +8,14 @@ from django.db.models import Count
 from django.db.models.deletion import ProtectedError
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
 from .audit import changed_values, log_activity, snapshot_instance
 from .forms import (
     CommercialFunnelForm, CommercialOpportunityForm, FunnelModelFieldFormSet,
     FunnelModelForm, FunnelStageForm, FunnelTypeForm, OpportunityOriginForm,
+    add_months, is_lost_stage,
 )
 from .models import (
     CommercialFunnel, CommercialOpportunity, CommercialOpportunityFollowUp,
@@ -138,6 +140,83 @@ def _record_stage_event(*, opportunity, actor, previous_stage=None, note=''):
     )
 
 
+def _next_opportunity_code():
+    today = timezone.localdate()
+    prefix = f'{today:%m-%Y}-'
+    existing_titles = CommercialOpportunity.objects.filter(title__startswith=prefix).values_list('title', flat=True)
+    highest = 0
+    for title in existing_titles:
+        try:
+            number = int(str(title).removeprefix(prefix))
+        except (TypeError, ValueError):
+            continue
+        highest = max(highest, number)
+    return f'{prefix}{highest + 1:04d}'
+
+
+def _stage_by_code_or_text(*, code='', text=''):
+    if code:
+        stage = FunnelStage.objects.filter(code=code).first()
+        if stage:
+            return stage
+    text = slugify(text or code)
+    for stage in FunnelStage.objects.all().order_by('order', 'name'):
+        candidate = slugify(f'{stage.code} {stage.name}')
+        if text and text in candidate:
+            return stage
+    return None
+
+
+def _trial_lesson_stage():
+    return _stage_by_code_or_text(code='3-aula-experimental', text='aula experimental')
+
+
+def _interested_funnel_type():
+    return (
+        FunnelType.objects.filter(code='interessados').first()
+        or FunnelType.objects.filter(name__iexact='Interessados').first()
+    )
+
+
+def _interested_funnel():
+    funnel_type = _interested_funnel_type()
+    queryset = CommercialFunnel.objects.select_related('funnel_model').order_by('-active', 'name')
+    if funnel_type:
+        return (
+            queryset.filter(name__iexact=funnel_type.name).first()
+            or queryset.filter(funnel_model__funnel_type=funnel_type).first()
+        )
+    return queryset.filter(name__iexact='Interessados').first()
+
+
+def _apply_opportunity_business_rules(opportunity, *, form):
+    if form.trial_lesson_payload:
+        trial_stage = _trial_lesson_stage()
+        if trial_stage:
+            opportunity.stage = trial_stage
+
+    if is_lost_stage(opportunity.stage):
+        interested_funnel = _interested_funnel()
+        if interested_funnel:
+            opportunity.commercial_funnel = interested_funnel
+            opportunity.funnel_type = (
+                interested_funnel.funnel_model.funnel_type
+                or _interested_funnel_type()
+                or opportunity.funnel_type
+            )
+        else:
+            opportunity.funnel_type = _interested_funnel_type() or opportunity.funnel_type
+        opportunity.next_follow_up_date = add_months(timezone.localdate(), 3)
+        opportunity.active = False
+    elif not opportunity.funnel_type_id:
+        opportunity.funnel_type = (
+            getattr(opportunity.commercial_funnel.funnel_model, 'funnel_type', None)
+            or FunnelType.objects.filter(code=slugify(opportunity.commercial_funnel.name)).first()
+            or FunnelType.objects.filter(name__iexact=opportunity.commercial_funnel.name).first()
+        )
+    return opportunity
+
+
 def _parse_week_start(value):
     today = timezone.localdate()
     if value:
@@ -226,7 +305,7 @@ def _build_trial_lesson_from_form(*, opportunity, form, actor):
         lesson_type=Lesson.TYPE_TRIAL,
         trial_kind=payload['trial_kind'],
         commercial_opportunity=opportunity,
-        student_name_snapshot=opportunity.title,
+        student_name_snapshot=opportunity.contact_name,
         responsible_name_snapshot=opportunity.contact_name,
         whatsapp_snapshot=opportunity.contact_phone,
         course=payload['course'],
@@ -291,6 +370,11 @@ def _commercial_form_context(request, *, form, title, submit_label, opportunity=
         'available_trial_slots_by_day': _group_slots_by_day(slots),
         'selected_trial_lesson_slot': selected_slot,
         'selected_stage_requires_trial_lesson': form.selected_stage_requires_trial_lesson,
+        'creation_date': opportunity.created_at.date() if opportunity else timezone.localdate(),
+        'trial_lesson_stage_id': getattr(_trial_lesson_stage(), 'id', ''),
+        'lost_stage_id': getattr(_stage_by_code_or_text(code='5-perdido', text='perdido'), 'id', ''),
+        'interested_funnel_id': getattr(_interested_funnel(), 'id', ''),
+        'lost_follow_up_date': add_months(timezone.localdate(), 3),
     }
     if extra:
         context.update(extra)
@@ -1036,12 +1120,17 @@ def commercial_opportunity_create(request):
     )
     slots = _available_trial_slots(week_start)
     if request.method == 'POST':
-        form = CommercialOpportunityForm(request.POST, available_trial_slots=slots)
+        generated_code = _next_opportunity_code()
+        post_data = request.POST.copy()
+        post_data['title'] = generated_code
+        form = CommercialOpportunityForm(post_data, available_trial_slots=slots, generated_title=generated_code)
         if form.is_valid():
             try:
                 with transaction.atomic():
                     opportunity = form.save(commit=False)
+                    opportunity.title = generated_code
                     opportunity.owner = request.user
+                    _apply_opportunity_business_rules(opportunity, form=form)
                     opportunity.save()
                     opportunity = _commercial_opportunity_queryset().get(pk=opportunity.pk)
                     lesson = _build_trial_lesson_from_form(opportunity=opportunity, form=form, actor=request.user)
@@ -1058,7 +1147,7 @@ def commercial_opportunity_create(request):
                         opportunity=opportunity,
                         actor=request.user,
                         previous_date=None,
-                        note=form.cleaned_data.get('follow_up_note') or 'Follow-up inicial da oportunidade.',
+                        note='Follow-up inicial da oportunidade.',
                     )
                     log_activity(
                         actor=request.user,
@@ -1073,11 +1162,11 @@ def commercial_opportunity_create(request):
             except ValidationError as exc:
                 form.add_error('trial_lesson_slot', '; '.join(exc.messages))
     else:
-        initial = {}
+        initial = {'title': _next_opportunity_code()}
         funnel_id = request.GET.get('funil')
         if funnel_id and funnel_id.isdigit():
             initial['commercial_funnel'] = funnel_id
-        form = CommercialOpportunityForm(initial=initial, available_trial_slots=slots)
+        form = CommercialOpportunityForm(initial=initial, available_trial_slots=slots, generated_title=initial['title'])
 
     return render(request, 'checklists/commercial_opportunity_form.html', _commercial_form_context(
         request,
@@ -1103,8 +1192,10 @@ def commercial_opportunity_edit(request, opportunity_id):
     previous_values_full = _commercial_opportunity_snapshot(opportunity)
     has_existing_trial_lesson = opportunity.trial_lessons.exists()
     if request.method == 'POST':
+        post_data = request.POST.copy()
+        post_data['title'] = opportunity.title
         form = CommercialOpportunityForm(
-            request.POST,
+            post_data,
             instance=opportunity,
             available_trial_slots=slots,
             has_existing_trial_lesson=has_existing_trial_lesson,
@@ -1115,6 +1206,7 @@ def commercial_opportunity_edit(request, opportunity_id):
                     opportunity = form.save(commit=False)
                     if not opportunity.owner_id:
                         opportunity.owner = request.user
+                    _apply_opportunity_business_rules(opportunity, form=form)
                     opportunity.save()
                     opportunity = _commercial_opportunity_queryset().get(pk=opportunity.pk)
                     lesson = _build_trial_lesson_from_form(opportunity=opportunity, form=form, actor=request.user)
@@ -1128,13 +1220,12 @@ def commercial_opportunity_edit(request, opportunity_id):
                             previous_stage=previous_stage,
                             note='Etapa alterada na edição da oportunidade.',
                         )
-                    follow_up_note = form.cleaned_data.get('follow_up_note') or ''
-                    if previous_follow_up_date != opportunity.next_follow_up_date or follow_up_note.strip():
+                    if previous_follow_up_date != opportunity.next_follow_up_date:
                         _record_follow_up_event(
                             opportunity=opportunity,
                             actor=request.user,
                             previous_date=previous_follow_up_date,
-                            note=follow_up_note,
+                            note='Data do próximo follow-up alterada.',
                         )
                     previous_values, new_values = changed_values(
                         previous_values_full,
