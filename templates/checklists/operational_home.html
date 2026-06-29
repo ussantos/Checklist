@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Área operacional</h1>
+    <p class="muted">
+      {% if position %}{{ position.name }}{% else %}Usuário comum{% endif %}
+    </p>
+  </div>
+</div>
+
+<section class="panel info-light">
+  <h2>Módulos em reformulação</h2>
+  <p class="muted">
+    As telas operacionais antigas foram removidas para a próxima etapa de redesenho do sistema.
+  </p>
+</section>
+
+<section class="panel">
+  <h2>Acesso disponível</h2>
+  <p class="muted">Neste momento, seu acesso permanece ativo para autenticação e troca de senha.</p>
+  <a class="btn primary" href="{% url 'password_change' %}">Trocar senha</a>
+</section>
+{% endblock %}

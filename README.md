@@ -2,9 +2,11 @@
 
 [For English click here](#english-us)
 
-Sistema web interno para controle de checklist operacionais da My Robot Barra da Tijuca.
+Sistema web interno para administração operacional da My Robot Barra da Tijuca.
 
-A aplicação controla a rotina por **cargo**, mas o acesso é feito por **usuário nominal**. Isso evita uso de login genérico e preserva evidência trabalhista/operacional: cada lançamento fica associado ao usuário logado e ao cargo exercido.
+A aplicação controla acessos por **cargo**, mas o login é feito por **usuário nominal**. Isso evita uso de login genérico e preserva rastreabilidade administrativa.
+
+> Estado atual: os módulos antigos de Ausências, Checklist do dia, Semana, Indicadores, Atividades e Comercial foram removidos da navegação e das rotas internas. Os dados/modelos legados podem permanecer no banco para histórico até a definição dos novos módulos.
 
 ## Licença e disclaimer de uso
 
@@ -31,10 +33,10 @@ Use o checklist de produção antes de liberar o sistema oficialmente. Use o gui
 
 O sistema trabalha com dois perfis lógicos:
 
-- **Administrador**: acompanha todos os cargos, cadastra usuários, redefine senhas, configura atividades/indicadores/metas e acessa relatórios gerais.
-- **Usuário comum/operacional**: executa atividades, registra evidências quando exigidas e acompanha apenas seus próprios indicadores e metas.
+- **Administrador**: cadastra usuários, redefine senhas, gerencia tipos/cargos, consulta histórico/auditoria e administra backups.
+- **Usuário comum/operacional**: acessa a área operacional e troca a própria senha enquanto os novos módulos operacionais são redesenhados.
 
-Os tipos/cargos de usuários comuns são configuráveis, por exemplo **Atendente Comercial**, **Instrutor de Cursos Livres** ou outros cargos futuros. Cargos, usuários, atividades e indicadores não devem ser excluídos fisicamente pela interface; quando deixam de valer, são inativados para preservar histórico.
+Os tipos/cargos de usuários comuns são configuráveis, por exemplo **Atendente Comercial**, **Instrutor de Cursos Livres** ou outros cargos futuros. Cargos e usuários não devem ser excluídos fisicamente pela interface; quando deixam de valer, são inativados para preservar histórico.
 
 ## Funcionamento de usuários
 
@@ -59,30 +61,26 @@ Senhas criadas ou redefinidas por administradores seguem essa regra automaticame
 - Cadastro nominal de usuários por administradores.
 - Criação de usuários com função de Administrador ou cargo operacional.
 - Geração automática de senha temporária forte para novos usuários e redefinições.
-- Checklist por cargo com visões de dia, semana e mês para usuários comuns.
-- Sugestão de novas atividades ou desativação de atividades por usuários comuns, com aprovação administrativa.
-- CRUD administrativo de tipos/cargos, atividades e indicadores, sempre com inativação lógica.
-- Dashboard interno de indicadores e metas por período.
-- Histórico filtrável.
+- CRUD administrativo de tipos/cargos.
+- Dashboard administrativo enxuto.
+- Histórico legado filtrável.
 - Auditoria administrativa com antes/depois e exportação CSV.
 - Exportação CSV.
-- Evidência textual por atividade.
-- Upload de múltiplos arquivos por atividade.
-- Suporte a PDF, imagens, prints e fotos.
-- Identificação automática do usuário logado em cada lançamento.
-- Anexos protegidos por login e permissão no cargo.
+- Anexos legados protegidos por login e permissão no cargo.
 - Painel administrativo Django para manutenção avançada.
 - Backup diário configurável com dump PostgreSQL, arquivos de evidência e configurações.
 - Script de restauração.
 
-## Status das atividades operacionais
+Módulos removidos nesta etapa: Ausências, Checklist do dia, Semana, Indicadores, Atividades e Comercial.
+
+## Histórico legado de atividades
 
 - Pendente
 - Executando
 - Atrasada
 - Concluída
 
-Ao marcar uma atividade como **Concluída**, o sistema exige evidência textual ou pelo menos um arquivo anexado quando a atividade estiver configurada para exigir evidência. Para **Atrasada**, o sistema exige observação operacional.
+Os status acima podem aparecer apenas em registros históricos criados antes da remoção das telas antigas de execução.
 
 ## Evidências aceitas
 
@@ -161,7 +159,7 @@ cd /opt/checklist
 docker compose up -d --build
 ```
 
-Por padrão, o container não recria automaticamente as atividades e indicadores operacionais. Para carregar a base operacional padrão, defina `AUTO_SEED_OPERATIONAL_DATA=True` no `.env` ou rode manualmente:
+Por padrão, o container não recria atividades e indicadores operacionais antigos. O comando abaixo mantém apenas os cargos operacionais base:
 
 ```bash
 docker compose exec web python manage.py seed_operational_data
@@ -215,11 +213,11 @@ Antes de liberar uso oficial, execute os testes em `docs/TESTE_PRODUCAO.md`.
 
 ### Administradores
 
-Usuários administradores podem cadastrar outros administradores, cadastrar usuários operacionais, definir cargos, configurar atividades e indicadores/metas, aprovar sugestões de atividades, redefinir senha, visualizar dashboards, filtrar histórico, exportar CSV, consultar auditoria administrativa, revisar evidências e acessar o painel `/admin/`.
+Usuários administradores podem cadastrar outros administradores, cadastrar usuários operacionais, definir cargos, redefinir senha, consultar dashboard administrativo, filtrar histórico, exportar CSV, consultar auditoria administrativa, administrar backups e acessar o painel `/admin/`.
 
 ### Usuários operacionais
 
-Usuários operacionais acessam o sistema com usuário individual. O sistema mostra apenas atividades, indicadores e metas de acordo com o cargo cadastrado, grava automaticamente o nome do usuário logado no histórico e permite sugerir novas atividades ou desativação de atividades existentes.
+Usuários operacionais acessam o sistema com usuário individual e visualizam uma área operacional neutra enquanto os módulos de execução são redesenhados.
 
 ## Backup diário
 
@@ -227,7 +225,7 @@ A tela administrativa **Backups** permite configurar o horário do backup diári
 
 No `rclone`, cada **remoto** é uma conta configurada. Se você criar o remoto `gdrive` autenticado com uma conta Google e o remoto `onedrive` autenticado com uma conta Microsoft, a tela Backups usará a conta do remoto selecionado. Na tela, informe o remoto e a pasta, por exemplo remoto `gdrive` e pasta `MyRobotBackups/checklist`, que formam o destino `gdrive:MyRobotBackups/checklist`.
 
-O serviço `backup` do Docker Compose executa o agendador interno e roda o backup uma vez por dia no horário configurado. O script `scripts/backup.sh` continua disponível para execução manual, chamando o comando Django `run_configured_backup`.
+O serviço `backup` do Docker Compose executa o agendador interno e roda o backup uma vez por dia no horário configurado. Por padrão, o agendador verifica a cada 15 minutos (`BACKUP_SCHEDULER_INTERVAL_SECONDS=900`) se o horário já venceu. O script `scripts/backup.sh` continua disponível para execução manual, chamando o comando Django `run_configured_backup`.
 
 Cada backup gera dump PostgreSQL, `media.tar.gz` com evidências e anexos, `.env`, configurações, seeds, scripts e o pacote único `backup_package.tar.gz`, que pode ser enviado pela tela para restore. A retenção padrão é de **30 dias** tanto local quanto na nuvem. Os diretórios `backups/` e `rclone/` ficam montados nos containers `web`/`backup` e devem continuar ignorados pelo Git.
 
@@ -292,9 +290,11 @@ O banco de dados deve crescer pouco. O consumo real virá principalmente dos ane
 
 # Checklist - My Robot Barra da Tijuca
 
-Internal web system for managing operational checklists at My Robot Barra da Tijuca.
+Internal web system for operational administration at My Robot Barra da Tijuca.
 
-The application manages routines by **position**, but access is performed through **named user accounts**. This avoids generic shared logins and preserves labor/operational evidence: each entry is associated with the logged-in user and the position they perform.
+The application controls access by **position**, but login is performed through **named user accounts**. This avoids generic shared logins and preserves administrative traceability.
+
+> Current status: the old Absences, Daily Checklist, Week, Indicators, Activities, and Commercial modules were removed from navigation and internal routes. Legacy data/models may remain in the database for history until the new modules are defined.
 
 ## License and Usage Disclaimer
 
@@ -321,10 +321,10 @@ Use the production checklist before officially releasing the system. Use the ann
 
 The system works with two logical profiles:
 
-- **Administrator**: monitors all positions, creates users, resets passwords, configures activities/indicators/goals, and accesses general reports.
-- **Common/operational user**: executes activities, records evidence when required, and sees only their own indicators and goals.
+- **Administrator**: creates users, resets passwords, manages types/positions, checks history/audit, and manages backups.
+- **Common/operational user**: accesses a neutral operational area and changes their own password while the new operational modules are redesigned.
 
-Common-user types/positions are configurable, for example **Commercial Attendant**, **Free Course Instructor**, or future operational positions. Positions, users, activities, and indicators must not be physically deleted through the interface; when they are no longer valid, they are deactivated to preserve history.
+Common-user types/positions are configurable, for example **Commercial Attendant**, **Free Course Instructor**, or future operational positions. Positions and users must not be physically deleted through the interface; when they are no longer valid, they are deactivated to preserve history.
 
 ## User Behavior
 
@@ -349,30 +349,26 @@ Passwords created or reset by administrators follow this rule automatically. The
 - Named user registration by administrators.
 - User creation as Administrator or operational position.
 - Automatic strong temporary password generation for new users and password resets.
-- Position-based checklist with day, week, and month views for common users.
-- Common users can suggest new activities or activity deactivation, subject to administrator approval.
-- Administrative CRUD for user types/positions, activities, and indicators, always using logical deactivation.
-- Internal indicators and goals dashboard by period.
-- Filterable history.
+- Administrative CRUD for user types/positions.
+- Lean administrative dashboard.
+- Filterable legacy history.
 - Administrative audit trail with before/after values and CSV export.
 - CSV export.
-- Textual evidence per activity.
-- Multiple file uploads per activity.
-- Support for PDFs, images, screenshots, and photos.
-- Automatic identification of the logged-in user for each entry.
-- Attachments protected by login and position permission.
+- Legacy attachments protected by login and position permission.
 - Django admin panel for advanced maintenance.
 - Configurable daily backup with PostgreSQL dump, evidence files, and configuration files.
 - Restore script.
 
-## Operational Activity Statuses
+Modules removed in this step: Absences, Daily Checklist, Week, Indicators, Activities, and Commercial.
+
+## Legacy Activity History
 
 - Pending
 - In progress
 - Late
 - Completed
 
-When an activity is marked as **Completed**, the system requires textual evidence or at least one attached file if the activity is configured to require evidence. For **Late**, the system requires an operational note.
+The statuses above may appear only in historical records created before the old activity execution screens were removed.
 
 ## Accepted Evidence
 
@@ -451,7 +447,7 @@ cd /opt/checklist
 docker compose up -d --build
 ```
 
-By default, the container does not automatically recreate operational activities and indicators. To load the default operational dataset, set `AUTO_SEED_OPERATIONAL_DATA=True` in `.env` or run it manually:
+By default, the container does not recreate the old operational activities and indicators. The command below keeps only the base operational positions:
 
 ```bash
 docker compose exec web python manage.py seed_operational_data
@@ -505,11 +501,11 @@ Before official release, run the tests in `docs/TESTE_PRODUCAO.md`.
 
 ### Administrators
 
-Administrators can create other administrators, create operational users, define positions, configure activities and indicators/goals, approve activity suggestions, reset passwords, view dashboards, filter history, export CSV files, consult the administrative audit trail, review evidence, and access the `/admin/` panel.
+Administrators can create other administrators, create operational users, define positions, reset passwords, view the administrative dashboard, filter history, export CSV files, consult the administrative audit trail, manage backups, and access the `/admin/` panel.
 
 ### Operational Users
 
-Operational users access the system with individual user accounts. The system shows only activities, indicators, and goals according to the user's registered position, automatically records the logged-in user's name in history, and allows users to suggest new activities or deactivation of existing activities.
+Operational users access the system with individual user accounts and see a neutral operational area while the execution modules are redesigned.
 
 ## Daily Backup
 
@@ -517,7 +513,7 @@ The admin **Backups** screen lets administrators configure the daily backup time
 
 In `rclone`, each **remote** is a configured account. If you create a `gdrive` remote authenticated with one Google account and an `onedrive` remote authenticated with one Microsoft account, the Backups screen will use the account behind the selected remote. In the screen, enter the remote and folder, for example remote `gdrive` and folder `MyRobotBackups/checklist`, which form the destination `gdrive:MyRobotBackups/checklist`.
 
-The Docker Compose `backup` service runs the internal scheduler and creates one backup per day at the configured time. The `scripts/backup.sh` script remains available for manual execution and calls the Django `run_configured_backup` command.
+The Docker Compose `backup` service runs the internal scheduler and creates one backup per day at the configured time. By default, the scheduler checks every 15 minutes (`BACKUP_SCHEDULER_INTERVAL_SECONDS=900`) whether the configured time is due. The `scripts/backup.sh` script remains available for manual execution and calls the Django `run_configured_backup` command.
 
 Each backup includes the PostgreSQL dump, `media.tar.gz` with evidence files and attachments, `.env`, settings, seeds, scripts, and the single-file `backup_package.tar.gz`, which can be uploaded in the screen for restore. The default retention is **30 days** both locally and in the cloud. The `backups/` and `rclone/` directories are mounted into the `web`/`backup` containers and must remain ignored by Git.
 

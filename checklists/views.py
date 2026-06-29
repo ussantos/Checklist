@@ -25,8 +25,8 @@ from .forms import (
 )
 from .models import (
     ActivityLog, ActivitySuggestion, BackupConfiguration, ChecklistOccurrence,
-    ChecklistOccurrenceStatusEvent, DailyNote, EvidenceAttachment, MetricRecord,
-    MetricType, Position, TaskTemplate, UserProfile,
+    ChecklistOccurrenceStatusEvent, DailyNote, EvidenceAttachment,
+    MetricRecord, MetricType, Position, TaskTemplate, UserProfile,
 )
 from .activity_import import (
     build_activity_import_template, import_activity_rows, parse_activity_import,
@@ -159,38 +159,32 @@ def _role_initial(profile):
 @login_required
 def dashboard(request):
     if not is_admin_user(request.user):
-        return redirect('activities')
+        return redirect('operational_home')
 
-    today = timezone.localdate()
-    metric_period, reference_date = _parse_metric_period(request)
-    positions = visible_positions(request.user)
-    selected_position_id = request.GET.get('cargo') or ''
-    if selected_position_id and selected_position_id.isdigit():
-        positions = positions.filter(pk=selected_position_id)
-    year, month = reference_date.year, reference_date.month
-
-    create_occurrences_for_positions(positions, today)
-
-    summary = monthly_summary(year, month, positions)
-    overdue = overdue_occurrences(positions, limit=20)
-    metric_dashboard = metric_dashboard_data(metric_period, reference_date, positions)
-    recent_candidates = ChecklistOccurrence.objects.filter(position__in=positions).select_related('position', 'template').order_by('-updated_at')[:80]
-    recent = filter_absence_ignored_occurrences(recent_candidates)[:20]
+    positions = Position.objects.all()
+    profiles = UserProfile.objects.select_related('user', 'position')
+    recent_logs = ActivityLog.objects.select_related('actor', 'position')[:12]
 
     return render(request, 'checklists/dashboard.html', {
-        'today': today,
-        'year': year,
-        'month': month,
-        'reference_date': reference_date,
-        'positions': visible_positions(request.user),
-        'selected_position_id': selected_position_id,
-        'period_choices': METRIC_PERIOD_CHOICES,
-        'metric_period': metric_dashboard['period'],
-        'metric_dashboard': metric_dashboard,
-        'summary': summary,
-        'overdue': overdue,
-        'recent': recent,
-        'is_admin': is_admin_user(request.user),
+        'active_positions_count': positions.filter(active=True).count(),
+        'inactive_positions_count': positions.filter(active=False).count(),
+        'admin_users_count': profiles.filter(system_role=UserProfile.ROLE_ADMIN, active=True, user__is_active=True).count(),
+        'operator_users_count': profiles.filter(system_role=UserProfile.ROLE_OPERATOR, active=True, user__is_active=True).count(),
+        'recent_logs': recent_logs,
+        'backup_config': get_backup_configuration(),
+        'is_admin': True,
+    })
+
+
+@login_required
+def operational_home(request):
+    if is_admin_user(request.user):
+        return redirect('dashboard')
+    profile = getattr(request.user, 'userprofile', None)
+    return render(request, 'checklists/operational_home.html', {
+        'profile': profile,
+        'position': get_user_position(request.user),
+        'is_admin': False,
     })
 
 

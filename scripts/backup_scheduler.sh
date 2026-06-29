@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-INTERVAL="${BACKUP_SCHEDULER_INTERVAL_SECONDS:-60}"
+INTERVAL="${BACKUP_SCHEDULER_INTERVAL_SECONDS:-900}"
 mkdir -p /app/logs
 
 echo "[$(date)] Agendador de backup iniciado. Intervalo: ${INTERVAL}s"

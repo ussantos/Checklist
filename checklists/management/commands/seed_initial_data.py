@@ -1,65 +1,18 @@
-import csv
 import os
-import re
-from datetime import time
-from pathlib import Path
+
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
-from checklists.models import MetricType, Position, TaskTemplate, UserProfile
+
+from checklists.models import Position, UserProfile
+
 
 User = get_user_model()
-BASE_DIR = Path(__file__).resolve().parents[4]
 
-DAY_MAP = {
-    'Segunda-feira': 0,
-    'Terça-feira': 1,
-    'Quarta-feira': 2,
-    'Quinta-feira': 3,
-    'Sexta-feira': 4,
-    'Sábado': 5,
-}
-
-ROLE_FILES = [
-    ('atendente-comercial', 'Atendente Comercial', 'atendente_comercial_tasks.csv'),
-    ('instrutor-aula-livre', 'Instrutor de Aula Livre', 'instrutor_aula_livre_tasks.csv'),
+ROLE_POSITIONS = [
+    ('atendente-comercial', 'Atendente Comercial'),
+    ('instrutor-aula-livre', 'Instrutor de Aula Livre'),
 ]
-
-
-def extract_line(text, label):
-    pattern = rf'^{re.escape(label)}:\s*(.+)$'
-    match = re.search(pattern, text, flags=re.MULTILINE)
-    return match.group(1).strip() if match else ''
-
-
-def parse_frequency(text):
-    raw = extract_line(text, 'Frequência').lower()
-    if 'quinzen' in raw:
-        return TaskTemplate.FREQ_BIWEEKLY
-    if 'mensal' in raw:
-        return TaskTemplate.FREQ_MONTHLY
-    if 'anual' in raw:
-        return TaskTemplate.FREQ_ANNUAL
-    if 'semanal' in raw:
-        return TaskTemplate.FREQ_WEEKLY
-    if 'quando houver' in text.lower() or 'se houver' in text.lower():
-        return TaskTemplate.FREQ_CONDITIONAL
-    return TaskTemplate.FREQ_DAILY
-
-
-def parse_time_range(text):
-    period = extract_line(text, 'Período')
-    if not period:
-        title_period = re.match(r'^(\d{2}:\d{2})(?:-(\d{2}:\d{2}))?', text)
-        if title_period:
-            period = title_period.group(0)
-    times = re.findall(r'(\d{2}):(\d{2})', period)
-    start = end = None
-    if times:
-        start = time(int(times[0][0]), int(times[0][1]))
-    if len(times) > 1:
-        end = time(int(times[1][0]), int(times[1][1]))
-    return start, end
 
 
 def upsert_user(username, password, display_name, is_admin=False, position=None):
@@ -88,32 +41,26 @@ def upsert_user(username, password, display_name, is_admin=False, position=None)
 
 
 class Command(BaseCommand):
-    help = 'Cria cargos, usuário administrador inicial, tarefas modelo e indicadores iniciais.'
+    help = 'Cria cargos base e usuário administrador inicial, sem recriar atividades ou indicadores removidos.'
 
     @transaction.atomic
     def handle(self, *args, **options):
-        positions = {}
-        for code, name, _filename in ROLE_FILES:
+        for code, name in ROLE_POSITIONS:
             position, _ = Position.objects.get_or_create(code=code, defaults={'name': name})
             position.name = name
-            position.description = 'Checklist operacional controlado por cargo, com execução registrada por usuário nominal.'
+            position.description = 'Cargo operacional controlado por usuário nominal.'
             position.active = True
             position.save()
-            positions[code] = position
 
-        initial_password = os.environ.get('INITIAL_CHECKLISTADMIN_PASSWORD') or os.environ.get('INITIAL_CHECKLISTADMIN_PASSWORD')
+        initial_password = os.environ.get('INITIAL_CHECKLISTADMIN_PASSWORD')
         if not initial_password:
             raise CommandError('Defina INITIAL_CHECKLISTADMIN_PASSWORD no ambiente antes de executar o seed inicial.')
         upsert_user('checklistadmin', initial_password, 'Administrador Checklist', True)
 
-        # Usuários administrativos pessoais não são criados automaticamente.
-        # Usuários operacionais genéricos antigos são desativados para evitar login compartilhado.
         for old_username in ['atendente.comercial', 'instrutor.aula.livre']:
             try:
                 old_user = User.objects.get(username=old_username)
             except User.DoesNotExist:
-                continue
-            if old_username == 'checklistadmin' and not User.objects.filter(username='checklistadmin').exists():
                 continue
             old_user.is_active = False
             old_user.save(update_fields=['is_active'])
@@ -122,93 +69,4 @@ class Command(BaseCommand):
                 profile.active = False
                 profile.save(update_fields=['active'])
 
-        total = 0
-        for code, name, filename in ROLE_FILES:
-            position = positions[code]
-            path = BASE_DIR / 'seed' / filename
-            if not path.exists():
-                self.stdout.write(self.style.WARNING(f'Arquivo seed não encontrado: {path}'))
-                continue
-            with path.open(newline='', encoding='utf-8-sig') as fp:
-                reader = csv.DictReader(fp)
-                for idx, row in enumerate(reader, start=1):
-                    day_label = row.get('List', '').strip()
-                    title = row.get('Card Name', '').strip()
-                    description = row.get('Card Description', '').strip()
-                    if not day_label or not title:
-                        continue
-                    start_time, end_time = parse_time_range(description or title)
-                    evidence = extract_line(description, 'Evidência esperada')
-                    expected_result = extract_line(description, 'Meta/resultado')
-                    proof_location = extract_line(description, 'Onde comprovar')
-                    category = extract_line(description, 'Categoria original') or extract_line(description, 'Etiquetas sugeridas')
-                    template, created = TaskTemplate.objects.get_or_create(
-                        position=position,
-                        title=title,
-                        day_of_week=DAY_MAP.get(day_label, 0),
-                        defaults={
-                            'description': description,
-                            'frequency': parse_frequency(description),
-                            'start_time': start_time,
-                            'end_time': end_time,
-                            'category': category[:120],
-                            'expected_result': expected_result[:300],
-                            'requires_evidence': bool(evidence),
-                            'evidence_required': evidence[:300],
-                            'proof_location': proof_location[:300],
-                            'monthly_goal': expected_result[:255],
-                            'order': idx,
-                            'active': True,
-                        }
-                    )
-                    if not created:
-                        template.description = description
-                        template.frequency = parse_frequency(description)
-                        template.start_time = start_time
-                        template.end_time = end_time
-                        template.category = category[:120]
-                        template.expected_result = expected_result[:300]
-                        template.requires_evidence = bool(evidence)
-                        template.evidence_required = evidence[:300]
-                        template.proof_location = proof_location[:300]
-                        template.monthly_goal = expected_result[:255]
-                        template.order = idx
-                        template.save()
-                    total += 1
-
-        atendente = positions['atendente-comercial']
-        instrutor = positions['instrutor-aula-livre']
-        metrics = [
-            (atendente, 'Comercial', 'leads-mensais', 'Leads registrados no mês', 60, 'leads'),
-            (atendente, 'Comercial', 'matriculas-mensais', 'Matrículas fechadas no mês', 12, 'matrículas'),
-            (atendente, 'Comercial', 'pesquisas-concorrentes', 'Pesquisas de concorrentes no mês', 20, 'pesquisas'),
-            (atendente, 'Comercial', 'avaliacoes-google', 'Avaliações Google solicitadas após aula experimental', 1, 'por aula'),
-            (instrutor, 'Pedagógico', 'aulas-registradas', 'Aulas registradas no mês', 1, 'registros'),
-            (instrutor, 'Pedagógico', 'projetos-montados', 'Projetos pedagógicos montados/testados no mês', 8, 'projetos'),
-            (instrutor, 'Pedagógico', 'feedback-franqueadora', 'Feedbacks quinzenais enviados à franqueadora', 2, 'envios'),
-        ]
-        for position, area, code, name, target, unit in metrics:
-            obj, created = MetricType.objects.get_or_create(
-                code=code,
-                defaults={
-                    'name': name,
-                    'area': area,
-                    'frequency': MetricType.FREQ_MONTHLY,
-                    'position': position,
-                    'monthly_target': target,
-                    'unit': unit,
-                    'active': True,
-                },
-            )
-            obj.name = name
-            obj.area = area
-            obj.frequency = MetricType.FREQ_MONTHLY
-            obj.position = position
-            obj.monthly_target = target
-            obj.unit = unit
-            if created:
-                obj.active = True
-            obj.save()
-
-        self.stdout.write(self.style.SUCCESS(f'Seed concluído. Tarefas importadas/atualizadas: {total}.'))
-
+        self.stdout.write(self.style.SUCCESS('Seed inicial concluído. Cargos base e checklistadmin atualizados.'))

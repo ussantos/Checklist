@@ -2,7 +2,9 @@
 
 Este documento deve ser usado antes de colocar o sistema Checklist em uso oficial na My Robot Barra da Tijuca.
 
-O objetivo é validar instalação, autenticação, cadastro de usuários, atividades, indicadores, metas, evidências, auditoria, backup e restauração.
+> Aviso: os módulos antigos de Ausências, Checklist do dia, Semana, Indicadores, Atividades e Comercial foram removidos em uma etapa de redesenho. As seções deste roteiro que citam esses módulos são legado e devem ser reescritas antes da homologação dos novos módulos.
+
+O objetivo é validar instalação, autenticação, cadastro de usuários, cargos, auditoria, backup e restauração.
 
 ## 1. Pré-requisitos do servidor
 

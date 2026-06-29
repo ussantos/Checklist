@@ -3,123 +3,69 @@
 <div class="page-title">
   <div>
     <h1>Dashboard</h1>
-    <p class="muted">Visão interna de atividades, indicadores e metas.</p>
+    <p class="muted">Painel administrativo interno com os módulos que permanecem ativos.</p>
   </div>
-  <form method="get" class="filters">
-    <select class="input" name="periodo">
-      {% for value,label in period_choices %}
-        <option value="{{ value }}" {% if metric_period == value %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-    <input class="input" type="date" name="data" value="{{ reference_date|date:'Y-m-d' }}">
-    <select class="input" name="cargo">
-      <option value="">Todos os tipos/cargos</option>
-      {% for position in positions %}
-        <option value="{{ position.id }}" {% if selected_position_id == position.id|stringformat:"s" %}selected{% endif %}>{{ position.name }}</option>
-      {% endfor %}
-    </select>
-    <button class="btn">Filtrar</button>
-    <a class="btn" href="{% url 'monthly_csv' %}?mes={{ month }}&ano={{ year }}">Exportar CSV</a>
-  </form>
 </div>
-
-<section class="panel">
-  <h2>Indicadores e metas — {{ metric_dashboard.period_label }} ({{ metric_dashboard.start|date:"d/m/Y" }} a {{ metric_dashboard.end|date:"d/m/Y" }})</h2>
-  <div class="grid cards">
-    {% for total in metric_dashboard.position_totals %}
-    <article class="card">
-      <h3>{{ total.position }}</h3>
-      <div class="metric-big">{% if total.rate != None %}{{ total.rate }}%{% else %}-{% endif %}</div>
-      <p class="muted">{{ total.metric_count }} indicador(es) · {{ total.operator_count|default:0 }} usuário(s)</p>
-      <div class="statline"><span>Realizado</span><strong>{{ total.value|floatformat:2 }}</strong></div>
-      <div class="statline"><span>Meta</span><strong>{{ total.target|floatformat:2 }}</strong></div>
-    </article>
-    {% empty %}
-    <article class="card"><p>Nenhum indicador ativo para o filtro.</p></article>
-    {% endfor %}
-  </div>
-</section>
 
 <div class="grid cards">
-  {% for row in summary %}
   <article class="card">
-    <h2>{{ row.position__name }}</h2>
-    <div class="metric-big">{{ row.completion_rate }}%</div>
-    <p class="muted">Conclusão no mês</p>
-    <div class="statline"><span>Total</span><strong>{{ row.total }}</strong></div>
-    <div class="statline"><span>Concluído</span><strong>{{ row.concluido }}</strong></div>
-    <div class="statline"><span>Executando</span><strong>{{ row.andamento }}</strong></div>
-    <div class="statline"><span>Atrasada</span><strong>{{ row.bloqueado }}</strong></div>
+    <h2>Tipos/cargos ativos</h2>
+    <div class="metric-big">{{ active_positions_count }}</div>
+    <p class="muted">{{ inactive_positions_count }} inativo(s)</p>
+    <a class="btn small" href="{% url 'positions_list' %}">Administrar tipos/cargos</a>
   </article>
-  {% empty %}
-  <article class="card"><p>Nenhuma ocorrência criada neste mês. Abra o checklist do dia para gerar tarefas.</p></article>
-  {% endfor %}
+  <article class="card">
+    <h2>Administradores ativos</h2>
+    <div class="metric-big">{{ admin_users_count }}</div>
+    <p class="muted">Usuários com permissão administrativa.</p>
+    <a class="btn small" href="{% url 'employees_list' %}">Administrar usuários</a>
+  </article>
+  <article class="card">
+    <h2>Usuários comuns ativos</h2>
+    <div class="metric-big">{{ operator_users_count }}</div>
+    <p class="muted">Usuários operacionais cadastrados.</p>
+    <a class="btn small" href="{% url 'employees_list' %}">Ver usuários</a>
+  </article>
+  <article class="card">
+    <h2>Backup</h2>
+    <p class="muted">
+      {% if backup_config.active %}
+        Envio em nuvem ativo para {{ backup_config.get_cloud_provider_display }}.
+      {% else %}
+        Backup em nuvem inativo ou somente local.
+      {% endif %}
+    </p>
+    <a class="btn small" href="{% url 'backups' %}">Administrar backups</a>
+  </article>
 </div>
 
 <section class="panel">
-  <h2>Indicadores por tipo/cargo</h2>
-  <table>
-    <thead><tr><th>Tipo/cargo</th><th>Área</th><th>Indicador</th><th>Atividade</th><th>Frequência</th><th>Realizado</th><th>Meta</th><th>%</th></tr></thead>
-    <tbody>
-      {% for m in metric_dashboard.metric_rows %}
-      <tr>
-        <td>{{ m.position }}</td>
-        <td>{{ m.area }}</td>
-        <td>{{ m.metric }}</td>
-        <td>{{ m.activity|default:"-" }}</td>
-        <td>{{ m.frequency }}</td>
-        <td>{{ m.value|floatformat:2 }} {{ m.unit }}</td>
-        <td>{{ m.target|floatformat:2 }} {{ m.unit }}</td>
-        <td>{% if m.rate != None %}{{ m.rate }}%{% else %}-{% endif %}</td>
-      </tr>
-      {% empty %}<tr><td colspan="8">Sem indicadores ativos para o filtro.</td></tr>{% endfor %}
-    </tbody>
-  </table>
+  <h2>Módulos removidos nesta etapa</h2>
+  <p class="muted">
+    Ausências, Checklist do dia, Semana, Indicadores, Atividades e Comercial foram retirados da navegação e das rotas internas para redesenho ou encerramento.
+  </p>
 </section>
 
-{% if metric_dashboard.user_rows %}
 <section class="panel">
-  <h2>Indicadores por usuário</h2>
+  <div class="section-title">
+    <h2>Auditoria recente</h2>
+    <a class="btn small" href="{% url 'admin_activity_history' %}">Abrir auditoria</a>
+  </div>
   <table>
-    <thead><tr><th>Tipo/cargo</th><th>Usuário</th><th>Área</th><th>Indicador</th><th>Atividade</th><th>Realizado</th><th>Meta</th><th>%</th></tr></thead>
+    <thead>
+      <tr><th>Data/hora</th><th>Usuário</th><th>Ação</th><th>Item</th></tr>
+    </thead>
     <tbody>
-      {% for m in metric_dashboard.user_rows %}
+      {% for log in recent_logs %}
       <tr>
-        <td>{{ m.position }}</td>
-        <td>{{ m.user }}</td>
-        <td>{{ m.area }}</td>
-        <td>{{ m.metric }}</td>
-        <td>{{ m.activity|default:"-" }}</td>
-        <td>{{ m.value|floatformat:2 }} {{ m.unit }}</td>
-        <td>{{ m.target|floatformat:2 }} {{ m.unit }}</td>
-        <td>{% if m.rate != None %}{{ m.rate }}%{% else %}-{% endif %}</td>
+        <td>{{ log.created_at|date:"d/m/Y H:i" }}</td>
+        <td>{{ log.actor.username|default:"-" }}</td>
+        <td>{{ log.action }}</td>
+        <td>{{ log.object_label|default:log.object_type|default:"-" }}</td>
       </tr>
+      {% empty %}
+      <tr><td colspan="4">Sem registros recentes.</td></tr>
       {% endfor %}
-    </tbody>
-  </table>
-</section>
-{% endif %}
-
-<section class="panel danger-light">
-  <h2>Pendências anteriores</h2>
-  <table>
-    <thead><tr><th>Data</th><th>Cargo</th><th>Tarefa</th><th>Status</th></tr></thead>
-    <tbody>
-      {% for item in overdue %}
-      <tr><td>{{ item.date|date:"d/m/Y" }}</td><td>{{ item.position.name }}</td><td>{{ item.template.title }}</td><td><span class="badge {{ item.operational_status_css }}">{{ item.operational_status_label }}</span></td></tr>
-      {% empty %}<tr><td colspan="4">Sem pendências anteriores.</td></tr>{% endfor %}
-    </tbody>
-  </table>
-</section>
-
-<section class="panel">
-  <h2>Últimas atualizações</h2>
-  <table>
-    <thead><tr><th>Data</th><th>Cargo</th><th>Tarefa</th><th>Status</th><th>Funcionário</th><th>Atualizado</th></tr></thead>
-    <tbody>
-      {% for item in recent %}
-      <tr><td>{{ item.date|date:"d/m/Y" }}</td><td>{{ item.position.name }}</td><td>{{ item.template.title }}</td><td>{{ item.operational_status_label }}</td><td>{{ item.executor_full_name|default:"-" }}</td><td>{{ item.updated_at|date:"d/m/Y H:i" }}</td></tr>
-      {% empty %}<tr><td colspan="6">Sem atualizações.</td></tr>{% endfor %}
     </tbody>
   </table>
 </section>

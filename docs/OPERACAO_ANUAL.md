@@ -4,6 +4,8 @@ Este documento descreve como encerrar uma instância anual do sistema Checklist,
 
 A estratégia recomendada é manter uma instância ativa por ano civil, preservando os anos anteriores como histórico consultável/restaurável.
 
+> Aviso: os módulos antigos de Ausências, Checklist do dia, Semana, Indicadores, Atividades e Comercial foram removidos em uma etapa de redesenho. As referências a atividades, indicadores e evidências neste guia devem ser lidas como histórico legado até a definição dos novos módulos.
+
 ## 1. Objetivo
 
 - Evitar mistura de dados entre anos.
