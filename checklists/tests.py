@@ -1779,6 +1779,16 @@ class CommercialDashboardTests(TestCase):
         opportunity = CommercialOpportunity.objects.latest('id')
         self.assertEqual(opportunity.owner, self.other_user)
 
+    def test_admin_must_choose_commercial_attendant_when_creating_opportunity(self):
+        admin = User.objects.create_user(username='admin-comercial', password='teste123', is_staff=True)
+        self.client.force_login(admin)
+
+        response = self.client.post(reverse('commercial_opportunity_create'), self._post_opportunity_data(owner=''))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFormError(response.context['form'], 'owner', 'Este campo é obrigatório.')
+        self.assertEqual(CommercialOpportunity.objects.count(), 0)
+
     def test_edit_can_transfer_opportunity_to_another_commercial_attendant(self):
         opportunity = self._opportunity(
             title='Lead para transferir',
@@ -1794,6 +1804,25 @@ class CommercialDashboardTests(TestCase):
         self.assertRedirects(response, reverse('commercial_dashboard'))
         opportunity.refresh_from_db()
         self.assertEqual(opportunity.owner, self.other_user)
+
+    def test_admin_must_choose_commercial_attendant_when_editing_opportunity(self):
+        admin = User.objects.create_user(username='admin-edita-comercial', password='teste123', is_staff=True)
+        opportunity = self._opportunity(
+            title='Lead sem troca de dono',
+            owner=self.user,
+            next_follow_up_date=timezone.localdate(),
+        )
+        self.client.force_login(admin)
+
+        response = self.client.post(
+            reverse('commercial_opportunity_edit', args=[opportunity.pk]),
+            self._post_opportunity_data(owner=''),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFormError(response.context['form'], 'owner', 'Este campo é obrigatório.')
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.owner, self.user)
 
     def test_lost_stage_moves_to_interested_funnel_and_deactivates(self):
         lost_stage = FunnelStage.objects.create(code='5-perdido', name='5 - Perdido', active=True, order=5)
@@ -1832,6 +1861,35 @@ class CommercialDashboardTests(TestCase):
         self.assertEqual(opportunity.funnel_type, self.interested_type)
         self.assertFalse(opportunity.active)
         self.assertEqual(opportunity.next_follow_up_date, add_months(timezone.localdate(), 3))
+
+    def test_editing_already_lost_opportunity_does_not_move_follow_up_again(self):
+        lost_stage = FunnelStage.objects.create(code='5-perdida-estavel', name='5 - Perdida estável', active=True, order=5)
+        original_follow_up = timezone.localdate() + timedelta(days=30)
+        opportunity = CommercialOpportunity.objects.create(
+            title='Lead ja perdida',
+            commercial_funnel=self.interested_funnel,
+            funnel_type=self.interested_type,
+            stage=lost_stage,
+            origin=self.origin,
+            contact_name='Responsável',
+            contact_phone='21999990000',
+            owner=self.user,
+            next_follow_up_date=original_follow_up,
+            active=False,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse('commercial_opportunity_edit', args=[opportunity.pk]), self._post_opportunity_data(
+            commercial_funnel=str(self.interested_funnel.pk),
+            stage=str(lost_stage.pk),
+            next_follow_up_date='',
+            notes='Apenas atualizando observação.',
+        ))
+
+        self.assertRedirects(response, reverse('commercial_dashboard'))
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.next_follow_up_date, original_follow_up)
+        self.assertFalse(opportunity.active)
 
     def test_enrollment_stage_moves_to_post_sale_funnel(self):
         enrollment_stage = FunnelStage.objects.create(code='5-matricula', name='5 - Matrícula', active=True, order=5)

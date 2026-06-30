@@ -259,7 +259,7 @@ def _interested_funnel():
     return queryset.filter(name__iexact='Interessados').first()
 
 
-def _apply_opportunity_business_rules(opportunity, *, form):
+def _apply_opportunity_business_rules(opportunity, *, form, previous_stage=None):
     if form.trial_lesson_payload:
         trial_stage = _trial_lesson_stage()
         if trial_stage:
@@ -276,7 +276,8 @@ def _apply_opportunity_business_rules(opportunity, *, form):
             )
         else:
             opportunity.funnel_type = _interested_funnel_type() or opportunity.funnel_type
-        opportunity.next_follow_up_date = add_months(timezone.localdate(), 3)
+        if not is_lost_stage(previous_stage):
+            opportunity.next_follow_up_date = add_months(timezone.localdate(), 3)
         opportunity.active = False
     elif _is_enrollment_stage(opportunity.stage):
         post_sale_funnel_type, _post_sale_stage, _post_sale_origin, post_sale_funnel = _post_sale_funnel_components()
@@ -1499,8 +1500,6 @@ def commercial_opportunity_edit(request, opportunity_id):
     if request.method == 'POST':
         post_data = request.POST.copy()
         post_data['title'] = opportunity.title
-        if not post_data.get('owner'):
-            post_data['owner'] = str(opportunity.owner_id or request.user.pk)
         form = CommercialOpportunityForm(
             post_data,
             instance=opportunity,
@@ -1511,7 +1510,7 @@ def commercial_opportunity_edit(request, opportunity_id):
             try:
                 with transaction.atomic():
                     opportunity = form.save(commit=False)
-                    _apply_opportunity_business_rules(opportunity, form=form)
+                    _apply_opportunity_business_rules(opportunity, form=form, previous_stage=previous_stage)
                     opportunity.save()
                     opportunity = _commercial_opportunity_queryset().get(pk=opportunity.pk)
                     lesson = _build_trial_lesson_from_form(opportunity=opportunity, form=form, actor=request.user)

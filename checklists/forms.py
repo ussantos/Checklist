@@ -1372,7 +1372,10 @@ class CommercialOpportunityForm(forms.ModelForm):
         if is_lost_stage(stage):
             cleaned['status'] = self.STATUS_INACTIVE
             if not next_follow_up_date:
-                cleaned['next_follow_up_date'] = add_months(timezone.localdate(), 3)
+                if self.instance and self.instance.pk and is_lost_stage(self.instance.stage) and self.instance.next_follow_up_date:
+                    cleaned['next_follow_up_date'] = self.instance.next_follow_up_date
+                else:
+                    cleaned['next_follow_up_date'] = add_months(timezone.localdate(), 3)
         elif not next_follow_up_date:
             self.add_error('next_follow_up_date', 'Informe a data do próximo follow-up.')
 
