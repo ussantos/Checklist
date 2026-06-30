@@ -97,7 +97,18 @@ def _first_descendant_text(element, name):
     return ''
 
 
+def _fix_sponte_mojibake(value):
+    value = '' if value is None else str(value)
+    if not any(marker in value for marker in ('Ã', 'Â', '�')):
+        return value
+    try:
+        return value.encode('latin1').decode('utf-8')
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        return value
+
+
 def _normalize(value):
+    value = _fix_sponte_mojibake(value)
     value = unicodedata.normalize('NFKD', value or '')
     value = ''.join(char for char in value if not unicodedata.combining(char))
     return value.casefold()

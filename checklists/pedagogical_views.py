@@ -1333,12 +1333,12 @@ def lesson_create(request):
                 obj=lesson,
                 action='Aula pedagógica criada',
                 audit_fields=LESSON_AUDIT_FIELDS,
-                details=f'Aula: {lesson}; status: {lesson.status}',
+                details=f'Aula: {lesson}; status: {lesson.get_status_display()}',
             )
             warning = lesson.assistant_warning_message()
             if warning:
                 messages.warning(request, warning)
-            messages.success(request, 'Aula agendada.')
+            messages.success(request, f'Aula salva com status {lesson.get_status_display()}.')
             return redirect(f'{reverse("pedagogical_class_schedule")}?data={lesson.date.isoformat()}')
     else:
         form = LessonForm(initial=initial, trial_only=True)
@@ -1368,12 +1368,12 @@ def lesson_edit(request, lesson_id):
                 action='Aula pedagógica atualizada',
                 audit_fields=LESSON_AUDIT_FIELDS,
                 previous_values_full=previous_values_full,
-                details=f'Aula: {lesson}; status: {lesson.status}',
+                details=f'Aula: {lesson}; status: {lesson.get_status_display()}',
             )
             warning = lesson.assistant_warning_message()
             if warning:
                 messages.warning(request, warning)
-            messages.success(request, 'Aula atualizada.')
+            messages.success(request, f'Aula atualizada com status {lesson.get_status_display()}.')
             return redirect(f'{reverse("pedagogical_class_schedule")}?data={lesson.date.isoformat()}')
     else:
         form = LessonForm(instance=lesson, trial_only=True)

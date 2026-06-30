@@ -644,7 +644,7 @@ class Command(BaseCommand):
         course = _course_for_schedule(record)
         room = _room_for_schedule(record)
         notes = '\n'.join([
-            'Aula histórica marcada como dada a partir da planilha de feedback.',
+            'Aula histórica marcada como Presença a partir da planilha de feedback.',
             'Horário obtido do Sponte para vincular o feedback.',
             f'Professor: {record.get("teacher_name") or row.teacher_name or "-"}',
             f'CursoID: {record.get("course_external_id") or "-"}',

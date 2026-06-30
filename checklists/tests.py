@@ -1252,6 +1252,31 @@ class SponteFreeClassScheduleSyncTests(TestCase):
 
         self.assertEqual(records[0]['lesson_status'], 'Presença')
 
+    def test_parse_done_sponte_lesson_status_from_mojibake_presence_label(self):
+        xml_text = '''<?xml version="1.0" encoding="utf-8"?>
+        <ArrayOfWsAgendaAluno xmlns="http://api.sponteeducacional.net.br/">
+          <wsAgendaAluno>
+            <AlunoID>123</AlunoID>
+            <AulasLivres>
+              <wsAulasLivresAluno>
+                <AulaLivreID>901</AulaLivreID>
+                <DataAula>07/07/2026</DataAula>
+                <HorarioInicial>14:00</HorarioInicial>
+                <HorarioFinal>16:00</HorarioFinal>
+                <SituacaoAula>PresenÃ§a</SituacaoAula>
+                <CursoID>77</CursoID>
+                <NomeCurso>Techbot</NomeCurso>
+                <Sala>Sala Maker</Sala>
+              </wsAulasLivresAluno>
+            </AulasLivres>
+          </wsAgendaAluno>
+        </ArrayOfWsAgendaAluno>
+        '''
+
+        records = parse_sponte_free_class_schedule(xml_text, student_external_id='123')
+
+        self.assertEqual(records[0]['lesson_status'], 'Presença')
+
     def test_parse_success_response_without_lessons_is_empty_schedule(self):
         xml_text = '''<?xml version="1.0" encoding="utf-8"?>
         <ArrayOfWsAgendaAluno xmlns="http://api.sponteeducacional.net.br/">
