@@ -74,6 +74,24 @@ class SponteScheduleSyncResult:
         return self.created + self.updated + self.unchanged + self.cancelled
 
 
+@dataclass
+class SponteContractDiscipline:
+    external_id: str = ''
+    name: str = ''
+    module: int | None = None
+
+
+@dataclass
+class SponteStudentContract:
+    contract_id: str = ''
+    free_contract_id: str = ''
+    number: str = ''
+    status: str = ''
+    course_external_id: str = ''
+    course_name: str = ''
+    disciplines: list[SponteContractDiscipline] = field(default_factory=list)
+
+
 def _truncate(value, max_length):
     value = (value or '').strip()
     return value[:max_length]
@@ -229,12 +247,26 @@ def _lesson_status_label_from_sponte_fields(fields):
     return _lesson_status_choice_label(_lesson_status_from_sponte(status_text)) or status_text
 
 
+def _parse_int(value):
+    value = (value or '').strip()
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
 def _is_success_message(value):
     return (value or '').strip().startswith('01')
 
 
 def _is_not_found_message(value):
     return (value or '').strip().startswith('43')
+
+
+def _is_invalid_search_parameter_message(value):
+    return '02 - Parâmetros de busca inválidos' in str(value or '')
 
 
 def _parse_sponte_decimal(value):
@@ -695,6 +727,111 @@ def parse_sponte_free_class_schedule(xml_text, *, student_external_id=''):
     return records
 
 
+def parse_sponte_free_class_diary(xml_text, *, student_external_id=''):
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as exc:
+        raise SponteClientError(f'Resposta XML inválida do Sponte: {exc}') from exc
+
+    records = []
+    api_messages = []
+    for diary in root.iter():
+        if _local_name(diary.tag) != 'wsDiarioAulasLivres':
+            continue
+        operation_return = _child_text(diary, 'RetornoOperacao')
+        if operation_return:
+            api_messages.append(operation_return)
+        diary_student_id = _child_text(diary, 'AlunoID') or student_external_id
+        course_name = _child_text(diary, 'Curso')
+        course_external_id = _child_text(diary, 'CursoID')
+        discipline_name = _child_text(diary, 'Disciplina')
+        discipline_external_id = _child_text(diary, 'DisciplinaID')
+        for item in diary.iter():
+            if _local_name(item.tag) != 'wsAulasLivreDiario':
+                continue
+            free_class_id = _child_text(item, 'AulaLivreID')
+            class_date = _child_text(item, 'DataAula')
+            start_time = _child_text(item, 'HorarioInicial')
+            end_time = _child_text(item, 'HorarioFinal')
+            if not any([free_class_id, class_date, start_time, end_time]):
+                continue
+            item_fields = _children_text_map(item)
+            status_label = _lesson_status_label_from_sponte_fields(item_fields)
+            records.append({
+                'student_external_id': diary_student_id,
+                'free_class_id': free_class_id,
+                'date': class_date,
+                'start_time': start_time,
+                'end_time': end_time,
+                'lesson_status': status_label or _lesson_status_choice_label(Lesson.STATUS_NOT_GIVEN),
+                'lesson_status_raw': _child_text(item, 'Situacao'),
+                'lesson_status_from_sponte': bool(status_label),
+                'course_name': course_name or discipline_name or 'Curso Sponte',
+                'room_name': _child_text(item, 'Sala'),
+                'teacher_name': _child_text(item, 'Professor') or _child_text(item, 'NomeProfessor'),
+                'course_external_id': course_external_id,
+                'discipline_external_id': discipline_external_id,
+                'discipline_name': discipline_name,
+                'teacher_external_id': _child_text(item, 'ProfessorID'),
+            })
+
+    if not records and api_messages:
+        unique_messages = sorted(set(api_messages))
+        unexpected_messages = [
+            message for message in unique_messages
+            if not (_is_success_message(message) or _is_not_found_message(message))
+        ]
+        if unexpected_messages:
+            raise SponteClientError('; '.join(unexpected_messages))
+    return records
+
+
+def parse_sponte_student_contracts(xml_text):
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as exc:
+        raise SponteClientError(f'Resposta XML inválida do Sponte: {exc}') from exc
+
+    contracts = []
+    api_messages = []
+    for item in root.iter():
+        if _local_name(item.tag) != 'wsMatricula':
+            continue
+        operation_return = _child_text(item, 'RetornoOperacao')
+        if operation_return:
+            api_messages.append(operation_return)
+        free_contract_id = _child_text(item, 'ContratoAulaLivreID')
+        if not free_contract_id:
+            continue
+        contract = SponteStudentContract(
+            contract_id=_child_text(item, 'ContratoID'),
+            free_contract_id=free_contract_id,
+            number=_child_text(item, 'NumeroContrato'),
+            status=_child_text(item, 'Situacao'),
+            course_external_id=_child_text(item, 'CursoID'),
+            course_name=_child_text(item, 'NomeCurso'),
+        )
+        for discipline in item.iter():
+            if _local_name(discipline.tag) != 'wsDisciplinas':
+                continue
+            contract.disciplines.append(SponteContractDiscipline(
+                external_id=_child_text(discipline, 'DisciplinaID'),
+                name=_child_text(discipline, 'Nome'),
+                module=_parse_int(_child_text(discipline, 'Modulo')),
+            ))
+        contracts.append(contract)
+
+    if not contracts and api_messages:
+        unique_messages = sorted(set(api_messages))
+        unexpected_messages = [
+            message for message in unique_messages
+            if not (_is_success_message(message) or _is_not_found_message(message))
+        ]
+        if unexpected_messages:
+            raise SponteClientError('; '.join(unexpected_messages))
+    return contracts
+
+
 def _post_sponte_form(operation, data, error_context, *, use_cache=True):
     try:
         return SponteSOAPClient().call(operation, data, use_cache=use_cache).xml_text
@@ -732,6 +869,143 @@ def fetch_sponte_student_schedule_xml(student_external_id, start_date, end_date)
         'sincronizar agenda do Sponte',
         use_cache=False,
     )
+
+
+def fetch_sponte_student_contracts_xml(student_external_id):
+    return _post_sponte_form(
+        'GetMatriculas',
+        {'sParametrosBusca': f'AlunoID={student_external_id}'},
+        'consultar contratos do Sponte',
+        use_cache=False,
+    )
+
+
+def fetch_sponte_student_contracts(student_external_id):
+    return parse_sponte_student_contracts(fetch_sponte_student_contracts_xml(student_external_id))
+
+
+def _sponte_diary_candidate_modules(record, contracts=None):
+    candidates = []
+    course_id = (record.get('course_external_id') or '').strip()
+    discipline_id = (record.get('discipline_external_id') or '').strip()
+    for contract in contracts or []:
+        if course_id and contract.course_external_id and contract.course_external_id != course_id:
+            continue
+        for discipline in contract.disciplines:
+            if discipline_id and discipline.external_id and discipline.external_id != discipline_id:
+                continue
+            if discipline.module is not None:
+                candidates.append(discipline.module)
+    for key in ('module', 'modulo', 'Modulo', 'ModuloID', 'NumeroModulo'):
+        parsed = _parse_int(record.get(key))
+        if parsed is not None:
+            candidates.append(parsed)
+    candidates.extend([0, 1, 2, 3])
+    seen = set()
+    unique = []
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        unique.append(candidate)
+    return unique
+
+
+def fetch_sponte_student_diary_xml(student_external_id, record, module):
+    class_date = _parse_sponte_date(record.get('date'))
+    course_id = (record.get('course_external_id') or '').strip()
+    discipline_id = (record.get('discipline_external_id') or '').strip()
+    if not (class_date and course_id and discipline_id):
+        return ''
+    return _post_sponte_form(
+        'GetDiarioAulasLivres',
+        {
+            'nAlunoID': student_external_id,
+            'nCursoID': course_id,
+            'nDisciplinaID': discipline_id,
+            'dDataInicio': class_date.strftime('%d/%m/%Y'),
+            'dDataTermino': class_date.strftime('%d/%m/%Y'),
+            'nModulo': module,
+            'sParametrosBusca': '',
+        },
+        'consultar diário de aulas livres do Sponte',
+        use_cache=False,
+    )
+
+
+def _matching_sponte_diary_record(agenda_record, diary_records):
+    if not diary_records:
+        return None
+    free_class_id = (agenda_record.get('free_class_id') or '').strip()
+    if free_class_id:
+        for record in diary_records:
+            if (record.get('free_class_id') or '').strip() == free_class_id:
+                return record
+
+    agenda_date = _parse_sponte_date(agenda_record.get('date'))
+    agenda_start = _parse_sponte_time(agenda_record.get('start_time'))
+    agenda_end = _parse_sponte_time(agenda_record.get('end_time'))
+    for record in diary_records:
+        if (
+            _parse_sponte_date(record.get('date')) == agenda_date
+            and _parse_sponte_time(record.get('start_time')) == agenda_start
+            and _parse_sponte_time(record.get('end_time')) == agenda_end
+        ):
+            return record
+    return diary_records[0] if len(diary_records) == 1 else None
+
+
+def _merge_sponte_diary_status(agenda_record, diary_record):
+    if not diary_record:
+        return agenda_record
+    merged = {**agenda_record}
+    for field_name, value in diary_record.items():
+        if value or field_name in {'lesson_status_from_sponte'}:
+            merged[field_name] = value
+    return merged
+
+
+def _overlay_sponte_diary_statuses(student_external_id, records, diary_fetcher, contracts=None):
+    if not records:
+        return records, []
+    merged_records = []
+    errors = []
+    diary_cache = {}
+    for record in records:
+        class_date = _parse_sponte_date(record.get('date'))
+        course_id = (record.get('course_external_id') or '').strip()
+        discipline_id = (record.get('discipline_external_id') or '').strip()
+        if not (class_date and course_id and discipline_id):
+            merged_records.append(record)
+            continue
+
+        diary_records = []
+        record_errors = []
+        for module in _sponte_diary_candidate_modules(record, contracts=contracts):
+            cache_key = (class_date, course_id, discipline_id, module)
+            if cache_key not in diary_cache:
+                try:
+                    xml_text = diary_fetcher(student_external_id, record, module)
+                    diary_cache[cache_key] = (
+                        parse_sponte_free_class_diary(xml_text, student_external_id=student_external_id)
+                        if xml_text else []
+                    )
+                except (SponteClientError, SponteAPIError) as exc:
+                    diary_cache[cache_key] = []
+                    if not _is_invalid_search_parameter_message(exc):
+                        record_errors.append(f'Diário Sponte {class_date:%d/%m/%Y}: {exc}')
+            if diary_cache[cache_key]:
+                diary_records = diary_cache[cache_key]
+                break
+
+        if not diary_records and record_errors:
+            errors.extend(record_errors[:1])
+
+        merged_records.append(_merge_sponte_diary_status(
+            record,
+            _matching_sponte_diary_record(record, diary_records),
+        ))
+    return merged_records, errors
 
 
 def _course_for_schedule(record):
@@ -863,7 +1137,7 @@ def import_sponte_free_class_records(student, records, *, start_date, end_date):
     return result
 
 
-def sync_sponte_free_class_schedule(start_date, end_date, fetcher=None):
+def sync_sponte_free_class_schedule(start_date, end_date, fetcher=None, diary_fetcher=None, contracts_fetcher=None):
     start_date, end_date = _forward_schedule_window(start_date, end_date)
     students = list(PedagogicalStudent.objects.filter(
         source=SPONTE_SOURCE,
@@ -876,6 +1150,20 @@ def sync_sponte_free_class_schedule(start_date, end_date, fetcher=None):
         try:
             xml_text = (fetcher or fetch_sponte_student_schedule_xml)(student.external_id, start_date, end_date)
             records = parse_sponte_free_class_schedule(xml_text, student_external_id=student.external_id)
+            if records and (diary_fetcher is not None or fetcher is None):
+                contracts = []
+                if contracts_fetcher is not None or fetcher is None:
+                    try:
+                        contracts = (contracts_fetcher or fetch_sponte_student_contracts)(student.external_id)
+                    except (SponteClientError, SponteAPIError) as exc:
+                        result.errors.append(f'{student.name}: contratos Sponte: {exc}')
+                records, diary_errors = _overlay_sponte_diary_statuses(
+                    student.external_id,
+                    records,
+                    diary_fetcher or fetch_sponte_student_diary_xml,
+                    contracts=contracts,
+                )
+                result.errors.extend(f'{student.name}: {error}' for error in diary_errors[:5])
             student_result = import_sponte_free_class_records(
                 student,
                 records,

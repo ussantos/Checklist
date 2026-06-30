@@ -21,8 +21,8 @@ from .models import (
 from .sponte import (
     _sponte_config, default_sponte_schedule_window, import_sponte_course_records, import_sponte_free_class_records,
     import_sponte_student_records, parse_sponte_courses, parse_sponte_free_class_schedule, parse_sponte_students,
-    SponteCourseImportResult, SponteScheduleSyncResult, SponteStudentImportResult,
-    sync_sponte_free_class_schedule,
+    parse_sponte_free_class_diary, parse_sponte_student_contracts, SponteCourseImportResult,
+    SponteScheduleSyncResult, SponteStudentImportResult, sync_sponte_free_class_schedule,
 )
 from .sponte_client import (
     SponteAPIDisabledError, SponteAPIRateLimitError, SponteSOAPClient, normalize_students,
@@ -1154,6 +1154,50 @@ class SponteFreeClassScheduleSyncTests(TestCase):
       </wsAgendaAluno>
     </ArrayOfWsAgendaAluno>
     '''
+    DIARY_CANCELLED_XML = '''<?xml version="1.0" encoding="utf-8"?>
+    <ArrayOfWsDiarioAulasLivres xmlns="http://api.sponteeducacional.net.br/">
+      <wsDiarioAulasLivres>
+        <RetornoOperacao>01 - Operação Realizada com Sucesso.</RetornoOperacao>
+        <AlunoID>123</AlunoID>
+        <CursoID>77</CursoID>
+        <Curso>Techbot</Curso>
+        <DisciplinaID>88</DisciplinaID>
+        <Disciplina>Robótica</Disciplina>
+        <AulasLivres>
+          <wsAulasLivreDiario>
+            <AulaLivreID>900</AulaLivreID>
+            <DataAula>07/07/2026</DataAula>
+            <HorarioInicial>14:00</HorarioInicial>
+            <HorarioFinal>16:00</HorarioFinal>
+            <Professor>Professor Sponte</Professor>
+            <ProfessorID>99</ProfessorID>
+            <Sala>Sala Maker</Sala>
+            <Situacao>Cancelada</Situacao>
+          </wsAulasLivreDiario>
+        </AulasLivres>
+      </wsDiarioAulasLivres>
+    </ArrayOfWsDiarioAulasLivres>
+    '''
+    CONTRACT_XML = '''<?xml version="1.0" encoding="utf-8"?>
+    <ArrayOfWsMatricula xmlns="http://api.sponteeducacional.net.br/">
+      <wsMatricula>
+        <RetornoOperacao>01 - Operação Realizada com Sucesso.</RetornoOperacao>
+        <ContratoID>55</ContratoID>
+        <ContratoAulaLivreID>66</ContratoAulaLivreID>
+        <NumeroContrato>55/1</NumeroContrato>
+        <Situacao>Vigente</Situacao>
+        <CursoID>77</CursoID>
+        <NomeCurso>Techbot</NomeCurso>
+        <Disciplinas>
+          <wsDisciplinas>
+            <DisciplinaID>88</DisciplinaID>
+            <Nome>Robótica</Nome>
+            <Modulo>2</Modulo>
+          </wsDisciplinas>
+        </Disciplinas>
+      </wsMatricula>
+    </ArrayOfWsMatricula>
+    '''
 
     def setUp(self):
         self.today = date(2026, 7, 1)
@@ -1277,6 +1321,19 @@ class SponteFreeClassScheduleSyncTests(TestCase):
 
         self.assertEqual(records[0]['lesson_status'], 'Presença')
 
+    def test_parse_diary_lesson_status_from_sponte_situation(self):
+        records = parse_sponte_free_class_diary(self.DIARY_CANCELLED_XML, student_external_id='123')
+
+        self.assertEqual(records[0]['lesson_status'], 'Cancelada')
+        self.assertTrue(records[0]['lesson_status_from_sponte'])
+
+    def test_parse_student_contract_discipline_module(self):
+        contracts = parse_sponte_student_contracts(self.CONTRACT_XML)
+
+        self.assertEqual(contracts[0].course_external_id, '77')
+        self.assertEqual(contracts[0].disciplines[0].external_id, '88')
+        self.assertEqual(contracts[0].disciplines[0].module, 2)
+
     def test_parse_success_response_without_lessons_is_empty_schedule(self):
         xml_text = '''<?xml version="1.0" encoding="utf-8"?>
         <ArrayOfWsAgendaAluno xmlns="http://api.sponteeducacional.net.br/">
@@ -1375,6 +1432,46 @@ class SponteFreeClassScheduleSyncTests(TestCase):
         lesson = Lesson.objects.get(external_id='aula_livre:123:900:2026-07-07')
         self.assertEqual(result.cancelled, 1)
         self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
+
+    def test_sync_uses_diary_status_when_agenda_omits_situation(self):
+        diary_calls = []
+
+        def diary_fetcher(student_id, record, module):
+            diary_calls.append((student_id, record['free_class_id'], module))
+            return self.DIARY_CANCELLED_XML
+
+        result = sync_sponte_free_class_schedule(
+            date(2026, 7, 1),
+            date(2026, 7, 31),
+            fetcher=lambda student_id, start, end: self.SAMPLE_XML,
+            diary_fetcher=diary_fetcher,
+        )
+
+        lesson = Lesson.objects.get(external_id='aula_livre:123:900:2026-07-07')
+        self.assertEqual(result.created, 1)
+        self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
+        self.assertIn('Situação no Sponte: Cancelada', lesson.notes)
+        self.assertEqual(diary_calls, [('123', '900', 0)])
+
+    def test_sync_prefers_contract_module_when_fetching_diary_status(self):
+        diary_calls = []
+
+        def diary_fetcher(student_id, record, module):
+            diary_calls.append((student_id, record['free_class_id'], module))
+            return self.DIARY_CANCELLED_XML if module == 2 else self.EMPTY_XML
+
+        result = sync_sponte_free_class_schedule(
+            date(2026, 7, 1),
+            date(2026, 7, 31),
+            fetcher=lambda student_id, start, end: self.SAMPLE_XML,
+            diary_fetcher=diary_fetcher,
+            contracts_fetcher=lambda student_id: parse_sponte_student_contracts(self.CONTRACT_XML),
+        )
+
+        lesson = Lesson.objects.get(external_id='aula_livre:123:900:2026-07-07')
+        self.assertEqual(result.created, 1)
+        self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
+        self.assertEqual(diary_calls, [('123', '900', 2)])
 
     def test_sync_never_requests_past_dates(self):
         calls = []
