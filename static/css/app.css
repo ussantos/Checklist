@@ -1852,6 +1852,63 @@ th {
   gap: 18px;
 }
 
+.feedback-overview {
+  display: grid;
+  gap: 18px;
+}
+
+.feedback-overview-header {
+  align-items: start;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+}
+
+.feedback-overview-header h2,
+.feedback-criterion-header h3 {
+  margin: 0;
+}
+
+.feedback-score-highlight {
+  background: var(--info-soft);
+  border: 1px solid color-mix(in srgb, var(--sky) 45%, var(--line));
+  border-left: 5px solid var(--sky);
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  min-width: 190px;
+  padding: 12px 14px;
+}
+
+.feedback-score-highlight label {
+  color: var(--info);
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.feedback-score-highlight input {
+  background: var(--surface);
+  border-color: transparent;
+  color: var(--dark);
+  font-size: 2rem;
+  font-weight: 900;
+  min-height: 50px;
+  text-align: center;
+}
+
+.feedback-info-grid {
+  margin: 0;
+}
+
+.feedback-track-grid {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  padding-top: 16px;
+}
+
 .feedback-editor {
   overflow: visible;
 }
@@ -1868,6 +1925,7 @@ th {
 }
 
 .feedback-meta-grid p,
+.feedback-track-grid p,
 .feedback-text-field,
 .feedback-score-field {
   display: grid;
@@ -1893,11 +1951,12 @@ th {
 
 .feedback-criteria {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
 .feedback-row,
-.feedback-programming-fields {
+.feedback-programming-fields,
+.feedback-criterion-card {
   align-items: start;
   background: var(--field-soft);
   border: 1px solid var(--line);
@@ -1908,26 +1967,60 @@ th {
   padding: 14px;
 }
 
-.feedback-programming-row {
+.feedback-criterion-card {
+  gap: 12px;
   grid-template-columns: 1fr;
+  padding: 16px;
+}
+
+.feedback-criterion-header {
+  align-items: end;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) 150px;
+}
+
+.feedback-criterion-header.nested {
+  margin-bottom: 12px;
+}
+
+.feedback-criterion-header .feedback-score-field {
+  min-width: 0;
+}
+
+.feedback-programming-row {
+  border-left: 5px solid var(--sky);
 }
 
 .feedback-programming-fields {
   background: transparent;
   border: 0;
+  display: grid;
+  gap: 12px;
   padding: 0;
 }
 
 .feedback-programming-toggle {
-  display: grid;
-  gap: 6px;
+  align-self: center;
+  justify-self: end;
+}
+
+.feedback-programming-fields[hidden] {
+  display: none !important;
 }
 
 .feedback-summary-row {
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--line));
+  border-left: 5px solid var(--primary);
   border-radius: 8px;
-  padding: 14px;
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+}
+
+.feedback-summary-row textarea {
+  min-height: 138px;
 }
 
 .readonly-field {
@@ -2735,15 +2828,25 @@ html[data-theme="dark"] .mini-card:hover {
   .trial-lesson-fields,
   .instructor-dashboard-grid,
   .feedback-row,
-  .feedback-programming-fields {
+  .feedback-programming-fields,
+  .feedback-criterion-header {
     grid-template-columns: 1fr;
+  }
+
+  .feedback-overview-header {
+    display: grid;
+  }
+
+  .feedback-programming-toggle {
+    justify-self: start;
   }
 
   .instructor-kpi-grid {
     grid-template-columns: repeat(2, minmax(180px, 1fr));
   }
 
-  .feedback-meta-grid {
+  .feedback-meta-grid,
+  .feedback-track-grid {
     grid-template-columns: repeat(2, minmax(140px, 1fr));
   }
 
@@ -2816,6 +2919,7 @@ html[data-theme="dark"] .mini-card:hover {
   }
 
   .instructor-kpi-grid,
+  .feedback-track-grid,
   .instructor-lesson-list-wide {
     grid-template-columns: 1fr;
   }

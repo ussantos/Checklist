@@ -2,47 +2,48 @@
 {% block content %}
 <div class="page-title">
   <div>
-    <h1>Feedback de Aula</h1>
+    <h1>{% if feedback %}Editar Feedback de Aula{% else %}Feedback de Aula{% endif %}</h1>
     <p class="muted">{{ lesson.date|date:"d/m/Y" }} · {{ lesson.start_time|time:"H:i" }} - {{ lesson.end_time|time:"H:i" }}</p>
   </div>
   <a class="btn" href="{% url 'pedagogical_lesson_feedbacks' %}?data={{ lesson.date|date:'Y-m-d' }}">Voltar</a>
 </div>
 
-<section class="panel">
-  <h2>Dados da aula</h2>
-  <div class="info-grid">
-    <div>
-      <strong>Aluno</strong>
-      <span>{{ lesson.student_name_snapshot }}</span>
-    </div>
-    <div>
-      <strong>Curso</strong>
-      <span>{{ lesson.course.name }}</span>
-    </div>
-    <div>
-      <strong>Sala</strong>
-      <span>{{ lesson.room.name }}</span>
-    </div>
-    <div>
-      <strong>Origem</strong>
-      <span>{% if lesson.is_sponte_synced %}Sponte{% else %}Checklist{% endif %}</span>
-    </div>
-  </div>
-</section>
-
 <form method="post" class="feedback-form" data-feedback-form="1">
   {% csrf_token %}
   {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
 
-  <section class="panel feedback-editor">
-    <div class="section-title feedback-section-title">
+  <section class="panel feedback-overview">
+    <div class="feedback-overview-header">
       <div>
-        <h2>Avaliação da aula</h2>
-        <p class="muted">Preencha a sequência pedagógica e registre comentários objetivos para cada critério.</p>
+        <h2>Dados da aula</h2>
+      </div>
+      <div class="feedback-score-highlight">
+        {{ form.general_score.label_tag }}
+        {{ form.general_score }}
+        {{ form.general_score.errors }}
       </div>
     </div>
 
-    <div class="feedback-meta-grid">
+    <div class="info-grid feedback-info-grid">
+      <div>
+        <strong>Aluno</strong>
+        <span>{{ lesson.student_name_snapshot }}</span>
+      </div>
+      <div>
+        <strong>Curso</strong>
+        <span>{{ lesson.course.name }}</span>
+      </div>
+      <div>
+        <strong>Sala</strong>
+        <span>{{ lesson.room.name }}</span>
+      </div>
+      <div>
+        <strong>Origem</strong>
+        <span>{% if lesson.is_sponte_synced %}Sponte{% else %}Checklist{% endif %}</span>
+      </div>
+    </div>
+
+    <div class="feedback-track-grid">
       <p>
         {{ form.module_number.label_tag }}
         {{ form.module_number }}
@@ -58,73 +59,87 @@
         {{ form.punctuality_score }}
         {{ form.punctuality_score.errors }}
       </p>
-      <p>
-        {{ form.general_score.label_tag }}
-        {{ form.general_score }}
-        {{ form.general_score.errors }}
-      </p>
+    </div>
+  </section>
+
+  <section class="panel feedback-editor">
+    <div class="section-title feedback-section-title">
+      <div>
+        <h2>Avaliação da aula</h2>
+      </div>
     </div>
 
     <div class="feedback-criteria">
-      <article class="feedback-row">
+      <article class="feedback-criterion-card">
+        <div class="feedback-criterion-header">
+          <h3>Montagem</h3>
+          <div class="feedback-score-field">
+            {{ form.assembly_score.label_tag }}
+            {{ form.assembly_score }}
+            {{ form.assembly_score.errors }}
+          </div>
+        </div>
         <div class="feedback-text-field">
           {{ form.assembly_comment.label_tag }}
           {{ form.assembly_comment }}
           {{ form.assembly_comment.errors }}
         </div>
-        <div class="feedback-score-field">
-          {{ form.assembly_score.label_tag }}
-          {{ form.assembly_score }}
-          {{ form.assembly_score.errors }}
-        </div>
       </article>
 
-      <article class="feedback-row feedback-programming-row">
-        <div class="feedback-programming-toggle">
-          <label class="checkbox-line">
-            {{ form.has_programming }}
-            <span>A aula teve programação</span>
+      <article class="feedback-criterion-card feedback-programming-row">
+        <div class="feedback-criterion-header">
+          <h3>Programação</h3>
+          <label class="checkbox-line feedback-programming-toggle">
+            {{ form.has_programming }} <span>Aula com programação</span>
           </label>
-          <p class="muted">Quando marcado, comentário e nota de programação entram no cálculo da média.</p>
           {{ form.has_programming.errors }}
         </div>
-        <div class="feedback-programming-fields" data-programming-section="1">
+        <div class="feedback-programming-fields" data-programming-section="1" {% if not form.has_programming.value %}hidden{% endif %}>
+          <div class="feedback-criterion-header nested">
+            <span></span>
+            <div class="feedback-score-field">
+              {{ form.programming_score.label_tag }}
+              {{ form.programming_score }}
+              {{ form.programming_score.errors }}
+            </div>
+          </div>
           <div class="feedback-text-field">
             {{ form.programming_comment.label_tag }}
             {{ form.programming_comment }}
             {{ form.programming_comment.errors }}
           </div>
-          <div class="feedback-score-field">
-            {{ form.programming_score.label_tag }}
-            {{ form.programming_score }}
-            {{ form.programming_score.errors }}
-          </div>
         </div>
       </article>
 
-      <article class="feedback-row">
+      <article class="feedback-criterion-card">
+        <div class="feedback-criterion-header">
+          <h3>Interesse/Participação</h3>
+          <div class="feedback-score-field">
+            {{ form.participation_score.label_tag }}
+            {{ form.participation_score }}
+            {{ form.participation_score.errors }}
+          </div>
+        </div>
         <div class="feedback-text-field">
           {{ form.participation_comment.label_tag }}
           {{ form.participation_comment }}
           {{ form.participation_comment.errors }}
         </div>
-        <div class="feedback-score-field">
-          {{ form.participation_score.label_tag }}
-          {{ form.participation_score }}
-          {{ form.participation_score.errors }}
-        </div>
       </article>
 
-      <article class="feedback-row">
+      <article class="feedback-criterion-card">
+        <div class="feedback-criterion-header">
+          <h3>Comportamento</h3>
+          <div class="feedback-score-field">
+            {{ form.behavior_score.label_tag }}
+            {{ form.behavior_score }}
+            {{ form.behavior_score.errors }}
+          </div>
+        </div>
         <div class="feedback-text-field">
           {{ form.behavior_comment.label_tag }}
           {{ form.behavior_comment }}
           {{ form.behavior_comment.errors }}
-        </div>
-        <div class="feedback-score-field">
-          {{ form.behavior_score.label_tag }}
-          {{ form.behavior_score }}
-          {{ form.behavior_score.errors }}
         </div>
       </article>
 
@@ -139,7 +154,7 @@
   </section>
 
   <div class="form-actions">
-    <button class="btn primary" type="submit">Salvar feedback</button>
+    <button class="btn primary" type="submit">{% if feedback %}Salvar alterações{% else %}Salvar feedback{% endif %}</button>
   </div>
 </form>
 

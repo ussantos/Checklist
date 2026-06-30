@@ -980,6 +980,15 @@ class LessonFeedbackForm(forms.ModelForm):
         labels = {
             'module_number': 'Módulo',
             'lesson_number': 'Aula',
+            'assembly_comment': 'Comentário',
+            'assembly_score': 'Nota',
+            'programming_comment': 'Comentário',
+            'programming_score': 'Nota',
+            'participation_comment': 'Comentário',
+            'participation_score': 'Nota',
+            'behavior_comment': 'Comentário',
+            'behavior_score': 'Nota',
+            'general_score': 'Nota geral',
         }
 
     def __init__(self, *args, **kwargs):

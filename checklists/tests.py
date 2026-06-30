@@ -303,6 +303,20 @@ class LessonFeedbackTests(TestCase):
 
         self.assertEqual(str(feedback.general_score), '8.80')
 
+    def test_existing_past_feedback_can_be_opened_for_editing(self):
+        self.lesson.date = timezone.localdate() - timedelta(days=7)
+        self.lesson.save(update_fields=['date'])
+        feedback = self._feedback(created_by=self.instructor, updated_by=self.instructor)
+        feedback.save()
+        self.client.force_login(self.instructor)
+
+        response = self.client.get(reverse('pedagogical_lesson_feedback_edit', args=[self.lesson.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Editar Feedback de Aula')
+        self.assertContains(response, 'Salvar alterações')
+        self.assertContains(response, 'Nota geral')
+
     def test_blocks_feedback_for_trial_or_play_lesson(self):
         trial = Lesson.objects.create(
             lesson_type=Lesson.TYPE_TRIAL,
