@@ -21,8 +21,8 @@ from .models import (
 from .sponte import (
     _sponte_config, default_sponte_schedule_window, import_sponte_course_records, import_sponte_free_class_records,
     import_sponte_student_records, parse_sponte_courses, parse_sponte_free_class_schedule, parse_sponte_students,
-    parse_sponte_free_class_diary, parse_sponte_student_contracts, SponteCourseImportResult,
-    SponteScheduleSyncResult, SponteStudentImportResult, sync_sponte_free_class_schedule,
+    parse_sponte_free_class_diary, parse_sponte_student_contracts, SponteScheduleSyncResult,
+    sync_sponte_free_class_schedule,
 )
 from .sponte_client import (
     SponteAPIDisabledError, SponteAPIRateLimitError, SponteSOAPClient, normalize_students,
@@ -729,7 +729,7 @@ class InstructorExperienceTests(TestCase):
         self.assertIn('Bom desenvolvimento.', rows[1])
         self.assertEqual(len(rows), 2)
 
-    def test_instructor_can_import_all_sponte_data_from_menu_action(self):
+    def test_instructor_dashboard_imports_only_instructor_schedule_data(self):
         self.client.force_login(self.user)
 
         with (
@@ -737,8 +737,6 @@ class InstructorExperienceTests(TestCase):
             patch('checklists.pedagogical_views.import_sponte_students') as students_mock,
             patch('checklists.pedagogical_views.sync_sponte_free_class_schedule') as schedule_mock,
         ):
-            courses_mock.return_value = SponteCourseImportResult(created=1, updated=2, unchanged=3)
-            students_mock.return_value = SponteStudentImportResult(created=4, updated=5, unchanged=6)
             schedule_mock.return_value = SponteScheduleSyncResult(created=7, updated=8, unchanged=9, cancelled=1)
 
             response = self.client.post(
@@ -749,10 +747,10 @@ class InstructorExperienceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.redirect_chain[-1][0], reverse('instructor_dashboard'))
-        courses_mock.assert_called_once_with()
-        students_mock.assert_called_once_with()
+        courses_mock.assert_not_called()
+        students_mock.assert_not_called()
         schedule_mock.assert_called_once()
-        self.assertContains(response, 'Importação do Sponte concluída')
+        self.assertContains(response, 'Importação do Sponte concluída para o módulo do instrutor')
 
     def test_instructor_agenda_is_read_only_and_links_feedback(self):
         self.client.force_login(self.user)
@@ -763,7 +761,7 @@ class InstructorExperienceTests(TestCase):
         self.assertContains(response, 'Agenda do Instrutor')
         self.assertContains(response, 'Preencher feedback')
         self.assertContains(response, 'Aula Experimental ou Play')
-        self.assertContains(response, 'Importar do Sponte')
+        self.assertNotContains(response, 'Importar do Sponte')
         self.assertNotContains(response, 'Sincronizar Sponte')
         self.assertNotContains(response, 'Nova aula Experimental ou Play')
 

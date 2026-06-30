@@ -91,12 +91,6 @@
         <a href="{% url 'instructor_dashboard' %}">Início</a>
         <a href="{% url 'instructor_agenda' %}">Agenda</a>
         <a href="{% url 'pedagogical_lesson_feedbacks' %}">Feedbacks</a>
-        <a href="{% url 'instructor_dashboard' %}#relatorios-pedagogicos">Relatórios</a>
-        <form method="post" action="{% url 'instructor_import_sponte' %}" class="inline-form">
-          {% csrf_token %}
-          <input type="hidden" name="next" value="{{ request.get_full_path }}">
-          <button class="linkbutton" type="submit">Importar do Sponte</button>
-        </form>
       {% else %}
         <a href="{% url 'operational_home' %}">Início</a>
       {% endif %}

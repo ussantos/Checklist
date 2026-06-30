@@ -1088,8 +1088,6 @@ def instructor_import_sponte(request):
     start_date, end_date = default_sponte_schedule_window(today)
 
     try:
-        courses_result = import_sponte_courses()
-        students_result = import_sponte_students()
         schedule_result = sync_sponte_free_class_schedule(start_date, end_date)
     except SponteConfigurationError as exc:
         messages.error(request, str(exc))
@@ -1100,51 +1098,29 @@ def instructor_import_sponte(request):
 
     messages.success(
         request,
-        'Importação do Sponte concluída: '
-        f'cursos {courses_result.created} criado(s), {courses_result.updated} atualizado(s), '
-        f'{courses_result.unchanged} sem alteração; '
-        f'alunos {students_result.created} criado(s), {students_result.updated} atualizado(s), '
-        f'{students_result.unchanged} sem alteração; '
+        'Importação do Sponte concluída para o módulo do instrutor: '
         f'agenda {schedule_result.created} criada(s), {schedule_result.updated} atualizada(s), '
         f'{schedule_result.unchanged} sem alteração e {schedule_result.cancelled} cancelada(s). '
         f'Período: {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}.'
     )
 
-    if courses_result.skipped:
-        messages.warning(request, f'{courses_result.skipped} curso(s) ignorado(s) por dados incompletos ou versão legada.')
-    if students_result.skipped:
-        messages.warning(request, f'{students_result.skipped} aluno(s) ignorado(s) por dados incompletos.')
     if schedule_result.skipped:
         messages.warning(request, f'{schedule_result.skipped} aula(s) ignorada(s) por dados incompletos.')
 
-    for error in [*courses_result.errors[:3], *students_result.errors[:3], *schedule_result.errors[:5]]:
+    for error in schedule_result.errors[:5]:
         messages.warning(request, error)
 
     log_activity(
         actor=request.user,
-        action='Importação geral Sponte',
+        action='Importação Sponte instrutor',
         object_type='Sponte',
-        object_label='Cursos, alunos e agenda Sponte',
+        object_label='Agenda Sponte para instrutor',
         details=(
             f'Período da agenda: {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}; '
-            f'cursos criados: {courses_result.created}; cursos atualizados: {courses_result.updated}; '
-            f'alunos criados: {students_result.created}; alunos atualizados: {students_result.updated}; '
             f'aulas criadas: {schedule_result.created}; aulas atualizadas: {schedule_result.updated}; '
             f'aulas canceladas: {schedule_result.cancelled}.'
         ),
         new_values={
-            'courses': {
-                'created': courses_result.created,
-                'updated': courses_result.updated,
-                'unchanged': courses_result.unchanged,
-                'skipped': courses_result.skipped,
-            },
-            'students': {
-                'created': students_result.created,
-                'updated': students_result.updated,
-                'unchanged': students_result.unchanged,
-                'skipped': students_result.skipped,
-            },
             'schedule': {
                 'start_date': start_date.isoformat(),
                 'end_date': end_date.isoformat(),

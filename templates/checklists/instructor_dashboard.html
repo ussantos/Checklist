@@ -9,6 +9,11 @@
   <div class="row-actions">
     <a class="btn primary" href="{% url 'instructor_agenda' %}?periodo=semana&data={{ today|date:'Y-m-d' }}">Agenda da semana</a>
     <a class="btn" href="{% url 'pedagogical_lesson_feedbacks' %}?status=pendentes">Feedbacks pendentes</a>
+    <form method="post" action="{% url 'instructor_import_sponte' %}" class="inline-form">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{% url 'instructor_dashboard' %}">
+      <button class="btn" type="submit">Importar do Sponte</button>
+    </form>
   </div>
 </div>
 
