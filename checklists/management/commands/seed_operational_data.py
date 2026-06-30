@@ -42,25 +42,18 @@ SAMPLE_ROOMS = [
 ]
 
 WEEKDAY_SLOT_TIMES = [
-    (time(9, 0), time(11, 0)),
-    (time(9, 30), time(11, 30)),
-    (time(10, 0), time(12, 0)),
-    (time(13, 0), time(15, 0)),
-    (time(13, 30), time(15, 30)),
-    (time(14, 0), time(16, 0)),
-    (time(14, 30), time(16, 30)),
-    (time(15, 0), time(17, 0)),
-    (time(15, 30), time(17, 30)),
-    (time(16, 0), time(18, 0)),
-    (time(16, 30), time(18, 30)),
+    (time(9, 0), time(10, 59)),
+    (time(10, 0), time(11, 59)),
+    (time(13, 0), time(14, 59)),
+    (time(14, 0), time(15, 59)),
+    (time(15, 0), time(16, 59)),
+    (time(16, 0), time(17, 59)),
 ]
 
 SATURDAY_SLOT_TIMES = [
-    (time(9, 0), time(11, 0)),
-    (time(9, 30), time(11, 30)),
-    (time(10, 0), time(12, 0)),
-    (time(13, 0), time(15, 0)),
-    (time(13, 30), time(15, 30)),
+    (time(9, 0), time(10, 59)),
+    (time(10, 0), time(11, 59)),
+    (time(13, 0), time(14, 59)),
 ]
 
 SAMPLE_TIME_SLOTS = [

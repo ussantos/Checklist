@@ -48,6 +48,7 @@ urlpatterns = [
     path('acompanhamento/metas/', views.commercial_goals, name='commercial_goals'),
     path('instrutor/', pedagogical_views.instructor_dashboard, name='instructor_dashboard'),
     path('instrutor/agenda/', pedagogical_views.instructor_agenda, name='instructor_agenda'),
+    path('instrutor/importar-sponte/', pedagogical_views.instructor_import_sponte, name='instructor_import_sponte'),
     path('gestao-pedagogica/agenda-de-aulas/', pedagogical_views.lesson_agenda, name='pedagogical_class_schedule'),
     path('gestao-pedagogica/agenda-de-aulas/sincronizar-sponte/', pedagogical_views.lessons_sync_sponte, name='pedagogical_lessons_sync_sponte'),
     path('gestao-pedagogica/agenda-de-aulas/nova/', pedagogical_views.lesson_create, name='pedagogical_lesson_create'),
