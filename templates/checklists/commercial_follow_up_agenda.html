@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block container_class %}container-wide{% endblock %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Agenda de Follow-Ups</h1>
+    <p class="muted">Follow-ups de {{ week_start|date:"d/m/Y" }} a {{ week_end|date:"d/m/Y" }}.</p>
+  </div>
+  <div class="row-actions">
+    <a class="btn" href="{% url 'commercial_follow_up_agenda' %}?semana={{ previous_week|date:'Y-m-d' }}">Semana anterior</a>
+    {% if current_week != week_start %}
+      <a class="btn" href="{% url 'commercial_follow_up_agenda' %}">Semana atual</a>
+    {% endif %}
+    <a class="btn" href="{% url 'commercial_follow_up_agenda' %}?semana={{ next_week|date:'Y-m-d' }}">Próxima semana</a>
+    <a class="btn primary" href="{% url 'commercial_opportunity_create' %}">Cadastrar oportunidade</a>
+  </div>
+</div>
+
+<section class="commercial-workspace">
+  <div class="section-title">
+    <div>
+      <span class="section-eyebrow">Semana</span>
+      <h2>{{ opportunity_count }} follow-up{{ opportunity_count|pluralize }} no período</h2>
+      <p class="muted">Clique em uma oportunidade para editar, registrar interação ou reagendar o próximo contato.</p>
+    </div>
+  </div>
+
+  <div class="followup-board weekly-followup-board">
+    {% for day in week_days %}
+      <section class="followup-lane{% if day.is_today %} followup-lane-today{% elif day.is_weekend %} followup-lane-weekend{% endif %}">
+        <div class="followup-lane-head">
+          <div>
+            <h3>{{ day.date|date:"d/m" }}</h3>
+            <small>{{ day.date|date:"l" }}</small>
+          </div>
+          <strong>{{ day.count }}</strong>
+        </div>
+        <div class="followup-list">
+          {% for opportunity in day.opportunities %}
+            <a class="followup-card {{ opportunity.follow_up_state }}" href="{% url 'commercial_opportunity_edit' opportunity.id %}">
+              <strong>{{ opportunity.title }}</strong>
+              <span>{{ opportunity.contact_name }}</span>
+              <small>{{ opportunity.commercial_funnel.name }} · {{ opportunity.stage.name|default:"Sem etapa" }}</small>
+              {% if opportunity.contact_phone %}<small>{{ opportunity.contact_phone }}</small>{% endif %}
+              <small>{{ opportunity.follow_up_state_label }}</small>
+            </a>
+          {% empty %}
+            <p class="muted">Nenhum follow-up.</p>
+          {% endfor %}
+        </div>
+      </section>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

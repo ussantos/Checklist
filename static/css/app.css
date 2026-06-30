@@ -841,6 +841,10 @@ th {
   border-top: 4px solid #22c55e;
 }
 
+.followup-lane-weekend {
+  border-top: 4px solid #94a3b8;
+}
+
 .followup-list {
   display: grid;
   gap: 10px;
@@ -892,8 +896,22 @@ th {
   border-left-color: #f97316;
 }
 
+.followup-card.is-today {
+  border-left-color: var(--sky);
+}
+
 .followup-card.is-critical {
   border-left-color: #ef4444;
+}
+
+.weekly-followup-board {
+  grid-template-columns: repeat(7, minmax(190px, 1fr));
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.weekly-followup-board .followup-lane {
+  min-width: 190px;
 }
 
 .dashboard-funnel-groups {

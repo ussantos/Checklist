@@ -22,7 +22,10 @@ from .models import (
     CommercialOpportunityStageEvent, FunnelModel, FunnelModelField, FunnelStage,
     FunnelType, Lesson, OpportunityOrigin, Room, SchoolHoliday, TimeSlot,
 )
-from .services import get_user_position, is_admin_user, next_commercial_opportunity_code
+from .services import (
+    _post_sale_funnel_components, get_user_position, is_admin_user,
+    next_commercial_opportunity_code,
+)
 
 
 COMMERCIAL_POSITION_CODE = 'atendente-comercial'
@@ -224,6 +227,16 @@ def _trial_lesson_stage():
     return _stage_by_code_or_text(code='3-aula-experimental', text='aula experimental')
 
 
+def _is_enrollment_stage(stage):
+    if not stage:
+        return False
+    enrollment_stage = _stage_by_code_or_text(code='5-matricula', text='matricula')
+    if enrollment_stage:
+        return stage.pk == enrollment_stage.pk
+    stage_text = slugify(f'{stage.code} {stage.name}')
+    return 'matricula' in stage_text and '5' in stage_text
+
+
 def _interested_funnel_type():
     return (
         FunnelType.objects.filter(code='interessados').first()
@@ -261,6 +274,10 @@ def _apply_opportunity_business_rules(opportunity, *, form):
             opportunity.funnel_type = _interested_funnel_type() or opportunity.funnel_type
         opportunity.next_follow_up_date = add_months(timezone.localdate(), 3)
         opportunity.active = False
+    elif _is_enrollment_stage(opportunity.stage):
+        post_sale_funnel_type, _post_sale_stage, _post_sale_origin, post_sale_funnel = _post_sale_funnel_components()
+        opportunity.commercial_funnel = post_sale_funnel
+        opportunity.funnel_type = post_sale_funnel_type
     elif not opportunity.funnel_type_id:
         opportunity.funnel_type = (
             getattr(opportunity.commercial_funnel.funnel_model, 'funnel_type', None)
@@ -564,6 +581,80 @@ def commercial_dashboard(request):
         'overdue': overdue[:10],
         'critical_opportunities': critical[:10],
         'stale_opportunities': stale[:10],
+        'is_admin': _is_commercial_admin_context(request.user),
+        'is_commercial_operator': _is_commercial_operator(request.user),
+    })
+
+
+def _parse_week_reference(value):
+    if not value:
+        return timezone.localdate()
+    try:
+        return datetime.strptime(value, '%Y-%m-%d').date()
+    except ValueError:
+        return timezone.localdate()
+
+
+@user_passes_test(_commercial_access_check)
+def commercial_follow_up_agenda(request):
+    week_reference = _parse_week_reference(request.GET.get('semana'))
+    week_start = week_reference - timedelta(days=week_reference.weekday())
+    week_end = week_start + timedelta(days=6)
+    today = timezone.localdate()
+
+    opportunities = list(
+        _scope_commercial_opportunities(
+            _commercial_opportunity_queryset().filter(
+                active=True,
+                next_follow_up_date__gte=week_start,
+                next_follow_up_date__lte=week_end,
+            ),
+            request.user,
+        ).order_by(
+            'next_follow_up_date',
+            'commercial_funnel__name',
+            'stage__order',
+            'stage__name',
+            'contact_name',
+            'title',
+        )
+    )
+
+    opportunities_by_day = {}
+    for opportunity in opportunities:
+        if opportunity.next_follow_up_date < today:
+            opportunity.follow_up_state = 'is-overdue'
+            opportunity.follow_up_state_label = 'Atrasado'
+        elif opportunity.next_follow_up_date == today:
+            opportunity.follow_up_state = 'is-today'
+            opportunity.follow_up_state_label = 'Hoje'
+        else:
+            opportunity.follow_up_state = ''
+            opportunity.follow_up_state_label = opportunity.next_follow_up_date.strftime('%d/%m')
+        opportunities_by_day.setdefault(opportunity.next_follow_up_date, []).append(opportunity)
+
+    week_days = []
+    current_day = week_start
+    while current_day <= week_end:
+        day_opportunities = opportunities_by_day.get(current_day, [])
+        week_days.append({
+            'date': current_day,
+            'opportunities': day_opportunities,
+            'count': len(day_opportunities),
+            'is_today': current_day == today,
+            'is_weekend': current_day.weekday() >= 5,
+        })
+        current_day += timedelta(days=1)
+
+    return render(request, 'checklists/commercial_follow_up_agenda.html', {
+        'week_start': week_start,
+        'week_end': week_end,
+        'previous_week': week_start - timedelta(days=7),
+        'next_week': week_start + timedelta(days=7),
+        'current_week': today - timedelta(days=today.weekday()),
+        'week_days': week_days,
+        'opportunity_count': len(opportunities),
+        'today': today,
         'is_admin': _is_commercial_admin_context(request.user),
         'is_commercial_operator': _is_commercial_operator(request.user),
     })

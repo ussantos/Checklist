@@ -83,7 +83,8 @@
     {% else %}
       {% if user.userprofile.position.code == "atendente-comercial" %}
         <a href="{% url 'commercial_dashboard' %}">Início</a>
-        <a href="{% url 'commercial_lesson_agenda' %}">Agenda</a>
+        <a href="{% url 'commercial_follow_up_agenda' %}">Agenda de Follow-Ups</a>
+        <a href="{% url 'commercial_lesson_agenda' %}">Agenda de Aulas</a>
         <a href="{% url 'commercial_funnel_board' %}">Funis</a>
         <a href="{% url 'commercial_opportunities' %}">Oportunidades</a>
       {% elif user.userprofile.position.code == "instrutor-aula-livre" %}

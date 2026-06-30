@@ -1542,8 +1542,33 @@ class CommercialDashboardTests(TestCase):
         response = self.client.get(reverse('commercial_dashboard'))
 
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse('commercial_follow_up_agenda'))
+        self.assertContains(response, 'Agenda de Follow-Ups')
         self.assertContains(response, reverse('commercial_lesson_agenda'))
-        self.assertContains(response, 'Agenda')
+        self.assertContains(response, 'Agenda de Aulas')
+
+    def test_commercial_follow_up_agenda_groups_week_and_is_scoped(self):
+        today = timezone.localdate()
+        week_start = today - timedelta(days=today.weekday())
+        monday = week_start
+        friday = week_start + timedelta(days=4)
+        self._opportunity(title='Lead segunda', owner=self.user, next_follow_up_date=monday)
+        self._opportunity(title='Lead sexta', owner=self.user, next_follow_up_date=friday)
+        self._opportunity(title='Lead de outro atendente', owner=self.other_user, next_follow_up_date=monday)
+        self.client.force_login(self.user)
+
+        response = self.client.get(f"{reverse('commercial_follow_up_agenda')}?semana={week_start.isoformat()}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Agenda de Follow-Ups')
+        self.assertContains(response, 'Lead segunda')
+        self.assertContains(response, 'Lead sexta')
+        self.assertNotContains(response, 'Lead de outro atendente')
+        self.assertEqual(response.context['week_start'], week_start)
+        self.assertEqual(response.context['week_end'], week_start + timedelta(days=6))
+        self.assertEqual(response.context['opportunity_count'], 2)
+        self.assertContains(response, f"semana={(week_start - timedelta(days=7)).isoformat()}")
+        self.assertContains(response, f"semana={(week_start + timedelta(days=7)).isoformat()}")
 
     def test_commercial_operator_can_open_read_only_lesson_agenda(self):
         today = timezone.localdate()
@@ -1712,6 +1737,27 @@ class CommercialDashboardTests(TestCase):
         self.assertEqual(opportunity.funnel_type, self.interested_type)
         self.assertFalse(opportunity.active)
         self.assertEqual(opportunity.next_follow_up_date, add_months(timezone.localdate(), 3))
+
+    def test_enrollment_stage_moves_to_post_sale_funnel(self):
+        enrollment_stage = FunnelStage.objects.create(code='5-matricula', name='5 - Matrícula', active=True, order=5)
+        opportunity = self._opportunity(
+            title='Lead matricula',
+            owner=self.user,
+            next_follow_up_date=timezone.localdate(),
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse('commercial_opportunity_edit', args=[opportunity.pk]), self._post_opportunity_data(
+            commercial_funnel=str(self.funnel.pk),
+            stage=str(enrollment_stage.pk),
+        ))
+
+        self.assertRedirects(response, reverse('commercial_dashboard'))
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.commercial_funnel.name, 'Pós-Venda')
+        self.assertEqual(opportunity.funnel_type.code, 'posvenda')
+        self.assertEqual(opportunity.stage, enrollment_stage)
+        self.assertTrue(opportunity.active)
 
     def test_scheduling_trial_lesson_moves_to_trial_stage_and_allows_undefined_course(self):
         trial_stage = FunnelStage.objects.create(
