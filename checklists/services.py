@@ -32,7 +32,7 @@ COMMERCIAL_POSITION_CODE = 'atendente-comercial'
 POST_SALE_AUTOMATION_KEY_PREFIX = 'post-sale:lesson-10'
 POST_SALE_OPPORTUNITY_AUDIT_FIELDS = [
     'title', 'commercial_funnel', 'funnel_type', 'stage', 'origin',
-    'contact_name', 'contact_phone', 'owner', 'next_follow_up_date',
+    'interest_course', 'contracted_modules', 'contact_name', 'contact_phone', 'owner', 'next_follow_up_date',
     'notes', 'automation_key', 'active',
 ]
 PEDAGOGICAL_REPORT_TASK_AUDIT_FIELDS = [
@@ -160,22 +160,57 @@ def _post_sale_funnel_components():
     return funnel_type, stage, origin, funnel
 
 
-def _post_sale_owner_for_student(student):
+def _related_commercial_opportunity_for_student(student, course=None):
     if not student:
-        return active_commercial_users().first()
+        return None
 
     related_opportunities = CommercialOpportunity.objects.filter(owner__isnull=False)
-    if student.whatsapp:
-        opportunity = related_opportunities.filter(contact_phone=student.whatsapp).order_by('-updated_at', '-id').first()
-        if opportunity:
-            return opportunity.owner
+    course_scoped = related_opportunities.filter(interest_course=course) if course else related_opportunities.none()
+    search_sets = [course_scoped, related_opportunities] if course else [related_opportunities]
 
-    if student.responsible_name:
-        opportunity = related_opportunities.filter(contact_name__iexact=student.responsible_name).order_by('-updated_at', '-id').first()
-        if opportunity:
-            return opportunity.owner
+    for queryset in search_sets:
+        if student.whatsapp:
+            opportunity = queryset.filter(contact_phone=student.whatsapp).order_by('-updated_at', '-id').first()
+            if opportunity:
+                return opportunity
+
+        if student.responsible_name:
+            opportunity = queryset.filter(contact_name__iexact=student.responsible_name).order_by('-updated_at', '-id').first()
+            if opportunity:
+                return opportunity
+
+    return None
+
+
+def _post_sale_owner_for_student(student, course=None):
+    related_opportunity = _related_commercial_opportunity_for_student(student, course=course)
+    if related_opportunity:
+        return related_opportunity.owner
 
     return active_commercial_users().first()
+
+
+def _post_sale_continuity_hint(module_number, contracted_modules):
+    next_module = module_number + 1
+    if contracted_modules:
+        if module_number < contracted_modules:
+            return (
+                f'O responsável contratou {contracted_modules} módulo(s). '
+                f'Verificar compra ou entrega da apostila do módulo {next_module}.'
+            )
+        if module_number < 3:
+            return (
+                f'O responsável contratou {contracted_modules} módulo(s). '
+                f'Oferecer a venda do módulo {next_module} e da respectiva apostila.'
+            )
+        return (
+            f'O responsável contratou {contracted_modules} módulo(s) e o aluno está no módulo 3. '
+            'Oferecer novo curso ou continuidade pedagógica.'
+        )
+
+    if module_number < 3:
+        return f'Verificar venda da próxima apostila ou do módulo {next_module}, se necessário.'
+    return 'Verificar continuidade do aluno e venda de novo curso, se necessário.'
 
 
 def create_post_sale_opportunity_for_lesson_feedback(feedback, *, actor=None):
@@ -199,15 +234,12 @@ def create_post_sale_opportunity_for_lesson_feedback(feedback, *, actor=None):
         return existing, False
 
     student = lesson.student
+    related_opportunity = _related_commercial_opportunity_for_student(student, course=lesson.course)
+    contracted_modules = related_opportunity.contracted_modules if related_opportunity else None
     funnel_type, stage, origin, funnel = _post_sale_funnel_components()
     follow_up_date = timezone.localdate() + timedelta(days=1)
     module_label = f'módulo {feedback.module_number}'
-    next_module = feedback.module_number + 1
-    continuity_hint = (
-        f'Verificar venda da próxima apostila ou do módulo {next_module}, se necessário.'
-        if feedback.module_number < 3
-        else 'Verificar continuidade do aluno e venda da próxima apostila, se necessário.'
-    )
+    continuity_hint = _post_sale_continuity_hint(feedback.module_number, contracted_modules)
     notes = (
         f'O aluno {student.name} chegou à 10ª aula do {module_label}. '
         f'{continuity_hint}\n'
@@ -225,9 +257,10 @@ def create_post_sale_opportunity_for_lesson_feedback(feedback, *, actor=None):
                 'stage': stage,
                 'origin': origin,
                 'interest_course': lesson.course,
+                'contracted_modules': contracted_modules,
                 'contact_name': student.responsible_name or student.name,
                 'contact_phone': student.whatsapp or '-',
-                'owner': _post_sale_owner_for_student(student),
+                'owner': _post_sale_owner_for_student(student, course=lesson.course),
                 'next_follow_up_date': follow_up_date,
                 'notes': notes,
                 'active': True,

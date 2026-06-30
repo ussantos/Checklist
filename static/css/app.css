@@ -471,6 +471,13 @@ html[data-theme="dark"] .theme-icon-moon {
   font-weight: 700;
 }
 
+.required-marker {
+  color: var(--bad);
+  display: inline-block;
+  font-weight: 900;
+  margin-left: 4px;
+}
+
 .input,
 input,
 select,

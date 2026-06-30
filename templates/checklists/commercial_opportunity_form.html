@@ -61,6 +61,11 @@
         {{ form.interest }}
         {{ form.interest.errors }}
       </p>
+      <p data-contracted-modules-wrapper>
+        {{ form.contracted_modules.label_tag }}
+        {{ form.contracted_modules }}
+        {{ form.contracted_modules.errors }}
+      </p>
       <p>
         {{ form.value.label_tag }}
         {{ form.value }}
@@ -440,31 +445,60 @@
   })();
 </script>
 <script id="interest-value-map" type="application/json">{{ form.interest_value_map_json|safe }}</script>
+<script id="interest-module-required-map" type="application/json">{{ form.interest_module_required_map_json|safe }}</script>
 <script>
   (() => {
     const select = document.querySelector('[data-interest-select="1"]');
     const valueInput = document.querySelector('[data-opportunity-value="1"]');
     const mapElement = document.getElementById('interest-value-map');
+    const modulesElement = document.getElementById('interest-module-required-map');
+    const modulesSelect = document.querySelector('[data-contracted-modules-select="1"]');
+    const modulesWrapper = document.querySelector('[data-contracted-modules-wrapper]');
     if (!select || !valueInput || !mapElement) return;
 
     let valueMap = {};
+    let moduleRequiredMap = {};
     try {
       valueMap = JSON.parse(mapElement.textContent || '{}');
     } catch (_) {
       valueMap = {};
     }
+    try {
+      moduleRequiredMap = JSON.parse(modulesElement ? modulesElement.textContent || '{}' : '{}');
+    } catch (_) {
+      moduleRequiredMap = {};
+    }
 
-    select.addEventListener('change', () => {
+    const syncModulesField = () => {
+      if (!modulesSelect || !modulesWrapper) return;
+      const required = Boolean(moduleRequiredMap[select.value]);
+      modulesWrapper.hidden = !required;
+      modulesSelect.required = required;
+      if (!required) {
+        modulesSelect.value = '';
+      }
+      if (window.ChecklistRequiredMarkers) {
+        window.ChecklistRequiredMarkers();
+      }
+    };
+
+    const syncInterestFields = () => {
       if (!select.value) {
         valueInput.value = '';
+        syncModulesField();
         return;
       }
       if (Object.prototype.hasOwnProperty.call(valueMap, select.value)) {
         valueInput.value = valueMap[select.value];
+        syncModulesField();
         return;
       }
       valueInput.value = '';
-    });
+      syncModulesField();
+    };
+
+    select.addEventListener('change', syncInterestFields);
+    syncModulesField();
   })();
 </script>
 {% endblock %}

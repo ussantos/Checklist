@@ -346,6 +346,13 @@ class CommercialObjection(models.Model):
 class CommercialOpportunity(models.Model):
     """Entrada/lead acompanhado dentro de um funil comercial."""
 
+    NON_MODULAR_COURSE_SLUGS = {'my-robot-play', 'colonia-de-ferias'}
+    CONTRACTED_MODULE_CHOICES = [
+        (1, '1 módulo'),
+        (2, '2 módulos'),
+        (3, '3 módulos'),
+    ]
+
     INTEREST_PARTNERSHIP = 'partnership'
     INTEREST_PRODUCT = 'product'
     INTEREST_EVENT = 'event'
@@ -364,6 +371,7 @@ class CommercialOpportunity(models.Model):
     origin = models.ForeignKey(OpportunityOrigin, on_delete=models.PROTECT, related_name='opportunities', verbose_name='Origem', null=True, blank=True)
     interest_course = models.ForeignKey('Course', on_delete=models.PROTECT, related_name='commercial_opportunities', verbose_name='Interesse em curso', null=True, blank=True)
     interest_type = models.CharField('Tipo de interesse', max_length=30, choices=INTEREST_TYPE_CHOICES, blank=True)
+    contracted_modules = models.PositiveSmallIntegerField('Módulos contratados', choices=CONTRACTED_MODULE_CHOICES, null=True, blank=True)
     value = models.DecimalField('Valor', max_digits=10, decimal_places=2, null=True, blank=True)
     contact_name = models.CharField('Nome do responsável', max_length=120)
     contact_phone = models.CharField('Telefone do responsável', max_length=30)
@@ -408,6 +416,12 @@ class CommercialOpportunity(models.Model):
         if self.interest_type:
             return self.get_interest_type_display()
         return ''
+
+    @staticmethod
+    def course_requires_module_count(course):
+        if not course:
+            return False
+        return slugify(course.name or '') not in CommercialOpportunity.NON_MODULAR_COURSE_SLUGS
 
 
 class CommercialOpportunityFollowUp(models.Model):

@@ -1129,13 +1129,14 @@ class CommercialOpportunityForm(forms.ModelForm):
         model = CommercialOpportunity
         fields = [
             'title', 'commercial_funnel', 'stage', 'origin',
-            'interest', 'value', 'contact_name', 'contact_phone', 'owner', 'next_follow_up_date', 'notes',
+            'interest', 'contracted_modules', 'value', 'contact_name', 'contact_phone', 'owner', 'next_follow_up_date', 'notes',
         ]
         widgets = {
             'title': forms.TextInput(attrs={'class': 'input readonly-code', 'readonly': 'readonly', 'aria-readonly': 'true'}),
             'commercial_funnel': forms.Select(attrs={'class': 'input'}),
             'stage': forms.Select(attrs={'class': 'input'}),
             'origin': forms.Select(attrs={'class': 'input'}),
+            'contracted_modules': forms.Select(attrs={'class': 'input', 'data-contracted-modules-select': '1'}),
             'value': forms.NumberInput(attrs={'class': 'input', 'min': '0', 'step': '0.01', 'data-opportunity-value': '1'}),
             'contact_name': forms.TextInput(attrs={'class': 'input'}),
             'contact_phone': forms.TextInput(attrs={'class': 'input'}),
@@ -1147,6 +1148,7 @@ class CommercialOpportunityForm(forms.ModelForm):
             'commercial_funnel': 'Funil',
             'stage': 'Etapa',
             'origin': 'Origem',
+            'contracted_modules': 'Módulos a contratar',
             'value': 'Valor',
             'contact_name': 'Nome do responsável',
             'contact_phone': 'Telefone do responsável',
@@ -1163,6 +1165,7 @@ class CommercialOpportunityForm(forms.ModelForm):
         self.dynamic_field_names = []
         self.selected_funnel = None
         self.interest_value_map = {}
+        self.interest_module_required_map = {}
         self.trial_lesson_payload = None
         self.created_objection = None
         if not self.is_bound and not (self.instance and self.instance.pk) and self.generated_title:
@@ -1241,6 +1244,10 @@ class CommercialOpportunityForm(forms.ModelForm):
         return json.dumps(self.interest_value_map, ensure_ascii=False)
 
     @property
+    def interest_module_required_map_json(self):
+        return json.dumps(self.interest_module_required_map, ensure_ascii=False)
+
+    @property
     def selected_stage_requires_trial_lesson(self):
         return self._stage_requires_new_trial_lesson(self._selected_stage())
 
@@ -1254,6 +1261,7 @@ class CommercialOpportunityForm(forms.ModelForm):
             choice_value = f'{self.INTEREST_COURSE_PREFIX}{course.pk}'
             course_choices.append((choice_value, course.name))
             self.interest_value_map[choice_value] = f'{course.value:.2f}'
+            self.interest_module_required_map[choice_value] = CommercialOpportunity.course_requires_module_count(course)
 
         choices = [('', 'Selecione')]
         if course_choices:
@@ -1268,6 +1276,8 @@ class CommercialOpportunityForm(forms.ModelForm):
         self.fields['interest'].choices = choices
         if not self.is_bound:
             self.fields['interest'].initial = self._interest_initial()
+        self.fields['contracted_modules'].required = False
+        self.fields['contracted_modules'].choices = [('', 'Selecione'), *CommercialOpportunity.CONTRACTED_MODULE_CHOICES]
 
     def _configure_objection_choices(self):
         objection_choices = [
@@ -1462,6 +1472,7 @@ class CommercialOpportunityForm(forms.ModelForm):
 
         if not interest:
             cleaned['value'] = None
+            cleaned['contracted_modules'] = None
         elif value is not None and value < 0:
             self.add_error('value', 'O valor não pode ser negativo.')
 
@@ -1473,9 +1484,14 @@ class CommercialOpportunityForm(forms.ModelForm):
                 self.add_error('interest', 'Selecione um curso válido.')
                 return cleaned
             cleaned['_interest_course'] = course
+            if CommercialOpportunity.course_requires_module_count(course) and not cleaned.get('contracted_modules'):
+                self.add_error('contracted_modules', 'Informe quantos módulos o cliente deseja contratar.')
+            elif not CommercialOpportunity.course_requires_module_count(course):
+                cleaned['contracted_modules'] = None
             if value is None:
                 cleaned['value'] = course.value
         elif interest.startswith(self.INTEREST_TYPE_PREFIX):
+            cleaned['contracted_modules'] = None
             interest_type = interest.removeprefix(self.INTEREST_TYPE_PREFIX)
             valid_types = {value for value, _ in CommercialOpportunity.INTEREST_TYPE_CHOICES}
             if interest_type not in valid_types:
@@ -1483,6 +1499,7 @@ class CommercialOpportunityForm(forms.ModelForm):
             else:
                 cleaned['_interest_type'] = interest_type
         elif interest:
+            cleaned['contracted_modules'] = None
             self.add_error('interest', 'Selecione uma opção de interesse válida.')
 
         objection_choice = cleaned.get('objection_choice') or ''
@@ -1571,6 +1588,8 @@ class CommercialOpportunityForm(forms.ModelForm):
         opportunity.funnel_type = self._inferred_funnel_type()
         opportunity.interest_course = self.cleaned_data.get('_interest_course')
         opportunity.interest_type = self.cleaned_data.get('_interest_type') or ''
+        if not opportunity.interest_course or not CommercialOpportunity.course_requires_module_count(opportunity.interest_course):
+            opportunity.contracted_modules = None
         objection = self.cleaned_data.get('_objection')
         objection_name = self.cleaned_data.get('_objection_name') or ''
         if objection_name and not objection:

@@ -393,6 +393,32 @@ class LessonFeedbackTests(TestCase):
         self.assertRedirects(response, f"{reverse('pedagogical_lesson_feedbacks')}?data={self.lesson.date.isoformat()}")
         self.assertFalse(CommercialOpportunity.objects.filter(automation_key__startswith='post-sale:lesson-10').exists())
 
+    def test_tenth_lesson_post_sale_uses_contracted_modules_context(self):
+        CommercialOpportunity.objects.create(
+            title='06-2026-0088',
+            commercial_funnel=self.funnel,
+            interest_course=self.course,
+            contracted_modules=1,
+            contact_name=self.student.responsible_name,
+            contact_phone=self.student.whatsapp,
+            owner=self.sales_user,
+            next_follow_up_date=self.day,
+            active=True,
+        )
+        self.client.force_login(self.instructor)
+
+        response = self.client.post(
+            reverse('pedagogical_lesson_feedback_edit', args=[self.lesson.id]),
+            self._feedback_post_data(module_number='1', lesson_number='10'),
+        )
+
+        self.assertRedirects(response, f"{reverse('pedagogical_lesson_feedbacks')}?data={self.lesson.date.isoformat()}")
+        opportunity = CommercialOpportunity.objects.get(
+            automation_key=f'post-sale:lesson-10:student:{self.student.id}:module:1'
+        )
+        self.assertEqual(opportunity.contracted_modules, 1)
+        self.assertIn('Oferecer a venda do módulo 2', opportunity.notes)
+
     def test_eighth_lesson_feedback_creates_pedagogical_report_task_once(self):
         self.client.force_login(self.instructor)
 
@@ -1765,18 +1791,20 @@ class CommercialOpportunityInterestFormTests(TestCase):
         return data
 
     def test_course_interest_defaults_value_from_course(self):
-        form = CommercialOpportunityForm(data=self._form_data(interest=f'course:{self.course.pk}'))
+        form = CommercialOpportunityForm(data=self._form_data(interest=f'course:{self.course.pk}', contracted_modules='3'))
         self.assertTrue(form.is_valid(), form.errors)
 
         opportunity = form.save()
 
         self.assertEqual(opportunity.interest_course, self.course)
         self.assertEqual(opportunity.interest_type, '')
+        self.assertEqual(opportunity.contracted_modules, 3)
         self.assertEqual(opportunity.value, Decimal('4190.00'))
 
     def test_course_interest_allows_manual_value_override(self):
         form = CommercialOpportunityForm(data=self._form_data(
             interest=f'course:{self.course.pk}',
+            contracted_modules='2',
             value='3990.00',
         ))
         self.assertTrue(form.is_valid(), form.errors)
@@ -1784,16 +1812,51 @@ class CommercialOpportunityInterestFormTests(TestCase):
         opportunity = form.save()
 
         self.assertEqual(opportunity.interest_course, self.course)
+        self.assertEqual(opportunity.contracted_modules, 2)
         self.assertEqual(opportunity.value, Decimal('3990.00'))
 
+    def test_modular_course_requires_contracted_modules(self):
+        form = CommercialOpportunityForm(data=self._form_data(interest=f'course:{self.course.pk}'))
+
+        self.assertFalse(form.is_valid())
+        self.assertIn('contracted_modules', form.errors)
+
+    def test_non_modular_course_does_not_require_contracted_modules(self):
+        play_course = Course.objects.create(
+            name='My Robot Play',
+            value=Decimal('89.90'),
+            kit_quantity=4,
+            active=True,
+        )
+        form = CommercialOpportunityForm(data=self._form_data(interest=f'course:{play_course.pk}'))
+        self.assertTrue(form.is_valid(), form.errors)
+
+        opportunity = form.save()
+
+        self.assertEqual(opportunity.interest_course, play_course)
+        self.assertIsNone(opportunity.contracted_modules)
+
+    def test_interest_type_does_not_require_contracted_modules(self):
+        form = CommercialOpportunityForm(data=self._form_data(
+            interest=f'type:{CommercialOpportunity.INTEREST_PRODUCT}',
+            contracted_modules='3',
+        ))
+        self.assertTrue(form.is_valid(), form.errors)
+
+        opportunity = form.save()
+
+        self.assertEqual(opportunity.interest_type, CommercialOpportunity.INTEREST_PRODUCT)
+        self.assertIsNone(opportunity.contracted_modules)
+
     def test_blank_interest_clears_value(self):
-        form = CommercialOpportunityForm(data=self._form_data(value='1200.00'))
+        form = CommercialOpportunityForm(data=self._form_data(value='1200.00', contracted_modules='2'))
         self.assertTrue(form.is_valid(), form.errors)
 
         opportunity = form.save()
 
         self.assertIsNone(opportunity.interest_course)
         self.assertEqual(opportunity.interest_type, '')
+        self.assertIsNone(opportunity.contracted_modules)
         self.assertIsNone(opportunity.value)
 
     def test_existing_objection_can_be_selected_for_opportunity(self):
@@ -1821,7 +1884,7 @@ class CommercialOpportunityInterestFormTests(TestCase):
         self.assertEqual(form.created_objection, objection)
 
     def test_course_price_change_does_not_update_existing_opportunity(self):
-        form = CommercialOpportunityForm(data=self._form_data(interest=f'course:{self.course.pk}'))
+        form = CommercialOpportunityForm(data=self._form_data(interest=f'course:{self.course.pk}', contracted_modules='3'))
         self.assertTrue(form.is_valid(), form.errors)
         opportunity = form.save()
 
@@ -1831,6 +1894,7 @@ class CommercialOpportunityInterestFormTests(TestCase):
             data=self._form_data(
                 title=opportunity.title,
                 interest=f'course:{self.course.pk}',
+                contracted_modules='3',
                 value='4190.00',
             ),
             instance=opportunity,

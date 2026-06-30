@@ -146,6 +146,31 @@
     });
   })();
 </script>
+<script>
+  (() => {
+    const markerClass = 'required-marker';
+    window.ChecklistRequiredMarkers = () => {
+      document.querySelectorAll(`.${markerClass}`).forEach((marker) => marker.remove());
+      document
+        .querySelectorAll('input[required]:not([type="hidden"]), select[required], textarea[required]')
+        .forEach((field) => {
+          if (field.disabled) return;
+          const label = field.labels && field.labels.length ? field.labels[0] : null;
+          if (!label) return;
+          const marker = document.createElement('span');
+          marker.className = markerClass;
+          marker.setAttribute('aria-hidden', 'true');
+          marker.textContent = '*';
+          label.appendChild(marker);
+        });
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', window.ChecklistRequiredMarkers);
+    } else {
+      window.ChecklistRequiredMarkers();
+    }
+  })();
+</script>
 </body>
 </html>
 

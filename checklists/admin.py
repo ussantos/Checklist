@@ -95,7 +95,8 @@ class CommercialFunnelAdmin(admin.ModelAdmin):
 class CommercialOpportunityAdmin(admin.ModelAdmin):
     list_display = (
         'title', 'commercial_funnel', 'funnel_type', 'stage', 'origin',
-        'owner', 'contact_name', 'contact_phone', 'created_at', 'next_follow_up_date', 'active',
+        'interest_course', 'contracted_modules', 'owner', 'contact_name', 'contact_phone',
+        'created_at', 'next_follow_up_date', 'active',
     )
     search_fields = (
         'title', 'contact_name', 'contact_phone', 'commercial_funnel__name',
@@ -108,6 +109,8 @@ class CommercialOpportunityAdmin(admin.ModelAdmin):
         'funnel_type',
         'stage',
         'origin',
+        'interest_course',
+        'contracted_modules',
         'commercial_funnel',
     )
     readonly_fields = ('created_at',)

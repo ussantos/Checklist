@@ -72,6 +72,7 @@
           <th>Funil</th>
           <th>Origem</th>
           <th>Interesse</th>
+          <th>Módulos</th>
           <th>Valor</th>
           <th>Atendente</th>
           <th>Contato</th>
@@ -93,6 +94,7 @@
           <td>{{ opportunity.commercial_funnel.name }}</td>
           <td>{{ opportunity.origin.name|default:"-" }}</td>
           <td>{{ opportunity.interest_label|default:"-" }}</td>
+          <td>{{ opportunity.get_contracted_modules_display|default:"-" }}</td>
           <td>{% if opportunity.value is not None %}R$ {{ opportunity.value|floatformat:2 }}{% else %}-{% endif %}</td>
           <td>
             {% if opportunity.owner %}
