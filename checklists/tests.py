@@ -1015,6 +1015,7 @@ class CourseFormTests(TestCase):
             'value': value,
             'kit_quantity': '1',
             'max_students_per_slot': '1',
+            'requires_module_count': 'on',
             'status': CourseForm.STATUS_ACTIVE,
         }
 
@@ -1060,6 +1061,16 @@ class CourseFormTests(TestCase):
 
         self.assertFalse(form.is_valid())
         self.assertIn('name', form.errors)
+
+    def test_can_mark_course_as_non_modular(self):
+        data = self._form_data(name='Colônia de Férias', value='129.90')
+        data.pop('requires_module_count')
+        form = CourseForm(data=data)
+        self.assertTrue(form.is_valid(), form.errors)
+
+        course = form.save()
+
+        self.assertFalse(course.requires_module_count)
 
 
 @override_settings(
@@ -1823,9 +1834,10 @@ class CommercialOpportunityInterestFormTests(TestCase):
 
     def test_non_modular_course_does_not_require_contracted_modules(self):
         play_course = Course.objects.create(
-            name='My Robot Play',
+            name='Curso avulso sem módulos',
             value=Decimal('89.90'),
             kit_quantity=4,
+            requires_module_count=False,
             active=True,
         )
         form = CommercialOpportunityForm(data=self._form_data(interest=f'course:{play_course.pk}'))

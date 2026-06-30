@@ -32,8 +32,8 @@ SAMPLE_COURSES = [
     {'name': '3D Print Lab', 'value': PREMIUM_COURSE_VALUE, 'kit_quantity': 4},
     {'name': 'Inteligência Artificial', 'value': PREMIUM_COURSE_VALUE, 'kit_quantity': 4},
     {'name': 'APP Developer', 'value': DEFAULT_COURSE_VALUE, 'kit_quantity': 4},
-    {'name': 'My Robot Play', 'value': MY_ROBOT_PLAY_VALUE, 'kit_quantity': 4},
-    {'name': 'Colônia de Férias', 'value': VACATION_CAMP_VALUE, 'kit_quantity': 6},
+    {'name': 'My Robot Play', 'value': MY_ROBOT_PLAY_VALUE, 'kit_quantity': 4, 'requires_module_count': False},
+    {'name': 'Colônia de Férias', 'value': VACATION_CAMP_VALUE, 'kit_quantity': 6, 'requires_module_count': False},
 ]
 
 SAMPLE_ROOMS = [
@@ -283,12 +283,14 @@ class Command(BaseCommand):
         courses_updated = 0
         for data in SAMPLE_COURSES:
             max_students_per_slot = data.get('max_students_per_slot', data['kit_quantity'])
+            requires_module_count = data.get('requires_module_count', True)
             course, created = Course.objects.get_or_create(
                 name=data['name'],
                 defaults={
                     'value': data['value'],
                     'kit_quantity': data['kit_quantity'],
                     'max_students_per_slot': max_students_per_slot,
+                    'requires_module_count': requires_module_count,
                     'active': True,
                 },
             )
@@ -305,11 +307,14 @@ class Command(BaseCommand):
                 if course.max_students_per_slot != max_students_per_slot:
                     course.max_students_per_slot = max_students_per_slot
                     changed = True
+                if course.requires_module_count != requires_module_count:
+                    course.requires_module_count = requires_module_count
+                    changed = True
                 if not course.active:
                     course.active = True
                     changed = True
                 if changed:
-                    course.save(update_fields=['value', 'kit_quantity', 'max_students_per_slot', 'active', 'updated_at'])
+                    course.save(update_fields=['value', 'kit_quantity', 'max_students_per_slot', 'requires_module_count', 'active', 'updated_at'])
                     courses_updated += 1
 
         rooms_created = 0

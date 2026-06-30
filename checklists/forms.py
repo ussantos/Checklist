@@ -607,13 +607,14 @@ class CourseForm(forms.ModelForm):
 
     class Meta:
         model = Course
-        fields = ['name', 'description', 'value', 'kit_quantity', 'max_students_per_slot']
+        fields = ['name', 'description', 'value', 'kit_quantity', 'max_students_per_slot', 'requires_module_count']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'input'}),
             'description': forms.Textarea(attrs={'class': 'input', 'rows': 3}),
             'value': forms.NumberInput(attrs={'class': 'input', 'min': '0', 'step': '0.01'}),
             'kit_quantity': forms.NumberInput(attrs={'class': 'input', 'min': '1'}),
             'max_students_per_slot': forms.NumberInput(attrs={'class': 'input', 'min': '1'}),
+            'requires_module_count': forms.CheckboxInput(),
         }
         labels = {
             'name': 'Nome',
@@ -621,6 +622,10 @@ class CourseForm(forms.ModelForm):
             'value': 'Valor',
             'kit_quantity': 'Quantidade de kits',
             'max_students_per_slot': 'Máximo de alunos por horário',
+            'requires_module_count': 'Controla módulos/apostilas',
+        }
+        help_texts = {
+            'requires_module_count': 'Marque apenas para cursos regulares com módulos. Ao marcar, oportunidades deste curso exigem informar 1, 2 ou 3 módulos.',
         }
 
     def __init__(self, *args, **kwargs):

@@ -32,6 +32,7 @@
       <th>Valor</th>
       <th>Kits</th>
       <th>Máx. por horário</th>
+      <th>Módulos</th>
       <th>Status</th>
       <th>Origem</th>
       <th>Ações</th>
@@ -44,6 +45,13 @@
       <td>R$ {{ course.value|floatformat:2 }}</td>
       <td>{{ course.kit_quantity }}</td>
       <td>{{ course.max_students_per_slot|default:"-" }}</td>
+      <td>
+        {% if course.requires_module_count %}
+          <span class="badge done">Sim</span>
+        {% else %}
+          <span class="badge neutral">Não</span>
+        {% endif %}
+      </td>
       <td>{% if course.active %}<span class="badge done">Ativo</span>{% else %}<span class="badge blocked">Desativado</span>{% endif %}</td>
       <td>
         {% if course.source == "sponte" %}
@@ -63,7 +71,7 @@
       </td>
     </tr>
     {% empty %}
-    <tr><td colspan="7">Nenhum curso cadastrado.</td></tr>
+    <tr><td colspan="8">Nenhum curso cadastrado.</td></tr>
     {% endfor %}
   </tbody>
 </table>

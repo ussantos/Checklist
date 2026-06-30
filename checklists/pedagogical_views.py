@@ -34,7 +34,7 @@ from .sponte import (
 
 
 COURSE_AUDIT_FIELDS = [
-    'name', 'description', 'value', 'kit_quantity', 'max_students_per_slot',
+    'name', 'description', 'value', 'kit_quantity', 'max_students_per_slot', 'requires_module_count',
     'active', 'source', 'external_id', 'synced_at',
 ]
 ROOM_AUDIT_FIELDS = ['name', 'capacity', 'active']
@@ -376,7 +376,10 @@ def course_create(request):
                 obj=course,
                 action='Curso criado',
                 audit_fields=COURSE_AUDIT_FIELDS,
-                details=f'Curso: {course.name}; valor: {course.value}; kits: {course.kit_quantity}; ativo: {course.active}',
+                details=(
+                    f'Curso: {course.name}; valor: {course.value}; kits: {course.kit_quantity}; '
+                    f'módulos: {course.requires_module_count}; ativo: {course.active}'
+                ),
             )
             messages.success(request, 'Curso criado.')
             return redirect('pedagogical_courses')
@@ -411,7 +414,10 @@ def course_edit(request, course_id):
                 action=action,
                 audit_fields=COURSE_AUDIT_FIELDS,
                 previous_values_full=previous_values_full,
-                details=f'Curso: {course.name}; valor: {course.value}; kits: {course.kit_quantity}; ativo: {course.active}',
+                details=(
+                    f'Curso: {course.name}; valor: {course.value}; kits: {course.kit_quantity}; '
+                    f'módulos: {course.requires_module_count}; ativo: {course.active}'
+                ),
             )
             messages.success(request, 'Curso atualizado.')
             return redirect('pedagogical_courses')
@@ -440,7 +446,10 @@ def course_toggle(request, course_id):
         action='Curso ativado' if course.active else 'Curso desativado',
         audit_fields=COURSE_AUDIT_FIELDS,
         previous_values_full=previous_values_full,
-        details=f'Curso: {course.name}; valor: {course.value}; kits: {course.kit_quantity}; ativo: {course.active}',
+        details=(
+            f'Curso: {course.name}; valor: {course.value}; kits: {course.kit_quantity}; '
+            f'módulos: {course.requires_module_count}; ativo: {course.active}'
+        ),
     )
     messages.success(request, f'Curso {"ativado" if course.active else "desativado"}.')
     return redirect('pedagogical_courses')

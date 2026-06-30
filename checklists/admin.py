@@ -149,9 +149,9 @@ class CommercialOpportunityStageEventAdmin(admin.ModelAdmin):
 
 @admin.register(Course)
 class CourseAdmin(admin.ModelAdmin):
-    list_display = ('name', 'value', 'kit_quantity', 'source', 'external_id', 'active')
+    list_display = ('name', 'value', 'kit_quantity', 'requires_module_count', 'source', 'external_id', 'active')
     search_fields = ('name', 'external_id')
-    list_filter = ('active', 'source')
+    list_filter = ('active', 'requires_module_count', 'source')
 
     def has_delete_permission(self, request, obj=None):
         return False

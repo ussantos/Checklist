@@ -346,7 +346,6 @@ class CommercialObjection(models.Model):
 class CommercialOpportunity(models.Model):
     """Entrada/lead acompanhado dentro de um funil comercial."""
 
-    NON_MODULAR_COURSE_SLUGS = {'my-robot-play', 'colonia-de-ferias'}
     CONTRACTED_MODULE_CHOICES = [
         (1, '1 módulo'),
         (2, '2 módulos'),
@@ -421,7 +420,7 @@ class CommercialOpportunity(models.Model):
     def course_requires_module_count(course):
         if not course:
             return False
-        return slugify(course.name or '') not in CommercialOpportunity.NON_MODULAR_COURSE_SLUGS
+        return bool(course.requires_module_count)
 
 
 class CommercialOpportunityFollowUp(models.Model):
@@ -483,6 +482,7 @@ class Course(models.Model):
     value = models.DecimalField('Valor', max_digits=10, decimal_places=2)
     kit_quantity = models.PositiveIntegerField('Quantidade de kits', default=1)
     max_students_per_slot = models.PositiveIntegerField('Máximo de alunos por horário', null=True, blank=True)
+    requires_module_count = models.BooleanField('Controla módulos/apostilas', default=True)
     active = models.BooleanField('Ativo', default=True)
     source = models.CharField('Origem', max_length=30, choices=SOURCE_CHOICES, default=SOURCE_LOCAL)
     external_id = models.CharField('ID externo', max_length=120, blank=True)
