@@ -120,11 +120,12 @@ class FunnelStage(models.Model):
 
     @property
     def requires_trial_lesson(self):
+        code = slugify(self.code or '')
+        name = slugify(self.name or '')
         text = slugify(f'{self.code} {self.name}')
         has_trial = 'experimental' in text or 'experiental' in text
-        has_scheduled = 'agendada' in text or 'agendado' in text
-        is_standard_trial_stage = text.startswith('3-') and 'aula' in text and has_trial
-        return 'aula' in text and has_trial and (has_scheduled or is_standard_trial_stage)
+        is_stage_three = code.startswith('3-') or name.startswith('3-')
+        return is_stage_three and 'aula' in text and has_trial
 
     def has_usage(self):
         return self.legacy_funnel_models.exists() or self.opportunities.exists()

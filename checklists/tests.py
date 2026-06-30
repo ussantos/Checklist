@@ -1794,7 +1794,19 @@ class CommercialOpportunityInterestFormTests(TestCase):
         self.assertEqual(opportunity.interest_course, self.course)
         self.assertEqual(opportunity.value, Decimal('4190.00'))
 
-    def test_stage_aula_experimental_agendada_requires_trial_lesson(self):
+    def test_stage_three_aula_experimental_requires_trial_lesson(self):
+        stage = FunnelStage.objects.create(
+            code='3-aula-experimental',
+            name='3 - Aula Experimental',
+            active=True,
+            order=2,
+        )
+        form = CommercialOpportunityForm(data=self._form_data(stage=str(stage.pk)))
+
+        self.assertFalse(form.is_valid())
+        self.assertIn('trial_lesson_slot', form.errors)
+
+    def test_non_stage_three_aula_experimental_does_not_require_trial_lesson(self):
         stage = FunnelStage.objects.create(
             code='aula-experimental-agendada',
             name='Aula Experimental Agendada',
@@ -1803,8 +1815,34 @@ class CommercialOpportunityInterestFormTests(TestCase):
         )
         form = CommercialOpportunityForm(data=self._form_data(stage=str(stage.pk)))
 
-        self.assertFalse(form.is_valid())
-        self.assertIn('trial_lesson_slot', form.errors)
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_stage_three_with_existing_trial_lesson_does_not_require_new_slot(self):
+        stage = FunnelStage.objects.create(
+            code='3-aula-experimental-existente',
+            name='3 - Aula Experimental existente',
+            active=True,
+            order=2,
+        )
+        opportunity = CommercialOpportunity.objects.create(
+            title='06-2026-0002',
+            commercial_funnel=self.funnel,
+            stage=stage,
+            origin=self.origin,
+            contact_name='Responsável',
+            contact_phone='21999990000',
+            owner=self.owner,
+            next_follow_up_date=date(2026, 7, 10),
+            active=True,
+        )
+        form = CommercialOpportunityForm(
+            data=self._form_data(title=opportunity.title, stage=str(stage.pk)),
+            instance=opportunity,
+            has_existing_trial_lesson=True,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertFalse(form.selected_stage_requires_trial_lesson)
 
     def test_trial_lesson_payload_is_prepared_from_available_slot(self):
         stage = FunnelStage.objects.create(
@@ -2345,6 +2383,49 @@ class CommercialDashboardTests(TestCase):
         self.assertEqual(opportunity.funnel_type.code, 'posvenda')
         self.assertEqual(opportunity.stage, enrollment_stage)
         self.assertTrue(opportunity.active)
+
+    def test_edit_stage_three_with_existing_trial_lesson_does_not_require_new_schedule(self):
+        trial_stage = FunnelStage.objects.create(
+            code='3-aula-experimental',
+            name='3 - Aula Experimental',
+            active=True,
+            order=3,
+        )
+        opportunity = CommercialOpportunity.objects.create(
+            title='Lead aula existente',
+            commercial_funnel=self.funnel,
+            stage=trial_stage,
+            origin=self.origin,
+            contact_name='Responsável',
+            contact_phone='21999990000',
+            owner=self.user,
+            next_follow_up_date=timezone.localdate(),
+            active=True,
+        )
+        Lesson.objects.create(
+            lesson_type=Lesson.TYPE_TRIAL,
+            trial_kind=Lesson.TRIAL_KIND_EXPERIMENTAL,
+            commercial_opportunity=opportunity,
+            room=self.room,
+            date=timezone.localdate() + timedelta(days=1),
+            start_time=time(9, 0),
+            end_time=time(11, 0),
+            status=Lesson.STATUS_NOT_GIVEN,
+            created_by=self.user,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse('commercial_opportunity_edit', args=[opportunity.pk]), self._post_opportunity_data(
+            commercial_funnel=str(self.funnel.pk),
+            stage=str(trial_stage.pk),
+            trial_lesson_slot='',
+            trial_lesson_kind='',
+        ))
+
+        self.assertRedirects(response, reverse('commercial_dashboard'))
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.stage, trial_stage)
+        self.assertEqual(opportunity.trial_lessons.count(), 1)
 
     def test_scheduling_trial_lesson_moves_to_trial_stage_and_allows_undefined_course(self):
         trial_stage = FunnelStage.objects.create(

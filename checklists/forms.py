@@ -1182,8 +1182,10 @@ class CommercialOpportunityForm(forms.ModelForm):
 
     @property
     def selected_stage_requires_trial_lesson(self):
-        stage = self._selected_stage()
-        return bool(stage and stage.requires_trial_lesson)
+        return self._stage_requires_new_trial_lesson(self._selected_stage())
+
+    def _stage_requires_new_trial_lesson(self, stage):
+        return bool(stage and stage.requires_trial_lesson and not self.has_existing_trial_lesson)
 
     def _configure_interest_choices(self):
         courses = Course.objects.all().order_by('name')
@@ -1409,14 +1411,14 @@ class CommercialOpportunityForm(forms.ModelForm):
 
     def _clean_trial_lesson(self, cleaned):
         stage = cleaned.get('stage')
-        requires_trial_lesson = bool(stage and stage.requires_trial_lesson)
+        requires_trial_lesson = self._stage_requires_new_trial_lesson(stage)
         slot_value = cleaned.get('trial_lesson_slot') or ''
         lesson_kind = cleaned.get('trial_lesson_kind') or ''
         course = cleaned.get('trial_lesson_course')
         student_name = (cleaned.get('trial_lesson_student_name') or '').strip()
         notes = (cleaned.get('trial_lesson_notes') or '').strip()
 
-        if requires_trial_lesson and not self.has_existing_trial_lesson and not slot_value:
+        if requires_trial_lesson and not slot_value:
             self.add_error('trial_lesson_slot', 'Esta etapa exige agendar uma Aula Experimental ou Play.')
 
         if slot_value or lesson_kind or course or student_name:
