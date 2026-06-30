@@ -178,6 +178,8 @@ def operational_home(request):
     position = get_user_position(request.user)
     if position and position.code == 'atendente-comercial':
         return redirect('commercial_dashboard')
+    if position and position.code == 'instrutor-aula-livre':
+        return redirect('instructor_dashboard')
     return render(request, 'checklists/operational_home.html', {
         'profile': profile,
         'position': position,

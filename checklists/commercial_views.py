@@ -22,7 +22,7 @@ from .models import (
     CommercialOpportunityStageEvent, FunnelModel, FunnelModelField, FunnelStage,
     FunnelType, Lesson, OpportunityOrigin, Room, SchoolHoliday, TimeSlot,
 )
-from .services import get_user_position, is_admin_user
+from .services import get_user_position, is_admin_user, next_commercial_opportunity_code
 
 
 COMMERCIAL_POSITION_CODE = 'atendente-comercial'
@@ -36,7 +36,7 @@ COMMERCIAL_FUNNEL_AUDIT_FIELDS = ['name', 'funnel_model', 'active']
 COMMERCIAL_OPPORTUNITY_AUDIT_FIELDS = [
     'title', 'commercial_funnel', 'funnel_type', 'stage', 'origin', 'contact_name', 'contact_phone',
     'interest_course', 'interest_type', 'value', 'owner', 'next_follow_up_date', 'field_values', 'notes', 'active',
-    'created_at',
+    'automation_key', 'created_at',
 ]
 
 
@@ -205,20 +205,6 @@ def _record_stage_event(*, opportunity, actor, previous_stage=None, note=''):
         note=(note or '').strip(),
         actor=actor,
     )
-
-
-def _next_opportunity_code():
-    today = timezone.localdate()
-    prefix = f'{today:%m-%Y}-'
-    existing_titles = CommercialOpportunity.objects.filter(title__startswith=prefix).values_list('title', flat=True)
-    highest = 0
-    for title in existing_titles:
-        try:
-            number = int(str(title).removeprefix(prefix))
-        except (TypeError, ValueError):
-            continue
-        highest = max(highest, number)
-    return f'{prefix}{highest + 1:04d}'
 
 
 def _stage_by_code_or_text(*, code='', text=''):
@@ -1334,7 +1320,7 @@ def commercial_opportunity_create(request):
     slots = _available_trial_slots(week_start, course=trial_lesson_course)
     calendar_slots = _trial_calendar_slots(week_start)
     if request.method == 'POST':
-        generated_code = _next_opportunity_code()
+        generated_code = next_commercial_opportunity_code()
         post_data = request.POST.copy()
         post_data['title'] = generated_code
         form = CommercialOpportunityForm(post_data, available_trial_slots=slots, generated_title=generated_code)
@@ -1377,7 +1363,7 @@ def commercial_opportunity_create(request):
                 form.add_error('trial_lesson_slot', '; '.join(exc.messages))
     else:
         initial = {
-            'title': _next_opportunity_code(),
+            'title': next_commercial_opportunity_code(),
             'next_follow_up_date': timezone.localdate() + timedelta(days=1),
         }
         funnel_id = request.GET.get('funil')

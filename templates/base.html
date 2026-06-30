@@ -18,7 +18,7 @@
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="{% if is_admin or user.is_staff %}{% url 'dashboard' %}{% elif user.userprofile.position.code == 'atendente-comercial' %}{% url 'commercial_dashboard' %}{% else %}{% url 'operational_home' %}{% endif %}">
+  <a class="brand" href="{% if is_admin or user.is_staff %}{% url 'dashboard' %}{% elif user.userprofile.position.code == 'atendente-comercial' %}{% url 'commercial_dashboard' %}{% elif user.userprofile.position.code == 'instrutor-aula-livre' %}{% url 'instructor_dashboard' %}{% else %}{% url 'operational_home' %}{% endif %}">
     <img class="brand-logo" src="{% static 'img/logo.webp' %}" alt="My Robot Barra da Tijuca">
     <span class="brand-text">
       <strong>Checklist</strong>
@@ -83,13 +83,15 @@
     {% else %}
       {% if user.userprofile.position.code == "atendente-comercial" %}
         <a href="{% url 'commercial_dashboard' %}">Início</a>
+        <a href="{% url 'commercial_lesson_agenda' %}">Agenda</a>
         <a href="{% url 'commercial_funnel_board' %}">Funis</a>
         <a href="{% url 'commercial_opportunities' %}">Oportunidades</a>
+      {% elif user.userprofile.position.code == "instrutor-aula-livre" %}
+        <a href="{% url 'instructor_dashboard' %}">Início</a>
+        <a href="{% url 'instructor_agenda' %}">Agenda</a>
+        <a href="{% url 'pedagogical_lesson_feedbacks' %}">Feedbacks</a>
       {% else %}
         <a href="{% url 'operational_home' %}">Início</a>
-      {% endif %}
-      {% if user.userprofile.position.code == "instrutor-aula-livre" %}
-        <a href="{% url 'pedagogical_lesson_feedbacks' %}">Feedback de Aula</a>
       {% endif %}
     {% endif %}
     <button class="theme-toggle" type="button" data-theme-toggle aria-label="Alternar tema claro ou escuro" aria-pressed="false" title="Alternar tema">

@@ -7,7 +7,13 @@
     <p class="muted">Aulas regulares de Aulas Livres vêm do Sponte; Aulas Experimentais ou Play são agendadas no Checklist.</p>
   </div>
   <div class="row-actions">
-    {% if trial_only %}
+    {% if commercial_mode %}
+      <a class="btn" href="{% url 'commercial_dashboard' %}">Painel</a>
+      <a class="btn primary" href="{% url 'commercial_opportunity_create' %}">Cadastrar oportunidade</a>
+    {% elif instructor_mode %}
+      <a class="btn" href="{% url 'instructor_dashboard' %}">Início</a>
+      <a class="btn primary" href="{% url 'pedagogical_lesson_feedbacks' %}">Feedbacks</a>
+    {% elif trial_only %}
       <a class="btn primary" href="{% url 'pedagogical_lesson_create' %}?tipo=trial">Nova aula Experimental ou Play</a>
       <a class="btn small" href="{% url 'pedagogical_class_schedule' %}">Ver agenda</a>
     {% else %}
@@ -123,11 +129,33 @@
                     <span class="badge warning">Assistente recomendado</span>
                   {% endif %}
                   {% if lesson.commercial_opportunity %}
-                    <a class="opportunity-link" href="{% url 'commercial_opportunity_edit' lesson.commercial_opportunity.id %}">{{ lesson.commercial_opportunity.title }}</a>
+                    {% if instructor_mode %}
+                      <span class="muted">{{ lesson.commercial_opportunity.title }}</span>
+                    {% elif commercial_mode and not lesson.can_open_opportunity %}
+                      <span class="muted">Oportunidade de outro atendente</span>
+                    {% else %}
+                      <a class="opportunity-link" href="{% url 'commercial_opportunity_edit' lesson.commercial_opportunity.id %}">{{ lesson.commercial_opportunity.title }}</a>
+                    {% endif %}
                   {% endif %}
                 </div>
                 <div class="lesson-card-actions">
-                  {% if lesson.lesson_type == "regular" %}
+                  {% if commercial_mode %}
+                    {% if lesson.can_open_opportunity %}
+                      <a class="btn small" href="{% url 'commercial_opportunity_edit' lesson.commercial_opportunity.id %}">Abrir oportunidade</a>
+                    {% else %}
+                      <span class="muted">Somente leitura</span>
+                    {% endif %}
+                  {% elif instructor_mode %}
+                    {% if lesson.lesson_type == "regular" and lesson.status != "cancelled" %}
+                      <a class="btn small {% if not lesson.feedback_record %}primary{% endif %}" href="{% url 'pedagogical_lesson_feedback_edit' lesson.id %}">
+                        {% if lesson.feedback_record %}Editar feedback{% else %}Preencher feedback{% endif %}
+                      </a>
+                    {% elif lesson.lesson_type == "trial" %}
+                      <span class="muted">Aula Experimental ou Play</span>
+                    {% else %}
+                      <span class="muted">Sem ação</span>
+                    {% endif %}
+                  {% elif lesson.lesson_type == "regular" %}
                     <span class="muted">Somente leitura</span>
                   {% else %}
                     <a class="btn small" href="{% url 'pedagogical_lesson_edit' lesson.id %}">Editar</a>

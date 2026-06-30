@@ -2,6 +2,7 @@ from datetime import date, timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
+from django.db.models import Q
 from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -14,7 +15,7 @@ from .forms import (
     TimeSlotForm,
 )
 from .models import CommercialOpportunity, Course, Lesson, LessonFeedback, PedagogicalStudent, Room, SchoolHoliday, TimeSlot
-from .services import get_user_position, is_admin_user
+from .services import create_post_sale_opportunity_for_lesson_feedback, get_user_position, is_admin_user
 from .sponte import (
     SponteClientError, SponteConfigurationError, default_sponte_schedule_window,
     import_sponte_courses, import_sponte_students, sync_sponte_free_class_schedule,
@@ -40,6 +41,8 @@ LESSON_FEEDBACK_AUDIT_FIELDS = [
     'participation_comment', 'participation_score', 'behavior_comment',
     'behavior_score', 'general_comment', 'general_score', 'created_by', 'updated_by',
 ]
+INSTRUCTOR_POSITION_CODE = 'instrutor-aula-livre'
+COMMERCIAL_POSITION_CODE = 'atendente-comercial'
 
 
 def _admin_check(user):
@@ -52,7 +55,21 @@ def _feedback_access_check(user):
     if is_admin_user(user):
         return True
     position = get_user_position(user)
-    return bool(position and position.code == 'instrutor-aula-livre')
+    return bool(position and position.code == INSTRUCTOR_POSITION_CODE)
+
+
+def _instructor_check(user):
+    if not user.is_authenticated:
+        return False
+    position = get_user_position(user)
+    return bool(position and position.code == INSTRUCTOR_POSITION_CODE and not is_admin_user(user))
+
+
+def _commercial_operator_check(user):
+    if not user.is_authenticated:
+        return False
+    position = get_user_position(user)
+    return bool(position and position.code == COMMERCIAL_POSITION_CODE and not is_admin_user(user))
 
 
 def _parse_date(value):
@@ -123,6 +140,24 @@ def _feedback_lessons_queryset():
         .select_related('student', 'course', 'room', 'feedback', 'feedback__created_by', 'feedback__updated_by')
         .order_by('-date', '-start_time', 'student_name_snapshot')
     )
+
+
+def _feedback_due_lessons_queryset():
+    today = timezone.localdate()
+    current_time = timezone.localtime().time()
+    return _feedback_lessons_queryset().filter(
+        Q(date__lt=today) | Q(date=today, end_time__lte=current_time)
+    )
+
+
+def _attach_lesson_display_state(lessons):
+    for lesson in lessons:
+        lesson.assistant_warning = lesson.assistant_warning_message()
+        try:
+            lesson.feedback_record = lesson.feedback
+        except LessonFeedback.DoesNotExist:
+            lesson.feedback_record = None
+    return lessons
 
 
 @user_passes_test(_admin_check)
@@ -580,12 +615,7 @@ def lesson_feedbacks(request):
     elif feedback_status == 'preenchidos':
         lessons = lessons.filter(feedback__isnull=False)
 
-    lessons = list(lessons)
-    for lesson in lessons:
-        try:
-            lesson.feedback_record = lesson.feedback
-        except LessonFeedback.DoesNotExist:
-            lesson.feedback_record = None
+    lessons = _attach_lesson_display_state(list(lessons))
 
     return render(request, 'checklists/lesson_feedbacks.html', {
         'lessons': lessons,
@@ -627,6 +657,12 @@ def lesson_feedback_edit(request, lesson_id):
                 previous_values_full=previous_values_full,
                 details=f'Feedback: {lesson}; nota geral: {feedback.general_score}',
             )
+            opportunity, created = create_post_sale_opportunity_for_lesson_feedback(feedback, actor=request.user)
+            if created:
+                messages.info(
+                    request,
+                    f'Oportunidade de pós-venda {opportunity.title} criada para follow-up amanhã.'
+                )
             messages.success(request, 'Feedback de aula salvo.')
             return redirect(f'{reverse("pedagogical_lesson_feedbacks")}?data={lesson.date.isoformat()}')
     else:
@@ -704,6 +740,135 @@ def _lesson_calendar(lessons, period_start, period_end, period):
     return [days[index:index + 7] for index in range(0, len(days), 7)]
 
 
+@user_passes_test(_instructor_check)
+def instructor_dashboard(request):
+    today = timezone.localdate()
+    week_start, week_end = _agenda_period_bounds('semana', today)
+    current_time = timezone.localtime().time()
+
+    today_lessons = _attach_lesson_display_state(list(
+        _lesson_queryset()
+        .filter(date=today)
+        .order_by('start_time', 'room__name', 'student_name_snapshot')
+    ))
+    week_lessons = list(_lesson_queryset().filter(date__gte=week_start, date__lte=week_end))
+    upcoming_lessons = _attach_lesson_display_state(list(
+        _lesson_queryset()
+        .filter(date__gte=today)
+        .exclude(status=Lesson.STATUS_CANCELLED)
+        .order_by('date', 'start_time', 'room__name')[:8]
+    ))
+    upcoming_trial_lessons = _attach_lesson_display_state(list(
+        _lesson_queryset()
+        .filter(
+            lesson_type=Lesson.TYPE_TRIAL,
+            date__gte=today,
+            date__lte=week_end,
+        )
+        .exclude(status=Lesson.STATUS_CANCELLED)
+        .order_by('date', 'start_time', 'room__name')[:6]
+    ))
+    pending_feedbacks_queryset = _feedback_due_lessons_queryset().filter(feedback__isnull=True)
+    pending_feedbacks = _attach_lesson_display_state(list(
+        pending_feedbacks_queryset.order_by('date', 'start_time', 'student_name_snapshot')[:8]
+    ))
+
+    next_lesson = next(
+        (
+            lesson for lesson in today_lessons
+            if lesson.status != Lesson.STATUS_CANCELLED and lesson.end_time >= current_time
+        ),
+        None,
+    )
+    if next_lesson is None and upcoming_lessons:
+        next_lesson = upcoming_lessons[0]
+
+    pending_feedback_count = pending_feedbacks_queryset.count()
+    overdue_feedback_count = pending_feedbacks_queryset.filter(date__lt=today).count()
+    today_feedback_count = pending_feedbacks_queryset.filter(date=today).count()
+
+    return render(request, 'checklists/instructor_dashboard.html', {
+        'today': today,
+        'week_start': week_start,
+        'week_end': week_end,
+        'today_lessons': today_lessons,
+        'next_lesson': next_lesson,
+        'pending_feedbacks': pending_feedbacks,
+        'upcoming_trial_lessons': upcoming_trial_lessons,
+        'today_count': len(today_lessons),
+        'week_count': len(week_lessons),
+        'trial_week_count': sum(1 for lesson in week_lessons if lesson.lesson_type == Lesson.TYPE_TRIAL),
+        'pending_feedback_count': pending_feedback_count,
+        'today_feedback_count': today_feedback_count,
+        'overdue_feedback_count': overdue_feedback_count,
+        'position': get_user_position(request.user),
+        'is_admin': False,
+    })
+
+
+@user_passes_test(_instructor_check)
+def instructor_agenda(request):
+    target_date = _parse_date(request.GET.get('data'))
+    period = _agenda_period(request.GET.get('periodo', 'semana'))
+    period_start, period_end = _agenda_period_bounds(period, target_date)
+    lessons = _lesson_queryset().filter(date__gte=period_start, date__lte=period_end)
+    lessons, selected = _apply_lesson_filters(request, lessons)
+    lessons = _attach_lesson_display_state(list(lessons))
+    selected['period'] = period
+    calendar_weeks = _lesson_calendar(lessons, period_start, period_end, period)
+    return render(request, 'checklists/lesson_agenda.html', {
+        'title': 'Agenda do Instrutor',
+        'lessons': lessons,
+        'calendar_weeks': calendar_weeks,
+        'weekday_labels': ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'],
+        'target_date': target_date,
+        'period_start': period_start,
+        'period_end': period_end,
+        'selected': selected,
+        'courses': Course.objects.order_by('name'),
+        'rooms': Room.objects.order_by('name'),
+        'lesson_type_choices': Lesson.TYPE_CHOICES,
+        'status_choices': Lesson.STATUS_CHOICES,
+        'trial_only': False,
+        'instructor_mode': True,
+        'is_admin': False,
+    })
+
+
+@user_passes_test(_commercial_operator_check)
+def commercial_lesson_agenda(request):
+    target_date = _parse_date(request.GET.get('data'))
+    period = _agenda_period(request.GET.get('periodo', 'semana'))
+    period_start, period_end = _agenda_period_bounds(period, target_date)
+    lessons = _lesson_queryset().filter(date__gte=period_start, date__lte=period_end)
+    lessons, selected = _apply_lesson_filters(request, lessons)
+    lessons = _attach_lesson_display_state(list(lessons))
+    for lesson in lessons:
+        lesson.can_open_opportunity = (
+            lesson.commercial_opportunity_id
+            and lesson.commercial_opportunity.owner_id == request.user.id
+        )
+    selected['period'] = period
+    calendar_weeks = _lesson_calendar(lessons, period_start, period_end, period)
+    return render(request, 'checklists/lesson_agenda.html', {
+        'title': 'Agenda Comercial',
+        'lessons': lessons,
+        'calendar_weeks': calendar_weeks,
+        'weekday_labels': ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'],
+        'target_date': target_date,
+        'period_start': period_start,
+        'period_end': period_end,
+        'selected': selected,
+        'courses': Course.objects.order_by('name'),
+        'rooms': Room.objects.order_by('name'),
+        'lesson_type_choices': Lesson.TYPE_CHOICES,
+        'status_choices': Lesson.STATUS_CHOICES,
+        'trial_only': False,
+        'commercial_mode': True,
+        'is_admin': False,
+    })
+
+
 @user_passes_test(_admin_check)
 def lesson_agenda(request):
     target_date = _parse_date(request.GET.get('data'))
@@ -711,9 +876,7 @@ def lesson_agenda(request):
     period_start, period_end = _agenda_period_bounds(period, target_date)
     lessons = _lesson_queryset().filter(date__gte=period_start, date__lte=period_end)
     lessons, selected = _apply_lesson_filters(request, lessons)
-    lessons = list(lessons)
-    for lesson in lessons:
-        lesson.assistant_warning = lesson.assistant_warning_message()
+    lessons = _attach_lesson_display_state(list(lessons))
     selected['period'] = period
     calendar_weeks = _lesson_calendar(lessons, period_start, period_end, period)
     return render(request, 'checklists/lesson_agenda.html', {

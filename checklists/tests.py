@@ -11,9 +11,10 @@ from django.utils import timezone
 
 from .forms import CommercialOpportunityForm, CourseForm, add_months
 from .models import (
-    CommercialFunnel, CommercialOpportunity, Course, FunnelModel, FunnelStage,
-    FunnelType, Lesson, LessonFeedback, OpportunityOrigin, PedagogicalStudent, Position,
-    Room, SchoolHoliday, TimeSlot, UserProfile,
+    CommercialFunnel, CommercialOpportunity, CommercialOpportunityFollowUp,
+    Course, FunnelModel, FunnelStage, FunnelType, Lesson, LessonFeedback,
+    OpportunityOrigin, PedagogicalStudent, Position, Room, SchoolHoliday,
+    TimeSlot, UserProfile,
 )
 from .sponte import (
     _sponte_config, default_sponte_schedule_window, import_sponte_course_records, import_sponte_free_class_records,
@@ -197,6 +198,32 @@ class LessonFeedbackTests(TestCase):
         self.course = Course.objects.create(name='Techbot', value='500.00', kit_quantity=2, active=True)
         self.room = Room.objects.create(name='Sala Maker', capacity=2, active=True)
         self.student = PedagogicalStudent.objects.create(name='Aluno Um', responsible_name='Responsável Um', whatsapp='21999990001')
+        self.instructor_position = Position.objects.create(
+            name='Instrutor de Cursos Livres',
+            code='instrutor-aula-livre',
+            active=True,
+        )
+        self.instructor = User.objects.create_user(username='instrutor-feedback', password='teste123')
+        UserProfile.objects.create(
+            user=self.instructor,
+            display_name='Instrutor Feedback',
+            system_role=UserProfile.ROLE_OPERATOR,
+            position=self.instructor_position,
+            active=True,
+        )
+        self.sales_position = Position.objects.create(
+            name='Atendente Comercial',
+            code='atendente-comercial',
+            active=True,
+        )
+        self.sales_user = User.objects.create_user(username='atendente-pos-venda', password='teste123')
+        UserProfile.objects.create(
+            user=self.sales_user,
+            display_name='Atendente Pós-Venda',
+            system_role=UserProfile.ROLE_OPERATOR,
+            position=self.sales_position,
+            active=True,
+        )
         self.lesson = Lesson.objects.create(
             lesson_type=Lesson.TYPE_REGULAR,
             student=self.student,
@@ -238,6 +265,23 @@ class LessonFeedbackTests(TestCase):
         data.update(kwargs)
         return LessonFeedback(**data)
 
+    def _feedback_post_data(self, **kwargs):
+        data = {
+            'module_number': '1',
+            'lesson_number': '10',
+            'punctuality_score': '10',
+            'assembly_comment': 'Montou dentro do tempo.',
+            'assembly_score': '8',
+            'participation_comment': 'Participou bem.',
+            'participation_score': '9',
+            'behavior_comment': 'Comportamento adequado.',
+            'behavior_score': '10',
+            'general_comment': 'Bom desempenho geral.',
+            'general_score': '',
+        }
+        data.update(kwargs)
+        return data
+
     def test_calculates_general_score_without_programming(self):
         feedback = self._feedback()
         feedback.save()
@@ -275,6 +319,156 @@ class LessonFeedbackTests(TestCase):
             feedback.save()
 
         self.assertIn('lesson', ctx.exception.message_dict)
+
+    def test_tenth_lesson_feedback_creates_post_sale_opportunity_once(self):
+        self.client.force_login(self.instructor)
+
+        response = self.client.post(
+            reverse('pedagogical_lesson_feedback_edit', args=[self.lesson.id]),
+            self._feedback_post_data(),
+        )
+
+        self.assertRedirects(response, f"{reverse('pedagogical_lesson_feedbacks')}?data={self.lesson.date.isoformat()}")
+        automation_key = f'post-sale:lesson-10:student:{self.student.id}:module:1'
+        opportunity = CommercialOpportunity.objects.get(automation_key=automation_key)
+        self.assertEqual(opportunity.funnel_type.code, 'posvenda')
+        self.assertEqual(opportunity.stage.code, '6-pos-venda')
+        self.assertEqual(opportunity.origin.code, 'sistema')
+        self.assertEqual(opportunity.commercial_funnel.name, 'Pós-Venda')
+        self.assertEqual(opportunity.owner, self.sales_user)
+        self.assertEqual(opportunity.contact_name, self.student.responsible_name)
+        self.assertEqual(opportunity.contact_phone, self.student.whatsapp)
+        self.assertEqual(opportunity.interest_course, self.course)
+        self.assertEqual(opportunity.next_follow_up_date, timezone.localdate() + timedelta(days=1))
+        self.assertIn('10ª aula', opportunity.notes)
+        self.assertIn('próxima apostila', opportunity.notes)
+        self.assertEqual(CommercialOpportunityFollowUp.objects.filter(opportunity=opportunity).count(), 1)
+
+        response = self.client.post(
+            reverse('pedagogical_lesson_feedback_edit', args=[self.lesson.id]),
+            self._feedback_post_data(assembly_comment='Feedback atualizado.'),
+        )
+
+        self.assertRedirects(response, f"{reverse('pedagogical_lesson_feedbacks')}?data={self.lesson.date.isoformat()}")
+        self.assertEqual(CommercialOpportunity.objects.filter(automation_key=automation_key).count(), 1)
+        self.assertEqual(CommercialOpportunityFollowUp.objects.filter(opportunity=opportunity).count(), 1)
+
+    def test_feedback_before_tenth_lesson_does_not_create_post_sale_opportunity(self):
+        self.client.force_login(self.instructor)
+
+        response = self.client.post(
+            reverse('pedagogical_lesson_feedback_edit', args=[self.lesson.id]),
+            self._feedback_post_data(lesson_number='9'),
+        )
+
+        self.assertRedirects(response, f"{reverse('pedagogical_lesson_feedbacks')}?data={self.lesson.date.isoformat()}")
+        self.assertFalse(CommercialOpportunity.objects.filter(automation_key__startswith='post-sale:lesson-10').exists())
+
+
+class InstructorExperienceTests(TestCase):
+    def setUp(self):
+        self.position = Position.objects.create(
+            name='Instrutor de Cursos Livres',
+            code='instrutor-aula-livre',
+            active=True,
+        )
+        self.user = User.objects.create_user(username='instrutor', password='teste123')
+        UserProfile.objects.create(
+            user=self.user,
+            display_name='Instrutor Teste',
+            system_role=UserProfile.ROLE_OPERATOR,
+            position=self.position,
+            active=True,
+        )
+        self.today = timezone.localdate()
+        self.week_trial_day = self.today + timedelta(days=max(0, 5 - self.today.weekday()))
+        self.course = Course.objects.create(name='Firstbot 2.0', value=Decimal('3690.00'), kit_quantity=2, active=True)
+        self.room = Room.objects.create(name='Sala Maker', capacity=3, active=True)
+        self.student = PedagogicalStudent.objects.create(
+            name='Aluno Regular',
+            responsible_name='Responsável Regular',
+            whatsapp='21999990001',
+        )
+        self.today_lesson = Lesson.objects.create(
+            lesson_type=Lesson.TYPE_REGULAR,
+            student=self.student,
+            course=self.course,
+            room=self.room,
+            date=self.today,
+            start_time=time(23, 0),
+            end_time=time(23, 30),
+            status=Lesson.STATUS_NOT_GIVEN,
+            source=Lesson.SOURCE_SPONTE,
+            external_id='regular-hoje',
+        )
+        self.pending_feedback_lesson = Lesson.objects.create(
+            lesson_type=Lesson.TYPE_REGULAR,
+            student=self.student,
+            course=self.course,
+            room=self.room,
+            date=self.today - timedelta(days=1),
+            start_time=time(13, 0),
+            end_time=time(15, 0),
+            status=Lesson.STATUS_DONE,
+            source=Lesson.SOURCE_SPONTE,
+            external_id='regular-ontem',
+        )
+        funnel_model = FunnelModel.objects.create(name='Modelo teste', active=True)
+        funnel = CommercialFunnel.objects.create(name='Funil teste', funnel_model=funnel_model, active=True)
+        opportunity = CommercialOpportunity.objects.create(
+            title='07-2026-0001',
+            commercial_funnel=funnel,
+            contact_name='Responsável Trial',
+            contact_phone='21999990002',
+            next_follow_up_date=self.today,
+            active=True,
+        )
+        self.trial_lesson = Lesson.objects.create(
+            lesson_type=Lesson.TYPE_TRIAL,
+            trial_kind=Lesson.TRIAL_KIND_EXPERIMENTAL,
+            commercial_opportunity=opportunity,
+            student_name_snapshot='Criança Trial',
+            responsible_name_snapshot='Responsável Trial',
+            whatsapp_snapshot='21999990002',
+            course=self.course,
+            room=self.room,
+            date=self.week_trial_day,
+            start_time=time(15, 0),
+            end_time=time(17, 0),
+            status=Lesson.STATUS_NOT_GIVEN,
+        )
+
+    def test_operational_home_redirects_instructor_to_dashboard(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('operational_home'))
+
+        self.assertRedirects(response, reverse('instructor_dashboard'))
+
+    def test_instructor_dashboard_surfaces_core_work(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('instructor_dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['today_count'], 1)
+        self.assertEqual(response.context['pending_feedback_count'], 1)
+        self.assertContains(response, 'Painel do Instrutor')
+        self.assertContains(response, 'Aluno Regular')
+        self.assertContains(response, 'Criança Trial')
+        self.assertNotContains(response, 'Gestão Pedagógica')
+
+    def test_instructor_agenda_is_read_only_and_links_feedback(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(f"{reverse('instructor_agenda')}?periodo=semana&data={self.today.isoformat()}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Agenda do Instrutor')
+        self.assertContains(response, 'Preencher feedback')
+        self.assertContains(response, 'Aula Experimental ou Play')
+        self.assertNotContains(response, 'Sincronizar Sponte')
+        self.assertNotContains(response, 'Nova aula Experimental ou Play')
 
 
 class SponteStudentImportTests(TestCase):
@@ -1313,6 +1507,81 @@ class CommercialDashboardTests(TestCase):
         self.assertEqual(response.context['opportunity_funnel_groups'][0]['funnel'], self.funnel)
         self.assertContains(response, 'Lead crítico')
         self.assertNotContains(response, 'Lead de outro atendente')
+
+    def test_commercial_operator_menu_includes_lesson_agenda(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('commercial_dashboard'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse('commercial_lesson_agenda'))
+        self.assertContains(response, 'Agenda')
+
+    def test_commercial_operator_can_open_read_only_lesson_agenda(self):
+        today = timezone.localdate()
+        student = PedagogicalStudent.objects.create(
+            name='Aluno Agenda',
+            responsible_name='Responsável Agenda',
+        )
+        Lesson.objects.create(
+            lesson_type=Lesson.TYPE_REGULAR,
+            student=student,
+            course=self.course,
+            room=self.room,
+            date=today,
+            start_time=time(9, 0),
+            end_time=time(11, 0),
+            status=Lesson.STATUS_NOT_GIVEN,
+            source=Lesson.SOURCE_SPONTE,
+            external_id='agenda-regular',
+        )
+        own_opportunity = self._opportunity(
+            title='Lead aula própria',
+            owner=self.user,
+            next_follow_up_date=today,
+        )
+        other_opportunity = self._opportunity(
+            title='Lead aula outro',
+            owner=self.other_user,
+            next_follow_up_date=today,
+        )
+        Lesson.objects.create(
+            lesson_type=Lesson.TYPE_TRIAL,
+            trial_kind=Lesson.TRIAL_KIND_EXPERIMENTAL,
+            commercial_opportunity=own_opportunity,
+            student_name_snapshot='Criança Agenda',
+            responsible_name_snapshot='Responsável Agenda',
+            course=self.course,
+            room=self.room,
+            date=today,
+            start_time=time(15, 0),
+            end_time=time(17, 0),
+            status=Lesson.STATUS_NOT_GIVEN,
+        )
+        Lesson.objects.create(
+            lesson_type=Lesson.TYPE_TRIAL,
+            trial_kind=Lesson.TRIAL_KIND_PLAY,
+            commercial_opportunity=other_opportunity,
+            student_name_snapshot='Criança Outro Atendimento',
+            responsible_name_snapshot='Responsável Outro',
+            room=self.room,
+            date=today,
+            start_time=time(17, 0),
+            end_time=time(18, 0),
+            status=Lesson.STATUS_NOT_GIVEN,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(f"{reverse('commercial_lesson_agenda')}?periodo=semana&data={today.isoformat()}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Agenda Comercial')
+        self.assertContains(response, 'Aluno Agenda')
+        self.assertContains(response, 'Criança Agenda')
+        self.assertContains(response, 'Abrir oportunidade')
+        self.assertContains(response, 'Oportunidade de outro atendente')
+        self.assertNotContains(response, 'Sincronizar Sponte')
+        self.assertNotContains(response, 'Preencher feedback')
 
     def test_commercial_funnel_board_groups_scoped_opportunities_by_stage(self):
         today = timezone.localdate()

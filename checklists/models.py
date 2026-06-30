@@ -338,6 +338,7 @@ class CommercialOpportunity(models.Model):
     next_follow_up_date = models.DateField('Data próx. Follow-Up')
     field_values = models.JSONField('Campos adicionais preenchidos', default=dict, blank=True)
     notes = models.TextField('Observações', blank=True)
+    automation_key = models.CharField('Chave de automação', max_length=160, blank=True, db_index=True)
     active = models.BooleanField('Ativa', default=True)
     created_at = models.DateTimeField('Data de criação da oportunidade', auto_now_add=True)
     updated_at = models.DateTimeField('Atualizada em', auto_now=True)
@@ -348,6 +349,13 @@ class CommercialOpportunity(models.Model):
             'stage__order',
             'stage__name',
             'title',
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['automation_key'],
+                condition=~models.Q(automation_key=''),
+                name='unique_commercial_opportunity_automation_key',
+            ),
         ]
         verbose_name = 'Oportunidade comercial'
         verbose_name_plural = 'Oportunidades comerciais'

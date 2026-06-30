@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block container_class %}container-wide{% endblock %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Painel do Instrutor</h1>
+    <p class="muted">{{ today|date:"d/m/Y" }}{% if position %} · {{ position.name }}{% endif %}</p>
+  </div>
+  <div class="row-actions">
+    <a class="btn primary" href="{% url 'instructor_agenda' %}?periodo=semana&data={{ today|date:'Y-m-d' }}">Agenda da semana</a>
+    <a class="btn" href="{% url 'pedagogical_lesson_feedbacks' %}?status=pendentes">Feedbacks pendentes</a>
+  </div>
+</div>
+
+<section class="instructor-kpi-grid" aria-label="Resumo pedagógico">
+  <a class="instructor-kpi instructor-kpi-today" href="{% url 'instructor_agenda' %}?periodo=hoje&data={{ today|date:'Y-m-d' }}">
+    <span>Aulas hoje</span>
+    <strong>{{ today_count }}</strong>
+    <small>{{ today|date:"d/m" }}</small>
+  </a>
+  <a class="instructor-kpi instructor-kpi-week" href="{% url 'instructor_agenda' %}?periodo=semana&data={{ today|date:'Y-m-d' }}">
+    <span>Aulas na semana</span>
+    <strong>{{ week_count }}</strong>
+    <small>{{ week_start|date:"d/m" }} a {{ week_end|date:"d/m" }}</small>
+  </a>
+  <a class="instructor-kpi instructor-kpi-feedback" href="{% url 'pedagogical_lesson_feedbacks' %}?status=pendentes">
+    <span>Feedbacks pendentes</span>
+    <strong>{{ pending_feedback_count }}</strong>
+    <small>{{ today_feedback_count }} de hoje</small>
+  </a>
+  <a class="instructor-kpi instructor-kpi-trial" href="{% url 'instructor_agenda' %}?periodo=semana&tipo=trial&data={{ today|date:'Y-m-d' }}">
+    <span>Experimentais/Play</span>
+    <strong>{{ trial_week_count }}</strong>
+    <small>Esta semana</small>
+  </a>
+</section>
+
+<div class="instructor-dashboard-grid">
+  <section class="panel instructor-next-panel">
+    <div class="section-heading">
+      <div>
+        <h2>Próxima aula</h2>
+        <p class="muted">Aula mais próxima na agenda.</p>
+      </div>
+    </div>
+    {% if next_lesson %}
+      <article class="instructor-featured-lesson status-{{ next_lesson.status }}">
+        <div class="lesson-card-time">
+          <strong>{{ next_lesson.date|date:"d/m" }} · {{ next_lesson.start_time|time:"H:i" }} - {{ next_lesson.end_time|time:"H:i" }}</strong>
+          <span>{{ next_lesson.room.name }}</span>
+        </div>
+        <div class="lesson-card-main">
+          <strong>{{ next_lesson.student_name_snapshot }}</strong>
+          <span>{{ next_lesson.responsible_name_snapshot|default:"-" }}{% if next_lesson.whatsapp_snapshot %} · {{ next_lesson.whatsapp_snapshot }}{% endif %}</span>
+        </div>
+        <div class="lesson-card-tags">
+          <span class="badge neutral">{{ next_lesson.get_lesson_type_display }}</span>
+          <span class="badge {% if next_lesson.status == 'not_given' %}pending{% elif next_lesson.status == 'done' %}done{% elif next_lesson.status == 'cancelled' %}blocked{% elif next_lesson.status == 'absent' %}overdue{% else %}neutral{% endif %}">{{ next_lesson.get_status_display }}</span>
+          {% if next_lesson.assistant_warning %}<span class="badge warning">Assistente recomendado</span>{% endif %}
+        </div>
+        <div class="lesson-card-meta">
+          <span>{% if next_lesson.course %}{{ next_lesson.course.name }}{% else %}Definir durante a aula{% endif %}</span>
+          {% if next_lesson.commercial_opportunity %}<span class="muted">{{ next_lesson.commercial_opportunity.title }}</span>{% endif %}
+        </div>
+        <div class="lesson-card-actions">
+          {% if next_lesson.lesson_type == "regular" and next_lesson.status != "cancelled" %}
+            <a class="btn small {% if not next_lesson.feedback_record %}primary{% endif %}" href="{% url 'pedagogical_lesson_feedback_edit' next_lesson.id %}">
+              {% if next_lesson.feedback_record %}Editar feedback{% else %}Preencher feedback{% endif %}
+            </a>
+          {% endif %}
+        </div>
+      </article>
+    {% else %}
+      <p class="instructor-empty muted">Nenhuma aula futura encontrada.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <div class="section-heading">
+      <div>
+        <h2>Feedbacks pendentes</h2>
+        <p class="muted">{% if overdue_feedback_count %}{{ overdue_feedback_count }} atrasado(s).{% else %}Sem atraso registrado.{% endif %}</p>
+      </div>
+      <a class="btn small" href="{% url 'pedagogical_lesson_feedbacks' %}?status=pendentes">Ver todos</a>
+    </div>
+    <div class="instructor-lesson-list">
+      {% for lesson in pending_feedbacks %}
+        <article class="instructor-lesson-item">
+          <div>
+            <strong>{{ lesson.student_name_snapshot }}</strong>
+            <span>{{ lesson.date|date:"d/m" }} · {{ lesson.start_time|time:"H:i" }} - {{ lesson.end_time|time:"H:i" }}</span>
+            <small>{% if lesson.course %}{{ lesson.course.name }}{% else %}Curso a definir{% endif %} · {{ lesson.room.name }}</small>
+          </div>
+          <a class="btn small primary" href="{% url 'pedagogical_lesson_feedback_edit' lesson.id %}">Preencher</a>
+        </article>
+      {% empty %}
+        <p class="instructor-empty muted">Nenhum feedback pendente.</p>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+
+<section class="panel">
+  <div class="section-heading">
+    <div>
+      <h2>Agenda de hoje</h2>
+      <p class="muted">Aulas ordenadas por horário.</p>
+    </div>
+    <a class="btn small" href="{% url 'instructor_agenda' %}?periodo=hoje&data={{ today|date:'Y-m-d' }}">Abrir agenda</a>
+  </div>
+  <div class="instructor-lesson-list instructor-lesson-list-wide">
+    {% for lesson in today_lessons %}
+      <article class="instructor-lesson-item status-{{ lesson.status }}">
+        <div>
+          <strong>{{ lesson.start_time|time:"H:i" }} - {{ lesson.end_time|time:"H:i" }} · {{ lesson.student_name_snapshot }}</strong>
+          <span>{% if lesson.course %}{{ lesson.course.name }}{% else %}Definir durante a aula{% endif %} · {{ lesson.room.name }}</span>
+          <small>{{ lesson.responsible_name_snapshot|default:"-" }}{% if lesson.whatsapp_snapshot %} · {{ lesson.whatsapp_snapshot }}{% endif %}</small>
+        </div>
+        <div class="instructor-lesson-actions">
+          <span class="badge {% if lesson.status == 'not_given' %}pending{% elif lesson.status == 'done' %}done{% elif lesson.status == 'cancelled' %}blocked{% elif lesson.status == 'absent' %}overdue{% else %}neutral{% endif %}">{{ lesson.get_status_display }}</span>
+          {% if lesson.lesson_type == "regular" and lesson.status != "cancelled" %}
+            <a class="btn small {% if not lesson.feedback_record %}primary{% endif %}" href="{% url 'pedagogical_lesson_feedback_edit' lesson.id %}">
+              {% if lesson.feedback_record %}Editar feedback{% else %}Feedback{% endif %}
+            </a>
+          {% endif %}
+        </div>
+      </article>
+    {% empty %}
+      <p class="instructor-empty muted">Nenhuma aula hoje.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-heading">
+    <div>
+      <h2>Aulas Experimentais ou Play</h2>
+      <p class="muted">Próximas aulas da semana.</p>
+    </div>
+    <a class="btn small" href="{% url 'instructor_agenda' %}?periodo=semana&tipo=trial&data={{ today|date:'Y-m-d' }}">Ver na agenda</a>
+  </div>
+  <div class="instructor-lesson-list instructor-lesson-list-wide">
+    {% for lesson in upcoming_trial_lessons %}
+      <article class="instructor-lesson-item status-{{ lesson.status }}">
+        <div>
+          <strong>{{ lesson.date|date:"d/m" }} · {{ lesson.start_time|time:"H:i" }} - {{ lesson.end_time|time:"H:i" }} · {{ lesson.student_name_snapshot }}</strong>
+          <span>{% if lesson.course %}{{ lesson.course.name }}{% else %}Definir durante a aula{% endif %} · {{ lesson.room.name }}</span>
+          <small>{{ lesson.responsible_name_snapshot|default:"-" }}{% if lesson.whatsapp_snapshot %} · {{ lesson.whatsapp_snapshot }}{% endif %}</small>
+        </div>
+        <div class="instructor-lesson-actions">
+          <span class="badge neutral">{{ lesson.get_trial_kind_display }}</span>
+          <span class="badge {% if lesson.status == 'not_given' %}pending{% elif lesson.status == 'done' %}done{% elif lesson.status == 'cancelled' %}blocked{% elif lesson.status == 'absent' %}overdue{% else %}neutral{% endif %}">{{ lesson.get_status_display }}</span>
+        </div>
+      </article>
+    {% empty %}
+      <p class="instructor-empty muted">Nenhuma aula Experimental ou Play nesta semana.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

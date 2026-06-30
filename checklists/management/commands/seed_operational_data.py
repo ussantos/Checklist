@@ -192,6 +192,12 @@ COMMERCIAL_OPPORTUNITY_ORIGINS = [
     {'code': 'site', 'name': 'Site', 'active': True},
     {'code': 'youtube', 'name': 'YouTube', 'active': True},
     {'code': 'tiktok', 'name': 'TikTok', 'active': True},
+    {
+        'code': 'sistema',
+        'name': 'Sistema',
+        'description': 'Oportunidades criadas automaticamente pelo Checklist.',
+        'active': True,
+    },
 ]
 
 COMMERCIAL_FUNNEL_MODELS = [
@@ -228,12 +234,21 @@ COMMERCIAL_FUNNEL_MODELS = [
             },
         ],
     },
+    {
+        'name': 'Modelo Pós-Venda',
+        'funnel_type_code': 'posvenda',
+        'stage_code': '6-pos-venda',
+        'origin_code': 'sistema',
+        'active': True,
+        'fields': [],
+    },
 ]
 
 COMMERCIAL_FUNNELS = [
     {'name': 'Interessados', 'model_name': 'Modelo Cursos e Aulas Avulsas', 'active': True},
     {'name': 'Qualificados', 'model_name': 'Modelo Cursos e Aulas Avulsas', 'active': True},
     {'name': 'Parcerias', 'model_name': 'Modelo Parcerias', 'active': True},
+    {'name': 'Pós-Venda', 'model_name': 'Modelo Pós-Venda', 'active': True},
 ]
 
 
@@ -408,12 +423,34 @@ class Command(BaseCommand):
         funnel_models_created = 0
         funnel_model_fields_created = 0
         for data in COMMERCIAL_FUNNEL_MODELS:
+            funnel_type = FunnelType.objects.filter(code=data.get('funnel_type_code', '')).first()
+            stage = FunnelStage.objects.filter(code=data.get('stage_code', '')).first()
+            origin = OpportunityOrigin.objects.filter(code=data.get('origin_code', '')).first()
+            defaults = {'active': data['active']}
+            if funnel_type:
+                defaults['funnel_type'] = funnel_type
+            if stage:
+                defaults['stage'] = stage
+            if origin:
+                defaults['origin'] = origin
             funnel_model, created = FunnelModel.objects.get_or_create(
                 name=data['name'],
-                defaults={'active': data['active']},
+                defaults=defaults,
             )
             if created:
                 funnel_models_created += 1
+            updates = []
+            if funnel_type and not funnel_model.funnel_type_id:
+                funnel_model.funnel_type = funnel_type
+                updates.append('funnel_type')
+            if stage and not funnel_model.stage_id:
+                funnel_model.stage = stage
+                updates.append('stage')
+            if origin and not funnel_model.origin_id:
+                funnel_model.origin = origin
+                updates.append('origin')
+            if updates:
+                funnel_model.save(update_fields=[*updates, 'updated_at'])
             for field_data in data['fields']:
                 _, field_created = FunnelModelField.objects.get_or_create(
                     funnel_model=funnel_model,

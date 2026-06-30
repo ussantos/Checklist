@@ -3,11 +3,16 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
+from .audit import log_activity, snapshot_instance
 from .models import (
-    ChecklistOccurrence, ChecklistOccurrenceStatusEvent, EmployeeAbsence,
-    MetricRecord, MetricType, Position, TaskTemplate, UserProfile,
+    ChecklistOccurrence, ChecklistOccurrenceStatusEvent, CommercialFunnel,
+    CommercialOpportunity, CommercialOpportunityFollowUp,
+    CommercialOpportunityStageEvent, EmployeeAbsence, FunnelModel,
+    FunnelStage, FunnelType, LessonFeedback, MetricRecord, MetricType,
+    OpportunityOrigin, Position, TaskTemplate, UserProfile,
 )
 
 User = get_user_model()
@@ -23,6 +28,13 @@ METRIC_PERIOD_CHOICES = [
     (METRIC_PERIOD_ANNUAL, 'Anual'),
 ]
 METRIC_PERIOD_LABELS = dict(METRIC_PERIOD_CHOICES)
+COMMERCIAL_POSITION_CODE = 'atendente-comercial'
+POST_SALE_AUTOMATION_KEY_PREFIX = 'post-sale:lesson-10'
+POST_SALE_OPPORTUNITY_AUDIT_FIELDS = [
+    'title', 'commercial_funnel', 'funnel_type', 'stage', 'origin',
+    'contact_name', 'contact_phone', 'owner', 'next_follow_up_date',
+    'notes', 'automation_key', 'active',
+]
 
 
 def get_profile(user):
@@ -57,6 +69,193 @@ def active_operator_profiles(position):
         active=True,
         user__is_active=True,
     )
+
+
+def active_commercial_users():
+    return User.objects.filter(
+        is_active=True,
+        userprofile__system_role=UserProfile.ROLE_OPERATOR,
+        userprofile__active=True,
+        userprofile__position__code=COMMERCIAL_POSITION_CODE,
+        userprofile__position__active=True,
+    ).order_by('id')
+
+
+def next_commercial_opportunity_code():
+    today = timezone.localdate()
+    prefix = f'{today:%m-%Y}-'
+    existing_titles = CommercialOpportunity.objects.filter(title__startswith=prefix).values_list('title', flat=True)
+    highest = 0
+    for title in existing_titles:
+        try:
+            number = int(str(title).removeprefix(prefix))
+        except (TypeError, ValueError):
+            continue
+        highest = max(highest, number)
+    return f'{prefix}{highest + 1:04d}'
+
+
+def _commercial_object_by_code_or_name(model, *, code, name, defaults=None):
+    obj = model.objects.filter(code=code).first() or model.objects.filter(name__iexact=name).first()
+    if obj:
+        return obj, False
+    return model.objects.get_or_create(code=code, defaults={'name': name, **(defaults or {})})
+
+
+def _post_sale_funnel_components():
+    funnel_type, _ = _commercial_object_by_code_or_name(
+        FunnelType,
+        code='posvenda',
+        name='Pós-Venda',
+        defaults={'active': True},
+    )
+    stage, _ = _commercial_object_by_code_or_name(
+        FunnelStage,
+        code='6-pos-venda',
+        name='6 - Pós-Venda',
+        defaults={
+            'description': 'Follow-up de continuidade para alunos regulares.',
+            'order': 6,
+            'active': True,
+        },
+    )
+    origin, _ = _commercial_object_by_code_or_name(
+        OpportunityOrigin,
+        code='sistema',
+        name='Sistema',
+        defaults={
+            'description': 'Oportunidade criada automaticamente pelo Checklist.',
+            'active': True,
+        },
+    )
+    funnel_model, _ = FunnelModel.objects.get_or_create(
+        name='Modelo Pós-Venda',
+        defaults={
+            'funnel_type': funnel_type,
+            'stage': stage,
+            'origin': origin,
+            'active': True,
+        },
+    )
+    model_updates = []
+    if not funnel_model.funnel_type_id:
+        funnel_model.funnel_type = funnel_type
+        model_updates.append('funnel_type')
+    if not funnel_model.stage_id:
+        funnel_model.stage = stage
+        model_updates.append('stage')
+    if not funnel_model.origin_id:
+        funnel_model.origin = origin
+        model_updates.append('origin')
+    if model_updates:
+        funnel_model.save(update_fields=[*model_updates, 'updated_at'])
+    funnel, _ = CommercialFunnel.objects.get_or_create(
+        name='Pós-Venda',
+        defaults={'funnel_model': funnel_model, 'active': True},
+    )
+    return funnel_type, stage, origin, funnel
+
+
+def _post_sale_owner_for_student(student):
+    if not student:
+        return active_commercial_users().first()
+
+    related_opportunities = CommercialOpportunity.objects.filter(owner__isnull=False)
+    if student.whatsapp:
+        opportunity = related_opportunities.filter(contact_phone=student.whatsapp).order_by('-updated_at', '-id').first()
+        if opportunity:
+            return opportunity.owner
+
+    if student.responsible_name:
+        opportunity = related_opportunities.filter(contact_name__iexact=student.responsible_name).order_by('-updated_at', '-id').first()
+        if opportunity:
+            return opportunity.owner
+
+    return active_commercial_users().first()
+
+
+def create_post_sale_opportunity_for_lesson_feedback(feedback, *, actor=None):
+    """Cria oportunidade de pós-venda quando o feedback marca a 10ª aula.
+
+    A regra é idempotente por aluno e módulo, para que editar o feedback não
+    duplique o follow-up comercial.
+    """
+    if not feedback or feedback.lesson_number != 10:
+        return None, False
+    lesson = feedback.lesson
+    if not lesson or not lesson.student_id:
+        return None, False
+
+    automation_key = (
+        f'{POST_SALE_AUTOMATION_KEY_PREFIX}:'
+        f'student:{lesson.student_id}:module:{feedback.module_number}'
+    )
+    existing = CommercialOpportunity.objects.filter(automation_key=automation_key).first()
+    if existing:
+        return existing, False
+
+    student = lesson.student
+    funnel_type, stage, origin, funnel = _post_sale_funnel_components()
+    follow_up_date = timezone.localdate() + timedelta(days=1)
+    module_label = f'módulo {feedback.module_number}'
+    next_module = feedback.module_number + 1
+    continuity_hint = (
+        f'Verificar venda da próxima apostila ou do módulo {next_module}, se necessário.'
+        if feedback.module_number < 3
+        else 'Verificar continuidade do aluno e venda da próxima apostila, se necessário.'
+    )
+    notes = (
+        f'O aluno {student.name} chegou à 10ª aula do {module_label}. '
+        f'{continuity_hint}\n'
+        f'Aula de referência: {lesson.date:%d/%m/%Y}, {lesson.start_time:%H:%M}-{lesson.end_time:%H:%M}. '
+        f'Curso: {lesson.course.name if lesson.course_id else "Não informado"}.'
+    )
+
+    with transaction.atomic():
+        opportunity, created = CommercialOpportunity.objects.get_or_create(
+            automation_key=automation_key,
+            defaults={
+                'title': next_commercial_opportunity_code(),
+                'commercial_funnel': funnel,
+                'funnel_type': funnel_type,
+                'stage': stage,
+                'origin': origin,
+                'interest_course': lesson.course,
+                'contact_name': student.responsible_name or student.name,
+                'contact_phone': student.whatsapp or '-',
+                'owner': _post_sale_owner_for_student(student),
+                'next_follow_up_date': follow_up_date,
+                'notes': notes,
+                'active': True,
+            },
+        )
+        if not created:
+            return opportunity, False
+        CommercialOpportunityStageEvent.objects.create(
+            opportunity=opportunity,
+            previous_stage=None,
+            new_stage=stage,
+            previous_stage_label='',
+            new_stage_label=str(stage),
+            note='Etapa inicial da oportunidade de pós-venda criada pela 10ª aula.',
+            actor=actor,
+        )
+        CommercialOpportunityFollowUp.objects.create(
+            opportunity=opportunity,
+            previous_date=None,
+            scheduled_date=opportunity.next_follow_up_date,
+            note='Follow-up automático para venda da próxima apostila ou próximo módulo.',
+            actor=actor,
+        )
+        log_activity(
+            actor=actor,
+            obj=opportunity,
+            action='Oportunidade pós-venda criada automaticamente',
+            object_label=opportunity.title,
+            details=f'Aluno: {student.name}; módulo: {feedback.module_number}; aula: 10.',
+            new_values=snapshot_instance(opportunity, POST_SALE_OPPORTUNITY_AUDIT_FIELDS),
+        )
+        return opportunity, True
 
 
 def absence_for_user_on_date(user, target_date):
