@@ -868,6 +868,38 @@ class SponteCourseImportTests(TestCase):
         self.assertEqual(course.value, Decimal('3690.00'))
         self.assertEqual(course.kit_quantity, 1)
 
+    def test_import_deactivates_manual_duplicate_when_sponte_course_already_exists(self):
+        sponte_course = Course.objects.create(
+            name='3D PRINT LAB',
+            value=Decimal('4190.00'),
+            kit_quantity=4,
+            max_students_per_slot=4,
+            active=True,
+            source=Course.SOURCE_SPONTE,
+            external_id='-26',
+        )
+        manual_duplicate = Course.objects.create(
+            name='3D Print Lab',
+            value=Decimal('4190.00'),
+            kit_quantity=4,
+            max_students_per_slot=4,
+            active=True,
+        )
+
+        result = import_sponte_course_records([{
+            'name': '3D PRINT LAB',
+            'external_id': '-26',
+            'active': True,
+            'value': None,
+        }])
+
+        sponte_course.refresh_from_db()
+        manual_duplicate.refresh_from_db()
+        self.assertEqual(result.updated, 1)
+        self.assertTrue(sponte_course.active)
+        self.assertEqual(sponte_course.external_id, '-26')
+        self.assertFalse(manual_duplicate.active)
+
 
 class CourseFormTests(TestCase):
     def _form_data(self, name='ELECTROBOT', value='3690'):
@@ -1194,6 +1226,31 @@ class SponteFreeClassScheduleSyncTests(TestCase):
         self.assertEqual(lesson.status, Lesson.STATUS_NOT_GIVEN)
         self.assertIn('Situação no Sponte: não informada pela API', lesson.notes)
         self.assertTrue(lesson.is_sponte_synced)
+
+    def test_parse_done_sponte_lesson_status_from_dada_label(self):
+        xml_text = '''<?xml version="1.0" encoding="utf-8"?>
+        <ArrayOfWsAgendaAluno xmlns="http://api.sponteeducacional.net.br/">
+          <wsAgendaAluno>
+            <AlunoID>123</AlunoID>
+            <AulasLivres>
+              <wsAulasLivresAluno>
+                <AulaLivreID>901</AulaLivreID>
+                <DataAula>07/07/2026</DataAula>
+                <HorarioInicial>14:00</HorarioInicial>
+                <HorarioFinal>16:00</HorarioFinal>
+                <SituacaoAula>Dada</SituacaoAula>
+                <CursoID>77</CursoID>
+                <NomeCurso>Techbot</NomeCurso>
+                <Sala>Sala Maker</Sala>
+              </wsAulasLivresAluno>
+            </AulasLivres>
+          </wsAgendaAluno>
+        </ArrayOfWsAgendaAluno>
+        '''
+
+        records = parse_sponte_free_class_schedule(xml_text, student_external_id='123')
+
+        self.assertEqual(records[0]['lesson_status'], 'Presença')
 
     def test_parse_success_response_without_lessons_is_empty_schedule(self):
         xml_text = '''<?xml version="1.0" encoding="utf-8"?>

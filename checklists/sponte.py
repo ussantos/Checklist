@@ -133,6 +133,8 @@ def _lesson_status_from_sponte(value):
         return Lesson.STATUS_ABSENT
     if 'nao dada' in normalized or 'nao realizada' in normalized or 'nao ministrada' in normalized:
         return Lesson.STATUS_NOT_GIVEN
+    if 'dada' in normalized or 'ministrada' in normalized:
+        return Lesson.STATUS_DONE
     if 'presenc' in normalized or 'realiz' in normalized or 'conclu' in normalized:
         return Lesson.STATUS_DONE
     if 'agend' in normalized:
@@ -540,9 +542,34 @@ def import_sponte_course_records(records):
                 result.created += 1
                 continue
 
+            resolved_name_conflict = False
             exact_name_conflict = Course.objects.filter(name__iexact=name).exclude(pk=course.pk).first()
             if exact_name_conflict:
-                course = exact_name_conflict
+                if external_id and course.external_id == external_id and course.name == name:
+                    if exact_name_conflict.active:
+                        exact_name_conflict.active = False
+                        exact_name_conflict.synced_at = now
+                        exact_name_conflict.save(update_fields=['active', 'synced_at', 'updated_at'])
+                        resolved_name_conflict = True
+                elif external_id and exact_name_conflict.external_id == external_id:
+                    if course.active:
+                        course.active = False
+                        course.synced_at = now
+                        course.save(update_fields=['active', 'synced_at', 'updated_at'])
+                        resolved_name_conflict = True
+                    course = exact_name_conflict
+                elif external_id and course.external_id == external_id and not exact_name_conflict.external_id:
+                    course.external_id = ''
+                    course.source = Course.SOURCE_LOCAL
+                    course.active = False
+                    course.synced_at = now
+                    course.save(update_fields=['external_id', 'source', 'active', 'synced_at', 'updated_at'])
+                    resolved_name_conflict = True
+                    course = exact_name_conflict
+                else:
+                    result.skipped += 1
+                    result.errors.append(f'Curso "{name}" ignorado porque já existe com outro ID externo.')
+                    continue
 
             values = {
                 'name': name,
@@ -564,7 +591,7 @@ def import_sponte_course_records(records):
             if changed:
                 course.save(update_fields=[*values.keys(), 'updated_at'])
                 result.updated += 1
-            elif deactivated:
+            elif deactivated or resolved_name_conflict:
                 result.updated += 1
             else:
                 result.unchanged += 1
