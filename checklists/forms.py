@@ -1505,6 +1505,13 @@ class CommercialOpportunityForm(forms.ModelForm):
         elif objection_choice:
             self.add_error('objection_choice', 'Selecione uma objeção válida.')
 
+        if is_lost_stage(stage) and not cleaned.get('_objection') and not cleaned.get('_objection_name'):
+            if objection_choice == self.OBJECTION_OTHER_VALUE:
+                if not self.errors.get('objection_other'):
+                    self.add_error('objection_other', 'Informe a objeção para oportunidades perdidas.')
+            elif not self.errors.get('objection_choice'):
+                self.add_error('objection_choice', 'Informe uma objeção para oportunidades perdidas.')
+
         self._clean_trial_lesson(cleaned)
         return cleaned
 

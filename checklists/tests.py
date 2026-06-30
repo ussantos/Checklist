@@ -1962,16 +1962,35 @@ class CommercialOpportunityInterestFormTests(TestCase):
             active=True,
             order=5,
         )
+        objection = CommercialObjection.objects.create(name='Não respondeu no teste')
         form = CommercialOpportunityForm(data=self._form_data(
             stage=str(lost_stage.pk),
             next_follow_up_date='',
             status=CommercialOpportunityForm.STATUS_ACTIVE,
+            objection_choice=f'objection:{objection.pk}',
         ))
 
         self.assertTrue(form.is_valid(), form.errors)
         opportunity = form.save()
         self.assertFalse(opportunity.active)
         self.assertEqual(opportunity.next_follow_up_date, add_months(timezone.localdate(), 3))
+        self.assertEqual(opportunity.objection, objection)
+
+    def test_lost_stage_requires_objection(self):
+        lost_stage = FunnelStage.objects.create(
+            code='5-perdido-sem-objecao',
+            name='5 - Perdido sem objeção',
+            active=True,
+            order=5,
+        )
+        form = CommercialOpportunityForm(data=self._form_data(
+            stage=str(lost_stage.pk),
+            next_follow_up_date='',
+            status=CommercialOpportunityForm.STATUS_ACTIVE,
+        ))
+
+        self.assertFalse(form.is_valid())
+        self.assertIn('objection_choice', form.errors)
 
 
 class CommercialObjectionAdminTests(TestCase):
@@ -2075,6 +2094,7 @@ class CommercialDashboardTests(TestCase):
         self.origin = OpportunityOrigin.objects.create(code='whatsapp-dashboard', name='WhatsApp', active=True)
         self.course = Course.objects.create(name='Gamebot', value=Decimal('3690.00'), kit_quantity=1, active=True)
         self.room = Room.objects.create(name='Sala Comercial', capacity=2, active=True)
+        self.lost_objection = CommercialObjection.objects.create(name='Não responde no fluxo comercial')
 
     def _opportunity(self, *, title, owner, next_follow_up_date, updated_at=None):
         opportunity = CommercialOpportunity.objects.create(
@@ -2405,6 +2425,7 @@ class CommercialDashboardTests(TestCase):
         response = self.client.post(reverse('commercial_opportunity_create'), self._post_opportunity_data(
             stage=str(lost_stage.pk),
             next_follow_up_date='',
+            objection_choice=f'objection:{self.lost_objection.pk}',
         ))
 
         self.assertRedirects(response, reverse('commercial_dashboard'))
@@ -2427,6 +2448,7 @@ class CommercialDashboardTests(TestCase):
             commercial_funnel=str(self.funnel.pk),
             stage=str(lost_stage.pk),
             next_follow_up_date='',
+            objection_choice=f'objection:{self.lost_objection.pk}',
         ))
 
         self.assertRedirects(response, reverse('commercial_dashboard'))
@@ -2450,6 +2472,7 @@ class CommercialDashboardTests(TestCase):
             owner=self.user,
             next_follow_up_date=original_follow_up,
             active=False,
+            objection=self.lost_objection,
         )
         self.client.force_login(self.user)
 
@@ -2457,6 +2480,7 @@ class CommercialDashboardTests(TestCase):
             commercial_funnel=str(self.interested_funnel.pk),
             stage=str(lost_stage.pk),
             next_follow_up_date='',
+            objection_choice=f'objection:{self.lost_objection.pk}',
             notes='Apenas atualizando observação.',
         ))
 
