@@ -87,26 +87,26 @@
       </article>
 
       <article class="feedback-criterion-card feedback-programming-row">
-        <div class="feedback-criterion-header">
-          <h3>Programação</h3>
+        <div class="feedback-programming-header">
+          <div>
+            <h3>Programação</h3>
+            <p class="muted">Use esta seção somente quando a aula tiver programação.</p>
+          </div>
           <label class="checkbox-line feedback-programming-toggle">
             {{ form.has_programming }} <span>Aula com programação</span>
           </label>
           {{ form.has_programming.errors }}
         </div>
         <div class="feedback-programming-fields" data-programming-section="1" {% if not form.has_programming.value %}hidden{% endif %}>
-          <div class="feedback-criterion-header nested">
-            <span></span>
-            <div class="feedback-score-field">
-              {{ form.programming_score.label_tag }}
-              {{ form.programming_score }}
-              {{ form.programming_score.errors }}
-            </div>
-          </div>
           <div class="feedback-text-field">
             {{ form.programming_comment.label_tag }}
             {{ form.programming_comment }}
             {{ form.programming_comment.errors }}
+          </div>
+          <div class="feedback-score-field">
+            {{ form.programming_score.label_tag }}
+            {{ form.programming_score }}
+            {{ form.programming_score.errors }}
           </div>
         </div>
       </article>

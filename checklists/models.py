@@ -816,7 +816,10 @@ PEDAGOGICAL_REPORT_LESSONS = (8, 15)
 class LessonFeedback(models.Model):
     """Feedback pedagógico preenchido após uma aula regular de aluno matriculado."""
 
-    SCORE_CHOICES = [(score, str(score)) for score in range(0, 11)]
+    SCORE_CHOICES = [
+        (Decimal(step) / Decimal('2'), f'{Decimal(step) / Decimal("2"):g}'.replace('.', ','))
+        for step in range(0, 21)
+    ]
     MODULE_CHOICES = [(number, str(number)) for number in range(1, 4)]
     LESSON_NUMBER_CHOICES = [(number, str(number)) for number in range(1, 16)]
     PUNCTUALITY_CHOICES = [
@@ -829,14 +832,14 @@ class LessonFeedback(models.Model):
     lesson_number = models.PositiveSmallIntegerField('Aula', choices=LESSON_NUMBER_CHOICES)
     punctuality_score = models.PositiveSmallIntegerField('Pontualidade', choices=PUNCTUALITY_CHOICES)
     assembly_comment = models.TextField('Montagem')
-    assembly_score = models.PositiveSmallIntegerField('Montagem nota', choices=SCORE_CHOICES)
+    assembly_score = models.DecimalField('Montagem nota', max_digits=3, decimal_places=1, choices=SCORE_CHOICES)
     has_programming = models.BooleanField('A aula teve programação?', default=False)
     programming_comment = models.TextField('Programação', blank=True)
-    programming_score = models.PositiveSmallIntegerField('Programação nota', choices=SCORE_CHOICES, null=True, blank=True)
+    programming_score = models.DecimalField('Programação nota', max_digits=3, decimal_places=1, choices=SCORE_CHOICES, null=True, blank=True)
     participation_comment = models.TextField('Interesse/Participação')
-    participation_score = models.PositiveSmallIntegerField('Interesse/Participação nota', choices=SCORE_CHOICES)
+    participation_score = models.DecimalField('Interesse/Participação nota', max_digits=3, decimal_places=1, choices=SCORE_CHOICES)
     behavior_comment = models.TextField('Comportamento')
-    behavior_score = models.PositiveSmallIntegerField('Comportamento nota', choices=SCORE_CHOICES)
+    behavior_score = models.DecimalField('Comportamento nota', max_digits=3, decimal_places=1, choices=SCORE_CHOICES)
     general_comment = models.TextField('Comentário geral')
     general_score = models.DecimalField('Comentário geral nota', max_digits=4, decimal_places=2, default=0)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='lesson_feedbacks_created', verbose_name='Criado por')

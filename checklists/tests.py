@@ -303,6 +303,18 @@ class LessonFeedbackTests(TestCase):
 
         self.assertEqual(str(feedback.general_score), '8.80')
 
+    def test_calculates_general_score_with_half_point_scores(self):
+        feedback = self._feedback(
+            assembly_score=Decimal('8.5'),
+            has_programming=True,
+            programming_comment='Programou com apoio.',
+            programming_score=Decimal('7.5'),
+            participation_score=Decimal('9.5'),
+        )
+        feedback.save()
+
+        self.assertEqual(str(feedback.general_score), '9.10')
+
     def test_existing_past_feedback_can_be_opened_for_editing(self):
         self.lesson.date = timezone.localdate() - timedelta(days=7)
         self.lesson.save(update_fields=['date'])

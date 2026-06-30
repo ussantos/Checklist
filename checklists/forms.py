@@ -1,6 +1,7 @@
 import json
 from calendar import monthrange
 from datetime import datetime, timedelta
+from decimal import Decimal
 from django import forms
 from django.contrib.auth import get_user_model
 from django.forms import inlineformset_factory
@@ -964,7 +965,13 @@ class LessonForm(forms.ModelForm):
 
 
 class LessonFeedbackForm(forms.ModelForm):
-    NOTE_CHOICES = [('', 'Selecione')] + [(score, str(score)) for score in range(0, 11)]
+    NOTE_CHOICES = [
+        ('', 'Selecione'),
+        *[
+            (Decimal(step) / Decimal('2'), f'{Decimal(step) / Decimal("2"):g}'.replace('.', ','))
+            for step in range(0, 21)
+        ],
+    ]
 
     class Meta:
         model = LessonFeedback

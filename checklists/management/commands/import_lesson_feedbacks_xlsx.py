@@ -42,14 +42,14 @@ class FeedbackImportRow:
     teacher_name: str
     punctuality_score: int
     assembly_comment: str
-    assembly_score: int
+    assembly_score: Decimal
     has_programming: bool
     programming_comment: str
-    programming_score: int | None
+    programming_score: Decimal | None
     participation_comment: str
-    participation_score: int
+    participation_score: Decimal
     behavior_comment: str
-    behavior_score: int
+    behavior_score: Decimal
     general_comment: str
 
 
@@ -136,7 +136,8 @@ def _parse_score(value):
         number = Decimal(text.replace(',', '.')) if isinstance(value, str) else Decimal(str(value))
     except (InvalidOperation, ValueError):
         return None
-    score = int(number.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+    score = (number * Decimal('2')).quantize(Decimal('1'), rounding=ROUND_HALF_UP) / Decimal('2')
+    score = score.quantize(Decimal('0.1'))
     if score < 0 or score > 10:
         return None
     return score

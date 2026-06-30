@@ -1955,7 +1955,6 @@ th {
 }
 
 .feedback-row,
-.feedback-programming-fields,
 .feedback-criterion-card {
   align-items: start;
   background: var(--field-soft);
@@ -1980,10 +1979,6 @@ th {
   grid-template-columns: minmax(0, 1fr) 150px;
 }
 
-.feedback-criterion-header.nested {
-  margin-bottom: 12px;
-}
-
 .feedback-criterion-header .feedback-score-field {
   min-width: 0;
 }
@@ -1992,17 +1987,33 @@ th {
   border-left: 5px solid var(--sky);
 }
 
+.feedback-programming-header {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.feedback-programming-header h3,
+.feedback-programming-header p {
+  margin: 0;
+}
+
+.feedback-programming-header p {
+  margin-top: 5px;
+}
+
 .feedback-programming-fields {
-  background: transparent;
-  border: 0;
+  align-items: start;
   display: grid;
-  gap: 12px;
-  padding: 0;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) 150px;
 }
 
 .feedback-programming-toggle {
   align-self: center;
   justify-self: end;
+  min-width: 190px;
 }
 
 .feedback-programming-fields[hidden] {
