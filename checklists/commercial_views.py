@@ -1414,13 +1414,14 @@ def commercial_opportunity_create(request):
         generated_code = next_commercial_opportunity_code()
         post_data = request.POST.copy()
         post_data['title'] = generated_code
+        if not post_data.get('owner') and _is_commercial_operator(request.user):
+            post_data['owner'] = str(request.user.pk)
         form = CommercialOpportunityForm(post_data, available_trial_slots=slots, generated_title=generated_code)
         if form.is_valid():
             try:
                 with transaction.atomic():
                     opportunity = form.save(commit=False)
                     opportunity.title = generated_code
-                    opportunity.owner = request.user
                     _apply_opportunity_business_rules(opportunity, form=form)
                     opportunity.save()
                     opportunity = _commercial_opportunity_queryset().get(pk=opportunity.pk)
@@ -1455,6 +1456,7 @@ def commercial_opportunity_create(request):
     else:
         initial = {
             'title': next_commercial_opportunity_code(),
+            'owner': request.user.pk if _is_commercial_operator(request.user) else None,
             'next_follow_up_date': timezone.localdate() + timedelta(days=1),
         }
         funnel_id = request.GET.get('funil')
@@ -1490,6 +1492,8 @@ def commercial_opportunity_edit(request, opportunity_id):
     if request.method == 'POST':
         post_data = request.POST.copy()
         post_data['title'] = opportunity.title
+        if not post_data.get('owner'):
+            post_data['owner'] = str(opportunity.owner_id or request.user.pk)
         form = CommercialOpportunityForm(
             post_data,
             instance=opportunity,
@@ -1500,8 +1504,6 @@ def commercial_opportunity_edit(request, opportunity_id):
             try:
                 with transaction.atomic():
                     opportunity = form.save(commit=False)
-                    if not opportunity.owner_id:
-                        opportunity.owner = request.user
                     _apply_opportunity_business_rules(opportunity, form=form)
                     opportunity.save()
                     opportunity = _commercial_opportunity_queryset().get(pk=opportunity.pk)

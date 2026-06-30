@@ -17,6 +17,7 @@ from .models import (
     TaskTemplate, TimeSlot, UserProfile,
 )
 from .security import generate_temporary_password, should_force_password_change_on_first_login
+from .services import active_commercial_users
 
 
 User = get_user_model()
@@ -1070,7 +1071,7 @@ class CommercialOpportunityForm(forms.ModelForm):
         model = CommercialOpportunity
         fields = [
             'title', 'commercial_funnel', 'stage', 'origin',
-            'interest', 'value', 'contact_name', 'contact_phone', 'next_follow_up_date', 'notes',
+            'interest', 'value', 'contact_name', 'contact_phone', 'owner', 'next_follow_up_date', 'notes',
         ]
         widgets = {
             'title': forms.TextInput(attrs={'class': 'input readonly-code', 'readonly': 'readonly', 'aria-readonly': 'true'}),
@@ -1091,6 +1092,7 @@ class CommercialOpportunityForm(forms.ModelForm):
             'value': 'Valor',
             'contact_name': 'Nome do responsável',
             'contact_phone': 'Telefone do responsável',
+            'owner': 'Atendente Comercial',
             'next_follow_up_date': 'Data próx. Follow-Up',
             'notes': 'Observações',
         }
@@ -1110,6 +1112,7 @@ class CommercialOpportunityForm(forms.ModelForm):
             self.initial['next_follow_up_date'] = timezone.localdate() + timedelta(days=1)
         self.fields['next_follow_up_date'].required = False
         self.fields['status'].initial = self.STATUS_ACTIVE if self.instance.active else self.STATUS_INACTIVE
+        self._configure_owner_queryset()
         self._configure_interest_choices()
         self._configure_trial_lesson_fields()
 
@@ -1139,6 +1142,39 @@ class CommercialOpportunityForm(forms.ModelForm):
             )
         if self.selected_funnel:
             self._add_model_fields()
+
+    def _configure_owner_queryset(self):
+        active_owner_ids = list(active_commercial_users().values_list('pk', flat=True))
+        owner_ids = active_owner_ids[:]
+        if self.instance and self.instance.pk and self.instance.owner_id:
+            owner_ids.append(self.instance.owner_id)
+        initial_owner = self.initial.get('owner')
+        if isinstance(initial_owner, User):
+            owner_ids.append(initial_owner.pk)
+        elif initial_owner:
+            try:
+                owner_ids.append(int(initial_owner))
+            except (TypeError, ValueError):
+                pass
+        self.fields['owner'].queryset = (
+            User.objects.filter(pk__in=owner_ids)
+            .select_related('userprofile', 'userprofile__position')
+            .order_by('userprofile__display_name', 'username')
+        )
+        self.fields['owner'].required = True
+        self.fields['owner'].empty_label = 'Selecione'
+        self.fields['owner'].widget.attrs.update({'class': 'input'})
+        self.fields['owner'].label_from_instance = self._owner_label
+        if not self.is_bound and not (self.instance and self.instance.pk) and initial_owner:
+            self.fields['owner'].initial = initial_owner
+
+    @staticmethod
+    def _owner_label(user):
+        profile = getattr(user, 'userprofile', None)
+        if profile and profile.display_name:
+            return profile.display_name
+        full_name = user.get_full_name()
+        return full_name or user.username
 
     @property
     def interest_value_map_json(self):

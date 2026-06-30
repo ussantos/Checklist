@@ -1249,6 +1249,19 @@ class LessonAgendaViewTests(TestCase):
 
 class CommercialOpportunityInterestFormTests(TestCase):
     def setUp(self):
+        self.position = Position.objects.create(
+            name='Atendente Comercial',
+            code='atendente-comercial',
+            active=True,
+        )
+        self.owner = User.objects.create_user(username='atendente-form', password='teste123')
+        UserProfile.objects.create(
+            user=self.owner,
+            display_name='Atendente Form',
+            system_role=UserProfile.ROLE_OPERATOR,
+            position=self.position,
+            active=True,
+        )
         self.course = Course.objects.create(
             name='Inteligência Artificial',
             value=Decimal('4190.00'),
@@ -1285,6 +1298,7 @@ class CommercialOpportunityInterestFormTests(TestCase):
             'value': '',
             'contact_name': 'Responsável',
             'contact_phone': '21999990000',
+            'owner': str(self.owner.pk),
             'next_follow_up_date': '2026-07-10',
             'status': CommercialOpportunityForm.STATUS_ACTIVE,
             'notes': '',
@@ -1688,7 +1702,10 @@ class CommercialDashboardTests(TestCase):
         self.assertContains(response, 'Criar oportunidade')
         self.assertContains(response, 'Agenda da semana')
         self.assertEqual(response.context['form'].initial['next_follow_up_date'], tomorrow)
+        self.assertEqual(response.context['form'].initial['owner'], self.user.pk)
         self.assertContains(response, f'value="{tomorrow.isoformat()}"')
+        self.assertContains(response, 'Atendente Comercial')
+        self.assertContains(response, 'Outro Atendente')
 
     def _post_opportunity_data(self, **kwargs):
         data = {
@@ -1700,6 +1717,7 @@ class CommercialDashboardTests(TestCase):
             'value': '',
             'contact_name': 'Responsável Comercial',
             'contact_phone': '21999990000',
+            'owner': str(self.user.pk),
             'next_follow_up_date': timezone.localdate().isoformat(),
             'status': CommercialOpportunityForm.STATUS_ACTIVE,
             'notes': '',
@@ -1721,6 +1739,33 @@ class CommercialDashboardTests(TestCase):
         self.assertRedirects(response, reverse('commercial_dashboard'))
         opportunity = CommercialOpportunity.objects.latest('id')
         self.assertRegex(opportunity.title, r'^\d{2}-\d{4}-0001$')
+
+    def test_create_can_assign_opportunity_to_another_commercial_attendant(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse('commercial_opportunity_create'), self._post_opportunity_data(
+            owner=str(self.other_user.pk),
+        ))
+
+        self.assertRedirects(response, reverse('commercial_dashboard'))
+        opportunity = CommercialOpportunity.objects.latest('id')
+        self.assertEqual(opportunity.owner, self.other_user)
+
+    def test_edit_can_transfer_opportunity_to_another_commercial_attendant(self):
+        opportunity = self._opportunity(
+            title='Lead para transferir',
+            owner=self.user,
+            next_follow_up_date=timezone.localdate(),
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse('commercial_opportunity_edit', args=[opportunity.pk]), self._post_opportunity_data(
+            owner=str(self.other_user.pk),
+        ))
+
+        self.assertRedirects(response, reverse('commercial_dashboard'))
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.owner, self.other_user)
 
     def test_lost_stage_moves_to_interested_funnel_and_deactivates(self):
         lost_stage = FunnelStage.objects.create(code='5-perdido', name='5 - Perdido', active=True, order=5)
