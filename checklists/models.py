@@ -722,6 +722,14 @@ class Lesson(models.Model):
 
         if self.lesson_type == self.TYPE_REGULAR and not self.student_id:
             errors['student'] = 'Selecione um aluno para aula de matriculado.'
+        if (
+            self.lesson_type == self.TYPE_REGULAR
+            and self.student_id
+            and not self.student.active
+            and self.status in self.OCCUPYING_STATUSES
+            and not self.is_sponte_synced
+        ):
+            errors['student'] = 'Aluno inativo não deve ter aula regular exigida.'
         if self.lesson_type == self.TYPE_REGULAR and not self.course_id:
             errors['course'] = 'Selecione um curso para aula de matriculado.'
         if self.lesson_type == self.TYPE_TRIAL:
@@ -766,6 +774,9 @@ class Lesson(models.Model):
                 self.whatsapp_snapshot = self.commercial_opportunity.contact_phone
         self.full_clean()
         return super().save(*args, **kwargs)
+
+
+PEDAGOGICAL_REPORT_LESSONS = (1, 15)
 
 
 class LessonFeedback(models.Model):
@@ -844,6 +855,40 @@ class LessonFeedback(models.Model):
         self.general_score = self.calculate_general_score()
         self.full_clean()
         return super().save(*args, **kwargs)
+
+
+class PedagogicalReportTask(models.Model):
+    """Tarefa do instrutor para consolidar e enviar relatório pedagógico."""
+
+    REPORT_LESSONS = PEDAGOGICAL_REPORT_LESSONS
+
+    feedback = models.OneToOneField(LessonFeedback, on_delete=models.PROTECT, related_name='pedagogical_report_task', verbose_name='Feedback de referência')
+    student = models.ForeignKey(PedagogicalStudent, on_delete=models.PROTECT, related_name='pedagogical_report_tasks', verbose_name='Aluno')
+    course = models.ForeignKey(Course, on_delete=models.PROTECT, related_name='pedagogical_report_tasks', verbose_name='Curso', null=True, blank=True)
+    module_number = models.PositiveSmallIntegerField('Módulo', choices=LessonFeedback.MODULE_CHOICES)
+    lesson_number = models.PositiveSmallIntegerField('Aula', choices=[(number, str(number)) for number in PEDAGOGICAL_REPORT_LESSONS])
+    due_date = models.DateField('Prazo')
+    completed = models.BooleanField('Concluído', default=False)
+    completed_at = models.DateTimeField('Concluído em', null=True, blank=True)
+    completed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='pedagogical_reports_completed', verbose_name='Concluído por')
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='pedagogical_reports_created', verbose_name='Criado por')
+    created_at = models.DateTimeField('Criado em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizado em', auto_now=True)
+
+    class Meta:
+        ordering = ['completed', 'due_date', 'student__name', 'module_number', 'lesson_number']
+        constraints = [
+            models.UniqueConstraint(fields=['student', 'course', 'module_number', 'lesson_number'], name='unique_pedagogical_report_task_per_student_course_step'),
+        ]
+        verbose_name = 'Relatório pedagógico'
+        verbose_name_plural = 'Relatórios pedagógicos'
+
+    def __str__(self):
+        return f'Relatório pedagógico - {self.student} - Módulo {self.module_number} Aula {self.lesson_number}'
+
+    @property
+    def reference_date(self):
+        return self.feedback.lesson.date if self.feedback_id else self.due_date
 
 
 class UserProfile(models.Model):

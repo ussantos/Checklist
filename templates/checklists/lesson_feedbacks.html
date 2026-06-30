@@ -5,6 +5,11 @@
     <h1>Feedback de Aula</h1>
     <p class="muted">Preenchimento obrigatório após aulas regulares de alunos matriculados.</p>
   </div>
+  {% if not is_admin %}
+    <div class="row-actions">
+      <a class="btn" href="{% url 'instructor_feedback_export_xlsx' %}">Exportar meus feedbacks XLSX</a>
+    </div>
+  {% endif %}
 </div>
 
 <form method="get" class="filters panel">

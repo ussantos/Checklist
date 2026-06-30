@@ -12,7 +12,7 @@ from .models import (
     CommercialOpportunity, CommercialOpportunityFollowUp,
     CommercialOpportunityStageEvent, EmployeeAbsence, FunnelModel,
     FunnelStage, FunnelType, LessonFeedback, MetricRecord, MetricType,
-    OpportunityOrigin, Position, TaskTemplate, UserProfile,
+    OpportunityOrigin, PedagogicalReportTask, Position, TaskTemplate, UserProfile,
 )
 
 User = get_user_model()
@@ -34,6 +34,10 @@ POST_SALE_OPPORTUNITY_AUDIT_FIELDS = [
     'title', 'commercial_funnel', 'funnel_type', 'stage', 'origin',
     'contact_name', 'contact_phone', 'owner', 'next_follow_up_date',
     'notes', 'automation_key', 'active',
+]
+PEDAGOGICAL_REPORT_TASK_AUDIT_FIELDS = [
+    'feedback', 'student', 'course', 'module_number', 'lesson_number',
+    'due_date', 'completed', 'completed_at', 'completed_by', 'created_by',
 ]
 
 
@@ -256,6 +260,57 @@ def create_post_sale_opportunity_for_lesson_feedback(feedback, *, actor=None):
             new_values=snapshot_instance(opportunity, POST_SALE_OPPORTUNITY_AUDIT_FIELDS),
         )
         return opportunity, True
+
+
+def create_pedagogical_report_task_for_feedback(feedback, *, actor=None):
+    """Cria a tarefa de relatório pedagógico nas aulas 1 e 15 de cada módulo."""
+    if not feedback or feedback.lesson_number not in PedagogicalReportTask.REPORT_LESSONS:
+        return None, False
+    lesson = feedback.lesson
+    if not lesson or not lesson.student_id:
+        return None, False
+    if not lesson.student.active:
+        return None, False
+
+    due_date = lesson.date + timedelta(days=15)
+    with transaction.atomic():
+        task, created = PedagogicalReportTask.objects.get_or_create(
+            student=lesson.student,
+            course=lesson.course,
+            module_number=feedback.module_number,
+            lesson_number=feedback.lesson_number,
+            defaults={
+                'feedback': feedback,
+                'due_date': due_date,
+                'created_by': actor,
+            },
+        )
+        changed = []
+        if task.feedback_id != feedback.id:
+            task.feedback = feedback
+            changed.append('feedback')
+        if task.due_date != due_date:
+            task.due_date = due_date
+            changed.append('due_date')
+        if task.course_id != lesson.course_id:
+            task.course = lesson.course
+            changed.append('course')
+        if changed:
+            task.save(update_fields=[*changed, 'updated_at'])
+
+        if created:
+            log_activity(
+                actor=actor,
+                obj=task,
+                action='Tarefa de relatório pedagógico criada',
+                object_label=str(task),
+                details=(
+                    f'Aluno: {lesson.student.name}; módulo: {feedback.module_number}; '
+                    f'aula: {feedback.lesson_number}; prazo: {due_date:%d/%m/%Y}.'
+                ),
+                new_values=snapshot_instance(task, PEDAGOGICAL_REPORT_TASK_AUDIT_FIELDS),
+            )
+        return task, created
 
 
 def absence_for_user_on_date(user, target_date):

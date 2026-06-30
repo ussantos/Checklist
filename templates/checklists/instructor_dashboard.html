@@ -9,6 +9,7 @@
   <div class="row-actions">
     <a class="btn primary" href="{% url 'instructor_agenda' %}?periodo=semana&data={{ today|date:'Y-m-d' }}">Agenda da semana</a>
     <a class="btn" href="{% url 'pedagogical_lesson_feedbacks' %}?status=pendentes">Feedbacks pendentes</a>
+    <a class="btn" href="{% url 'instructor_feedback_export_xlsx' %}">Exportar feedbacks XLSX</a>
   </div>
 </div>
 
@@ -27,6 +28,11 @@
     <span>Feedbacks pendentes</span>
     <strong>{{ pending_feedback_count }}</strong>
     <small>{{ today_feedback_count }} de hoje</small>
+  </a>
+  <a class="instructor-kpi instructor-kpi-report" href="#relatorios-pedagogicos">
+    <span>Relatórios pedagógicos</span>
+    <strong>{{ report_tasks_count }}</strong>
+    <small>{{ overdue_report_tasks_count }} atrasado(s)</small>
   </a>
   <a class="instructor-kpi instructor-kpi-trial" href="{% url 'instructor_agenda' %}?periodo=semana&tipo=trial&data={{ today|date:'Y-m-d' }}">
     <span>Experimentais/Play</span>
@@ -99,6 +105,41 @@
     </div>
   </section>
 </div>
+
+<section class="panel instructor-report-panel" id="relatorios-pedagogicos">
+  <div class="section-heading">
+    <div>
+      <h2>Relatórios pedagógicos</h2>
+      <p class="muted">Pendências de consolidação e envio aos responsáveis até {{ report_window_end|date:"d/m/Y" }}.</p>
+    </div>
+    <span class="badge {% if overdue_report_tasks_count %}overdue{% elif report_tasks_count %}warning{% else %}done{% endif %}">
+      {% if overdue_report_tasks_count %}{{ overdue_report_tasks_count }} atrasado(s){% elif report_tasks_count %}{{ today_report_tasks_count }} para hoje{% else %}Tudo em dia{% endif %}
+    </span>
+  </div>
+  <div class="instructor-report-list">
+    {% for task in pending_report_tasks %}
+      <article class="instructor-report-item {% if task.due_date < today %}report-overdue{% elif task.due_date == today %}report-today{% endif %}">
+        <div>
+          <strong>{{ task.student.name }}</strong>
+          <span>Módulo {{ task.module_number }} · Aula {{ task.lesson_number }} · {% if task.course %}{{ task.course.name }}{% else %}Curso não informado{% endif %}</span>
+          <small>Aula de referência: {{ task.reference_date|date:"d/m/Y" }} · Prazo: {{ task.due_date|date:"d/m/Y" }}</small>
+        </div>
+        <div class="instructor-lesson-actions">
+          <span class="badge {% if task.due_date < today %}overdue{% elif task.due_date == today %}warning{% else %}neutral{% endif %}">
+            {% if task.due_date < today %}Atrasado{% elif task.due_date == today %}Hoje{% else %}Próximos 15 dias{% endif %}
+          </span>
+          <form method="post" action="{% url 'instructor_report_task_complete' task.id %}" class="inline-form">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'instructor_dashboard' %}#relatorios-pedagogicos">
+            <button class="btn small primary" type="submit">Marcar concluído</button>
+          </form>
+        </div>
+      </article>
+    {% empty %}
+      <p class="instructor-empty muted">Nenhum relatório pedagógico pendente nos próximos 15 dias.</p>
+    {% endfor %}
+  </div>
+</section>
 
 <section class="panel">
   <div class="section-heading">

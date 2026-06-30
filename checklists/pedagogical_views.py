@@ -1,22 +1,31 @@
 from datetime import date, timedelta
+from io import BytesIO
 
 from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
 from django.db.models import Q
-from django.http import HttpResponseForbidden
+from django.http import HttpResponse, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
 
 from .audit import changed_values, log_activity, snapshot_instance
 from .forms import (
     CourseForm, LessonFeedbackForm, LessonForm, PedagogicalStudentForm, RoomForm, SchoolHolidayForm,
     TimeSlotForm,
 )
-from .models import CommercialOpportunity, Course, Lesson, LessonFeedback, PedagogicalStudent, Room, SchoolHoliday, TimeSlot
-from .services import create_post_sale_opportunity_for_lesson_feedback, get_user_position, is_admin_user
+from .models import (
+    CommercialOpportunity, Course, Lesson, LessonFeedback, PedagogicalReportTask,
+    PedagogicalStudent, Room, SchoolHoliday, TimeSlot,
+)
+from .services import (
+    create_pedagogical_report_task_for_feedback,
+    create_post_sale_opportunity_for_lesson_feedback, get_user_position, is_admin_user,
+)
 from .sponte import (
     SponteClientError, SponteConfigurationError, default_sponte_schedule_window,
     import_sponte_courses, import_sponte_students, sync_sponte_free_class_schedule,
@@ -41,6 +50,10 @@ LESSON_FEEDBACK_AUDIT_FIELDS = [
     'has_programming', 'programming_comment', 'programming_score',
     'participation_comment', 'participation_score', 'behavior_comment',
     'behavior_score', 'general_comment', 'general_score', 'created_by', 'updated_by',
+]
+PEDAGOGICAL_REPORT_TASK_AUDIT_FIELDS = [
+    'feedback', 'student', 'course', 'module_number', 'lesson_number',
+    'due_date', 'completed', 'completed_at', 'completed_by', 'created_by',
 ]
 INSTRUCTOR_POSITION_CODE = 'instrutor-aula-livre'
 COMMERCIAL_POSITION_CODE = 'atendente-comercial'
@@ -152,7 +165,7 @@ def _posted_next_url(request, fallback):
 def _feedback_lessons_queryset():
     return (
         Lesson.objects
-        .filter(lesson_type=Lesson.TYPE_REGULAR)
+        .filter(lesson_type=Lesson.TYPE_REGULAR, student__status=PedagogicalStudent.STATUS_ACTIVE)
         .exclude(status=Lesson.STATUS_CANCELLED)
         .select_related('student', 'course', 'room', 'feedback', 'feedback__created_by', 'feedback__updated_by')
         .order_by('-date', '-start_time', 'student_name_snapshot')
@@ -175,6 +188,103 @@ def _attach_lesson_display_state(lessons):
         except LessonFeedback.DoesNotExist:
             lesson.feedback_record = None
     return lessons
+
+
+def _instructor_feedback_queryset(user):
+    return (
+        LessonFeedback.objects
+        .filter(created_by=user)
+        .select_related('lesson', 'lesson__student', 'lesson__course', 'lesson__room', 'created_by', 'updated_by')
+        .order_by('-lesson__date', '-lesson__start_time', 'lesson__student_name_snapshot')
+    )
+
+
+def _instructor_report_tasks_queryset(user):
+    return (
+        PedagogicalReportTask.objects
+        .filter(
+            Q(created_by=user) | Q(feedback__created_by=user) | Q(feedback__updated_by=user),
+            student__status=PedagogicalStudent.STATUS_ACTIVE,
+        )
+        .select_related(
+            'feedback', 'feedback__lesson', 'student', 'course', 'completed_by', 'created_by',
+        )
+        .distinct()
+        .order_by('completed', 'due_date', 'student__name', 'module_number', 'lesson_number')
+    )
+
+
+def _feedback_export_workbook(feedbacks):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = 'Feedbacks'
+
+    headers = [
+        'Data', 'Horário', 'Aluno', 'Responsável', 'WhatsApp', 'Curso', 'Sala',
+        'Módulo', 'Aula', 'Pontualidade', 'Montagem', 'Montagem nota',
+        'Tem programação?', 'Programação', 'Programação nota',
+        'Interesse/Participação', 'Interesse/Participação nota',
+        'Comportamento', 'Comportamento nota', 'Comentário geral',
+        'Comentário geral nota', 'Criado em', 'Atualizado em',
+    ]
+    sheet.append(headers)
+    header_fill = PatternFill('solid', fgColor='1F4E78')
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+
+    for feedback in feedbacks:
+        lesson = feedback.lesson
+        created_at = timezone.localtime(feedback.created_at).replace(tzinfo=None) if feedback.created_at else None
+        updated_at = timezone.localtime(feedback.updated_at).replace(tzinfo=None) if feedback.updated_at else None
+        sheet.append([
+            lesson.date,
+            f'{lesson.start_time:%H:%M} - {lesson.end_time:%H:%M}',
+            lesson.student_name_snapshot,
+            lesson.responsible_name_snapshot,
+            lesson.whatsapp_snapshot,
+            lesson.course.name if lesson.course_id else '',
+            lesson.room.name if lesson.room_id else '',
+            feedback.module_number,
+            feedback.lesson_number,
+            dict(LessonFeedback.PUNCTUALITY_CHOICES).get(feedback.punctuality_score, feedback.punctuality_score),
+            feedback.assembly_comment,
+            feedback.assembly_score,
+            'Sim' if feedback.has_programming else 'Não',
+            feedback.programming_comment,
+            feedback.programming_score,
+            feedback.participation_comment,
+            feedback.participation_score,
+            feedback.behavior_comment,
+            feedback.behavior_score,
+            feedback.general_comment,
+            float(feedback.general_score),
+            created_at,
+            updated_at,
+        ])
+
+    for row in sheet.iter_rows(min_row=2):
+        row[0].number_format = 'dd/mm/yyyy'
+        row[20].number_format = '0.00'
+        if row[21].value:
+            row[21].number_format = 'dd/mm/yyyy hh:mm'
+        if row[22].value:
+            row[22].number_format = 'dd/mm/yyyy hh:mm'
+        for cell in row:
+            cell.alignment = Alignment(vertical='top', wrap_text=True)
+
+    widths = {
+        'A': 12, 'B': 16, 'C': 28, 'D': 28, 'E': 18, 'F': 20, 'G': 18,
+        'H': 10, 'I': 10, 'J': 14, 'K': 44, 'L': 14, 'M': 16, 'N': 44,
+        'O': 16, 'P': 44, 'Q': 24, 'R': 44, 'S': 18, 'T': 52,
+        'U': 18, 'V': 18, 'W': 18,
+    }
+    for column, width in widths.items():
+        sheet.column_dimensions[column].width = width
+    sheet.freeze_panes = 'A2'
+
+    return workbook
 
 
 @user_passes_test(_admin_check)
@@ -674,6 +784,12 @@ def lesson_feedback_edit(request, lesson_id):
                 previous_values_full=previous_values_full,
                 details=f'Feedback: {lesson}; nota geral: {feedback.general_score}',
             )
+            report_task, report_created = create_pedagogical_report_task_for_feedback(feedback, actor=request.user)
+            if report_created:
+                messages.info(
+                    request,
+                    f'Relatório pedagógico criado com prazo em {report_task.due_date:%d/%m/%Y}.'
+                )
             opportunity, created = create_post_sale_opportunity_for_lesson_feedback(feedback, actor=request.user)
             if created:
                 messages.info(
@@ -693,10 +809,60 @@ def lesson_feedback_edit(request, lesson_id):
     })
 
 
+@user_passes_test(_instructor_check)
+def instructor_feedback_export_xlsx(request):
+    feedbacks = list(_instructor_feedback_queryset(request.user))
+    workbook = _feedback_export_workbook(feedbacks)
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+
+    filename = f'feedbacks_instrutor_{timezone.localdate():%Y%m%d}.xlsx'
+    response = HttpResponse(
+        output.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@require_POST
+@user_passes_test(_instructor_check)
+def instructor_report_task_complete(request, task_id):
+    task = get_object_or_404(_instructor_report_tasks_queryset(request.user), pk=task_id)
+    redirect_to = _posted_next_url(request, f'{reverse("instructor_dashboard")}#relatorios-pedagogicos')
+    if task.completed:
+        messages.info(request, 'Relatório pedagógico já estava marcado como concluído.')
+        return redirect(redirect_to)
+
+    previous_values_full = snapshot_instance(task, PEDAGOGICAL_REPORT_TASK_AUDIT_FIELDS)
+    task.completed = True
+    task.completed_at = timezone.now()
+    task.completed_by = request.user
+    task.save(update_fields=['completed', 'completed_at', 'completed_by', 'updated_at'])
+    _log_change(
+        request=request,
+        obj=task,
+        action='Relatório pedagógico concluído',
+        audit_fields=PEDAGOGICAL_REPORT_TASK_AUDIT_FIELDS,
+        previous_values_full=previous_values_full,
+        details=f'Relatório pedagógico: {task.student.name}; módulo {task.module_number}; aula {task.lesson_number}.',
+    )
+    messages.success(request, 'Relatório pedagógico marcado como concluído.')
+    return redirect(redirect_to)
+
+
 def _lesson_queryset():
     return Lesson.objects.select_related(
         'student', 'commercial_opportunity', 'course', 'room', 'created_by',
     ).order_by('date', 'start_time', 'room__name')
+
+
+def _required_instructor_lesson_queryset():
+    return _lesson_queryset().filter(
+        Q(lesson_type=Lesson.TYPE_TRIAL) |
+        Q(student__status=PedagogicalStudent.STATUS_ACTIVE)
+    )
 
 
 def _apply_lesson_filters(request, lessons):
@@ -761,22 +927,23 @@ def _lesson_calendar(lessons, period_start, period_end, period):
 def instructor_dashboard(request):
     today = timezone.localdate()
     week_start, week_end = _agenda_period_bounds('semana', today)
+    report_window_end = today + timedelta(days=15)
     current_time = timezone.localtime().time()
 
     today_lessons = _attach_lesson_display_state(list(
-        _lesson_queryset()
+        _required_instructor_lesson_queryset()
         .filter(date=today)
         .order_by('start_time', 'room__name', 'student_name_snapshot')
     ))
-    week_lessons = list(_lesson_queryset().filter(date__gte=week_start, date__lte=week_end))
+    week_lessons = list(_required_instructor_lesson_queryset().filter(date__gte=week_start, date__lte=week_end))
     upcoming_lessons = _attach_lesson_display_state(list(
-        _lesson_queryset()
+        _required_instructor_lesson_queryset()
         .filter(date__gte=today)
         .exclude(status=Lesson.STATUS_CANCELLED)
         .order_by('date', 'start_time', 'room__name')[:8]
     ))
     upcoming_trial_lessons = _attach_lesson_display_state(list(
-        _lesson_queryset()
+        _required_instructor_lesson_queryset()
         .filter(
             lesson_type=Lesson.TYPE_TRIAL,
             date__gte=today,
@@ -803,14 +970,24 @@ def instructor_dashboard(request):
     pending_feedback_count = pending_feedbacks_queryset.count()
     overdue_feedback_count = pending_feedbacks_queryset.filter(date__lt=today).count()
     today_feedback_count = pending_feedbacks_queryset.filter(date=today).count()
+    pending_report_tasks_queryset = (
+        _instructor_report_tasks_queryset(request.user)
+        .filter(completed=False, due_date__lte=report_window_end)
+    )
+    pending_report_tasks = list(pending_report_tasks_queryset[:8])
+    report_tasks_count = pending_report_tasks_queryset.count()
+    overdue_report_tasks_count = pending_report_tasks_queryset.filter(due_date__lt=today).count()
+    today_report_tasks_count = pending_report_tasks_queryset.filter(due_date=today).count()
 
     return render(request, 'checklists/instructor_dashboard.html', {
         'today': today,
         'week_start': week_start,
         'week_end': week_end,
+        'report_window_end': report_window_end,
         'today_lessons': today_lessons,
         'next_lesson': next_lesson,
         'pending_feedbacks': pending_feedbacks,
+        'pending_report_tasks': pending_report_tasks,
         'upcoming_trial_lessons': upcoming_trial_lessons,
         'today_count': len(today_lessons),
         'week_count': len(week_lessons),
@@ -818,6 +995,9 @@ def instructor_dashboard(request):
         'pending_feedback_count': pending_feedback_count,
         'today_feedback_count': today_feedback_count,
         'overdue_feedback_count': overdue_feedback_count,
+        'report_tasks_count': report_tasks_count,
+        'today_report_tasks_count': today_report_tasks_count,
+        'overdue_report_tasks_count': overdue_report_tasks_count,
         'position': get_user_position(request.user),
         'is_admin': False,
     })
@@ -828,7 +1008,7 @@ def instructor_agenda(request):
     target_date = _parse_date(request.GET.get('data'))
     period = _agenda_period(request.GET.get('periodo', 'semana'))
     period_start, period_end = _agenda_period_bounds(period, target_date)
-    lessons = _lesson_queryset().filter(date__gte=period_start, date__lte=period_end)
+    lessons = _required_instructor_lesson_queryset().filter(date__gte=period_start, date__lte=period_end)
     lessons, selected = _apply_lesson_filters(request, lessons)
     lessons = _attach_lesson_display_state(list(lessons))
     selected['period'] = period

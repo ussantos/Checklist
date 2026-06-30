@@ -7,7 +7,7 @@ from .models import (
     ActivityLog, CommercialFunnel, CommercialOpportunity,
     CommercialOpportunityFollowUp, CommercialOpportunityStageEvent, FunnelModel,
     FunnelModelField, FunnelStage, FunnelType, Course, Lesson, LessonFeedback, OpportunityOrigin,
-    PedagogicalStudent, Position, Room, SchoolHoliday, TimeSlot, UserProfile,
+    PedagogicalReportTask, PedagogicalStudent, Position, Room, SchoolHoliday, TimeSlot, UserProfile,
 )
 
 
@@ -216,6 +216,17 @@ class LessonFeedbackAdmin(admin.ModelAdmin):
     search_fields = ('lesson__student_name_snapshot', 'lesson__course__name', 'general_comment')
     list_filter = ('has_programming', 'lesson__course', 'lesson__date')
     readonly_fields = ('general_score', 'created_at', 'updated_at')
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PedagogicalReportTask)
+class PedagogicalReportTaskAdmin(admin.ModelAdmin):
+    list_display = ('student', 'course', 'module_number', 'lesson_number', 'due_date', 'completed', 'completed_at', 'completed_by')
+    search_fields = ('student__name', 'course__name', 'feedback__lesson__student_name_snapshot')
+    list_filter = ('completed', 'due_date', 'course', 'module_number', 'lesson_number')
+    readonly_fields = ('created_at', 'updated_at')
 
     def has_delete_permission(self, request, obj=None):
         return False

@@ -1001,7 +1001,7 @@ th {
 
 .instructor-kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 14px;
   margin-bottom: 18px;
 }
@@ -1053,6 +1053,10 @@ th {
 
 .instructor-kpi-feedback {
   border-left-color: #f97316;
+}
+
+.instructor-kpi-report {
+  border-left-color: #a855f7;
 }
 
 .instructor-kpi-trial {
@@ -1150,6 +1154,54 @@ th {
   border-radius: 8px;
   margin: 0;
   padding: 14px;
+}
+
+.instructor-report-panel {
+  margin-bottom: 18px;
+}
+
+.instructor-report-list {
+  display: grid;
+  gap: 10px;
+}
+
+.instructor-report-item {
+  align-items: center;
+  background: var(--field-soft);
+  border: 1px solid var(--line);
+  border-left: 5px solid #a855f7;
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px;
+}
+
+.instructor-report-item.report-today {
+  border-left-color: #f59e0b;
+}
+
+.instructor-report-item.report-overdue {
+  border-left-color: #ef4444;
+}
+
+.instructor-report-item strong,
+.instructor-report-item span,
+.instructor-report-item small {
+  display: block;
+}
+
+.instructor-report-item strong {
+  color: var(--dark);
+}
+
+.instructor-report-item span {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.instructor-report-item small {
+  color: var(--muted);
 }
 
 .opportunity-link {
@@ -2631,6 +2683,7 @@ html[data-theme="dark"] .trial-slot-card .trial-slot-blocked-reason {
 html[data-theme="dark"] .mini-card,
 html[data-theme="dark"] .mini-task,
 html[data-theme="dark"] .checkbox-card,
+html[data-theme="dark"] .instructor-report-item,
 html[data-theme="dark"] .lesson-calendar-card,
 html[data-theme="dark"] .dashboard-stage-list a,
 html[data-theme="dark"] .followup-card,
@@ -2767,7 +2820,8 @@ html[data-theme="dark"] .mini-card:hover {
     grid-template-columns: 1fr;
   }
 
-  .instructor-lesson-item {
+  .instructor-lesson-item,
+  .instructor-report-item {
     align-items: stretch;
     flex-direction: column;
   }
