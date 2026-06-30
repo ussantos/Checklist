@@ -776,7 +776,7 @@ class Lesson(models.Model):
         return super().save(*args, **kwargs)
 
 
-PEDAGOGICAL_REPORT_LESSONS = (1, 15)
+PEDAGOGICAL_REPORT_LESSONS = (8, 15)
 
 
 class LessonFeedback(models.Model):

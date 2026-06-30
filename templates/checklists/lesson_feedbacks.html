@@ -7,7 +7,15 @@
   </div>
   {% if not is_admin %}
     <div class="row-actions">
-      <a class="btn" href="{% url 'instructor_feedback_export_xlsx' %}">Exportar meus feedbacks XLSX</a>
+      <form method="get" action="{% url 'instructor_feedback_export_xlsx' %}" class="inline-form">
+        <select class="input" name="student" required>
+          <option value="">Selecione um aluno</option>
+          {% for student in feedback_students %}
+            <option value="{{ student.id }}">{{ student.name }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn" type="submit" {% if not feedback_students %}disabled{% endif %}>Baixar XLSX</button>
+      </form>
     </div>
   {% endif %}
 </div>

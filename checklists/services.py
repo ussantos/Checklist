@@ -263,7 +263,7 @@ def create_post_sale_opportunity_for_lesson_feedback(feedback, *, actor=None):
 
 
 def create_pedagogical_report_task_for_feedback(feedback, *, actor=None):
-    """Cria a tarefa de relatório pedagógico nas aulas 1 e 15 de cada módulo."""
+    """Cria a tarefa de relatório pedagógico nas aulas 8 e 15 de cada módulo."""
     if not feedback or feedback.lesson_number not in PedagogicalReportTask.REPORT_LESSONS:
         return None, False
     lesson = feedback.lesson

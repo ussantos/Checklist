@@ -367,16 +367,16 @@ class LessonFeedbackTests(TestCase):
         self.assertRedirects(response, f"{reverse('pedagogical_lesson_feedbacks')}?data={self.lesson.date.isoformat()}")
         self.assertFalse(CommercialOpportunity.objects.filter(automation_key__startswith='post-sale:lesson-10').exists())
 
-    def test_first_lesson_feedback_creates_pedagogical_report_task_once(self):
+    def test_eighth_lesson_feedback_creates_pedagogical_report_task_once(self):
         self.client.force_login(self.instructor)
 
         response = self.client.post(
             reverse('pedagogical_lesson_feedback_edit', args=[self.lesson.id]),
-            self._feedback_post_data(lesson_number='1'),
+            self._feedback_post_data(lesson_number='8'),
         )
 
         self.assertRedirects(response, f"{reverse('pedagogical_lesson_feedbacks')}?data={self.lesson.date.isoformat()}")
-        task = PedagogicalReportTask.objects.get(student=self.student, course=self.course, module_number=1, lesson_number=1)
+        task = PedagogicalReportTask.objects.get(student=self.student, course=self.course, module_number=1, lesson_number=8)
         self.assertEqual(task.feedback, self.lesson.feedback)
         self.assertEqual(task.due_date, self.lesson.date + timedelta(days=15))
         self.assertEqual(task.created_by, self.instructor)
@@ -384,11 +384,11 @@ class LessonFeedbackTests(TestCase):
 
         response = self.client.post(
             reverse('pedagogical_lesson_feedback_edit', args=[self.lesson.id]),
-            self._feedback_post_data(lesson_number='1', assembly_comment='Texto atualizado.'),
+            self._feedback_post_data(lesson_number='8', assembly_comment='Texto atualizado.'),
         )
 
         self.assertRedirects(response, f"{reverse('pedagogical_lesson_feedbacks')}?data={self.lesson.date.isoformat()}")
-        self.assertEqual(PedagogicalReportTask.objects.filter(student=self.student, course=self.course, module_number=1, lesson_number=1).count(), 1)
+        self.assertEqual(PedagogicalReportTask.objects.filter(student=self.student, course=self.course, module_number=1, lesson_number=8).count(), 1)
 
     def test_fifteenth_lesson_feedback_creates_pedagogical_report_task(self):
         self.client.force_login(self.instructor)
@@ -406,7 +406,7 @@ class LessonFeedbackTests(TestCase):
 
         response = self.client.post(
             reverse('pedagogical_lesson_feedback_edit', args=[self.lesson.id]),
-            self._feedback_post_data(lesson_number='8'),
+            self._feedback_post_data(lesson_number='1'),
         )
 
         self.assertRedirects(response, f"{reverse('pedagogical_lesson_feedbacks')}?data={self.lesson.date.isoformat()}")
@@ -504,7 +504,7 @@ class InstructorExperienceTests(TestCase):
             status=Lesson.STATUS_NOT_GIVEN,
         )
 
-    def _create_feedback_and_report_task(self, *, due_date=None, lesson_number=1):
+    def _create_feedback_and_report_task(self, *, due_date=None, lesson_number=8):
         lesson = Lesson.objects.create(
             lesson_type=Lesson.TYPE_REGULAR,
             student=self.student,
@@ -574,7 +574,7 @@ class InstructorExperienceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context['report_tasks_count'], 1)
         self.assertContains(response, 'Relatórios pedagógicos')
-        self.assertContains(response, 'Módulo 1 · Aula 1')
+        self.assertContains(response, 'Módulo 1 · Aula 8')
         self.assertContains(response, 'Marcar concluído')
 
     def test_inactive_student_work_does_not_appear_as_required_for_instructor(self):
@@ -607,11 +607,44 @@ class InstructorExperienceTests(TestCase):
         self.assertEqual(task.completed_by, self.user)
         self.assertIsNotNone(task.completed_at)
 
-    def test_instructor_exports_own_feedbacks_xlsx(self):
+    def test_instructor_exports_student_feedbacks_xlsx(self):
         feedback, _task = self._create_feedback_and_report_task()
+        other_student = PedagogicalStudent.objects.create(
+            name='Outro Aluno',
+            enrollment_number='MAT-OUTRO',
+            responsible_name='Outro Responsável',
+            whatsapp='21999990000',
+            status=PedagogicalStudent.STATUS_ACTIVE,
+        )
+        other_lesson = Lesson.objects.create(
+            lesson_type=Lesson.TYPE_REGULAR,
+            student=other_student,
+            course=self.course,
+            room=self.room,
+            date=self.today,
+            start_time='10:00',
+            end_time='11:59',
+            status=Lesson.STATUS_NOT_GIVEN,
+            source=Lesson.SOURCE_LOCAL,
+        )
+        LessonFeedback.objects.create(
+            lesson=other_lesson,
+            module_number=1,
+            lesson_number=8,
+            punctuality_score=10,
+            assembly_comment='Outro feedback.',
+            assembly_score=8,
+            participation_comment='Outro aluno participou.',
+            participation_score=8,
+            behavior_comment='Outro comportamento.',
+            behavior_score=8,
+            general_comment='Outro geral.',
+            created_by=self.user,
+            updated_by=self.user,
+        )
         self.client.force_login(self.user)
 
-        response = self.client.get(reverse('instructor_feedback_export_xlsx'))
+        response = self.client.get(reverse('instructor_feedback_export_xlsx'), {'student': self.student.id})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -624,6 +657,7 @@ class InstructorExperienceTests(TestCase):
         self.assertEqual(rows[0][0], 'Data')
         self.assertIn(feedback.lesson.student_name_snapshot, rows[1])
         self.assertIn('Bom desenvolvimento.', rows[1])
+        self.assertEqual(len(rows), 2)
 
     def test_instructor_can_import_all_sponte_data_from_menu_action(self):
         self.client.force_login(self.user)

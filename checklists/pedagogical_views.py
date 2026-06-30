@@ -9,6 +9,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -196,6 +197,18 @@ def _instructor_feedback_queryset(user):
         .filter(created_by=user)
         .select_related('lesson', 'lesson__student', 'lesson__course', 'lesson__room', 'created_by', 'updated_by')
         .order_by('-lesson__date', '-lesson__start_time', 'lesson__student_name_snapshot')
+    )
+
+
+def _instructor_feedback_students(user):
+    return (
+        PedagogicalStudent.objects
+        .filter(
+            lessons__feedback__created_by=user,
+            status=PedagogicalStudent.STATUS_ACTIVE,
+        )
+        .distinct()
+        .order_by('name')
     )
 
 
@@ -748,6 +761,7 @@ def lesson_feedbacks(request):
         'lessons': lessons,
         'target_date': target_date,
         'feedback_status': feedback_status,
+        'feedback_students': _instructor_feedback_students(request.user) if not is_admin_user(request.user) else [],
         'is_admin': is_admin_user(request.user),
     })
 
@@ -811,13 +825,24 @@ def lesson_feedback_edit(request, lesson_id):
 
 @user_passes_test(_instructor_check)
 def instructor_feedback_export_xlsx(request):
-    feedbacks = list(_instructor_feedback_queryset(request.user))
+    student = None
+    feedbacks_queryset = _instructor_feedback_queryset(request.user)
+    student_id = (request.GET.get('student') or '').strip()
+    if student_id:
+        student = get_object_or_404(_instructor_feedback_students(request.user), pk=student_id)
+        feedbacks_queryset = feedbacks_queryset.filter(lesson__student=student)
+
+    feedbacks = list(feedbacks_queryset)
     workbook = _feedback_export_workbook(feedbacks)
     output = BytesIO()
     workbook.save(output)
     output.seek(0)
 
-    filename = f'feedbacks_instrutor_{timezone.localdate():%Y%m%d}.xlsx'
+    if student:
+        student_slug = slugify(student.name) or f'aluno-{student.pk}'
+        filename = f'feedbacks_{student_slug}_{timezone.localdate():%Y%m%d}.xlsx'
+    else:
+        filename = f'feedbacks_instrutor_{timezone.localdate():%Y%m%d}.xlsx'
     response = HttpResponse(
         output.getvalue(),
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -998,6 +1023,7 @@ def instructor_dashboard(request):
         'report_tasks_count': report_tasks_count,
         'today_report_tasks_count': today_report_tasks_count,
         'overdue_report_tasks_count': overdue_report_tasks_count,
+        'feedback_students': _instructor_feedback_students(request.user),
         'position': get_user_position(request.user),
         'is_admin': False,
     })

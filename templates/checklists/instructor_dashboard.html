@@ -9,9 +9,20 @@
   <div class="row-actions">
     <a class="btn primary" href="{% url 'instructor_agenda' %}?periodo=semana&data={{ today|date:'Y-m-d' }}">Agenda da semana</a>
     <a class="btn" href="{% url 'pedagogical_lesson_feedbacks' %}?status=pendentes">Feedbacks pendentes</a>
-    <a class="btn" href="{% url 'instructor_feedback_export_xlsx' %}">Exportar feedbacks XLSX</a>
   </div>
 </div>
+
+<form method="get" action="{% url 'instructor_feedback_export_xlsx' %}" class="filters panel compact-filters">
+  <label>Feedbacks por aluno
+    <select class="input" name="student" required>
+      <option value="">Selecione um aluno</option>
+      {% for student in feedback_students %}
+        <option value="{{ student.id }}">{{ student.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button class="btn" type="submit" {% if not feedback_students %}disabled{% endif %}>Baixar XLSX</button>
+</form>
 
 <section class="instructor-kpi-grid" aria-label="Resumo pedagógico">
   <a class="instructor-kpi instructor-kpi-today" href="{% url 'instructor_agenda' %}?periodo=hoje&data={{ today|date:'Y-m-d' }}">
