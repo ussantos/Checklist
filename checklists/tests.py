@@ -430,6 +430,62 @@ class LessonFeedbackTests(TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertFalse(PedagogicalReportTask.objects.exists())
 
+    def test_feedback_list_filters_by_date_range_and_can_list_all(self):
+        range_student = PedagogicalStudent.objects.create(
+            name='Aluno Dentro do Periodo',
+            responsible_name='Responsável Dentro',
+            whatsapp='21999990002',
+        )
+        outside_student = PedagogicalStudent.objects.create(
+            name='Aluno Fora do Periodo',
+            responsible_name='Responsável Fora',
+            whatsapp='21999990003',
+        )
+        Lesson.objects.create(
+            lesson_type=Lesson.TYPE_REGULAR,
+            student=range_student,
+            course=self.course,
+            room=self.room,
+            date=self.day + timedelta(days=2),
+            start_time=time(10, 0),
+            end_time=time(11, 59),
+            status=Lesson.STATUS_DONE,
+        )
+        Lesson.objects.create(
+            lesson_type=Lesson.TYPE_REGULAR,
+            student=outside_student,
+            course=self.course,
+            room=self.room,
+            date=self.day + timedelta(days=10),
+            start_time=time(10, 0),
+            end_time=time(11, 59),
+            status=Lesson.STATUS_DONE,
+        )
+        self.client.force_login(self.instructor)
+
+        response = self.client.get(reverse('pedagogical_lesson_feedbacks'), {
+            'data_inicio': self.day.isoformat(),
+            'data_fim': (self.day + timedelta(days=2)).isoformat(),
+            'status': 'todos',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Data início')
+        self.assertContains(response, 'Data fim')
+        self.assertContains(response, 'Listar todos')
+        self.assertContains(response, self.student.name)
+        self.assertContains(response, range_student.name)
+        self.assertNotContains(response, outside_student.name)
+
+        response = self.client.get(reverse('pedagogical_lesson_feedbacks'), {
+            'listar': 'todos',
+            'status': 'todos',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['list_all'])
+        self.assertContains(response, outside_student.name)
+
 
 class InstructorExperienceTests(TestCase):
     def setUp(self):

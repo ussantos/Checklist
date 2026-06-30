@@ -21,8 +21,11 @@
 </div>
 
 <form method="get" class="filters panel">
-  <label>Data
-    <input class="input" type="date" name="data" value="{{ target_date|date:'Y-m-d' }}">
+  <label>Data início
+    <input class="input" type="date" name="data_inicio" value="{{ start_date_value }}">
+  </label>
+  <label>Data fim
+    <input class="input" type="date" name="data_fim" value="{{ end_date_value }}">
   </label>
   <label>Status
     <select class="input" name="status">
@@ -32,11 +35,22 @@
     </select>
   </label>
   <button class="btn">Filtrar</button>
+  <button class="btn" type="submit" name="listar" value="todos" formnovalidate>Listar todos</button>
+  <span class="muted">
+    {% if list_all %}
+      Exibindo todas as aulas
+    {% elif start_date == end_date %}
+      {{ start_date|date:"d/m/Y" }}
+    {% else %}
+      {{ start_date|date:"d/m/Y" }} a {{ end_date|date:"d/m/Y" }}
+    {% endif %}
+  </span>
 </form>
 
 <table class="panel-table">
   <thead>
     <tr>
+      <th>Data</th>
       <th>Horário</th>
       <th>Aluno</th>
       <th>Curso</th>
@@ -48,6 +62,7 @@
   <tbody>
     {% for lesson in lessons %}
     <tr>
+      <td>{{ lesson.date|date:"d/m/Y" }}</td>
       <td>{{ lesson.start_time|time:"H:i" }} - {{ lesson.end_time|time:"H:i" }}</td>
       <td>
         {{ lesson.student_name_snapshot }}<br>
@@ -70,7 +85,7 @@
       </td>
     </tr>
     {% empty %}
-    <tr><td colspan="6">Nenhuma aula regular encontrada para os filtros selecionados.</td></tr>
+    <tr><td colspan="7">Nenhuma aula regular encontrada para os filtros selecionados.</td></tr>
     {% endfor %}
   </tbody>
 </table>

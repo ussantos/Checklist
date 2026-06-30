@@ -105,6 +105,15 @@ def _parse_date(value):
         return timezone.localdate()
 
 
+def _parse_optional_date(value):
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
 def _agenda_period(value):
     return value if value in {'hoje', 'semana', 'mes'} else 'hoje'
 
@@ -744,12 +753,20 @@ def student_toggle(request, student_id):
 
 @user_passes_test(_feedback_access_check)
 def lesson_feedbacks(request):
-    target_date = _parse_date(request.GET.get('data'))
+    today = timezone.localdate()
+    legacy_date = _parse_optional_date(request.GET.get('data'))
+    list_all = request.GET.get('listar') == 'todos'
+    start_date = _parse_optional_date(request.GET.get('data_inicio')) or legacy_date or today
+    end_date = _parse_optional_date(request.GET.get('data_fim')) or legacy_date or start_date
+    if end_date < start_date:
+        start_date, end_date = end_date, start_date
     feedback_status = request.GET.get('status', 'pendentes')
     if feedback_status not in {'pendentes', 'preenchidos', 'todos'}:
         feedback_status = 'pendentes'
 
-    lessons = _feedback_lessons_queryset().filter(date=target_date)
+    lessons = _feedback_lessons_queryset()
+    if not list_all:
+        lessons = lessons.filter(date__gte=start_date, date__lte=end_date)
     if feedback_status == 'pendentes':
         lessons = lessons.filter(feedback__isnull=True)
     elif feedback_status == 'preenchidos':
@@ -759,7 +776,12 @@ def lesson_feedbacks(request):
 
     return render(request, 'checklists/lesson_feedbacks.html', {
         'lessons': lessons,
-        'target_date': target_date,
+        'target_date': start_date,
+        'start_date': start_date,
+        'end_date': end_date,
+        'start_date_value': '' if list_all else start_date.isoformat(),
+        'end_date_value': '' if list_all else end_date.isoformat(),
+        'list_all': list_all,
         'feedback_status': feedback_status,
         'feedback_students': _instructor_feedback_students(request.user) if not is_admin_user(request.user) else [],
         'is_admin': is_admin_user(request.user),
