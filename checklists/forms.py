@@ -32,7 +32,7 @@ def add_months(value, months):
 
 
 def is_lost_stage(stage):
-    return bool(stage and 'perdido' in slugify(f'{stage.code} {stage.name}'))
+    return bool(stage and 'perdid' in slugify(f'{stage.code} {stage.name}'))
 
 
 class OccurrenceUpdateForm(forms.ModelForm):

@@ -1811,6 +1811,28 @@ class CommercialDashboardTests(TestCase):
         self.assertFalse(opportunity.active)
         self.assertEqual(opportunity.next_follow_up_date, add_months(timezone.localdate(), 3))
 
+    def test_lost_stage_with_feminine_label_moves_to_interested_funnel(self):
+        lost_stage = FunnelStage.objects.create(code='5-perdida', name='5 - Perdida', active=True, order=5)
+        opportunity = self._opportunity(
+            title='Lead perdida',
+            owner=self.user,
+            next_follow_up_date=timezone.localdate(),
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse('commercial_opportunity_edit', args=[opportunity.pk]), self._post_opportunity_data(
+            commercial_funnel=str(self.funnel.pk),
+            stage=str(lost_stage.pk),
+            next_follow_up_date='',
+        ))
+
+        self.assertRedirects(response, reverse('commercial_dashboard'))
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.commercial_funnel, self.interested_funnel)
+        self.assertEqual(opportunity.funnel_type, self.interested_type)
+        self.assertFalse(opportunity.active)
+        self.assertEqual(opportunity.next_follow_up_date, add_months(timezone.localdate(), 3))
+
     def test_enrollment_stage_moves_to_post_sale_funnel(self):
         enrollment_stage = FunnelStage.objects.create(code='5-matricula', name='5 - Matrícula', active=True, order=5)
         opportunity = self._opportunity(

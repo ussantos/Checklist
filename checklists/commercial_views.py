@@ -227,6 +227,10 @@ def _trial_lesson_stage():
     return _stage_by_code_or_text(code='3-aula-experimental', text='aula experimental')
 
 
+def _lost_stage():
+    return _stage_by_code_or_text(code='5-perdido', text='perdid')
+
+
 def _is_enrollment_stage(stage):
     if not stage:
         return False
@@ -531,7 +535,7 @@ def _commercial_form_context(request, *, form, title, submit_label, opportunity=
         'selected_stage_requires_trial_lesson': form.selected_stage_requires_trial_lesson,
         'creation_date': opportunity.created_at.date() if opportunity else timezone.localdate(),
         'trial_lesson_stage_id': getattr(_trial_lesson_stage(), 'id', ''),
-        'lost_stage_id': getattr(_stage_by_code_or_text(code='5-perdido', text='perdido'), 'id', ''),
+        'lost_stage_id': getattr(_lost_stage(), 'id', ''),
         'interested_funnel_id': getattr(_interested_funnel(), 'id', ''),
         'lost_follow_up_date': add_months(timezone.localdate(), 3),
     }
