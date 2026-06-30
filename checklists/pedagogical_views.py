@@ -995,17 +995,16 @@ def lesson_agenda(request):
     })
 
 
-@require_POST
-@user_passes_test(_admin_check)
-def lessons_sync_sponte(request):
+def _sync_lessons_from_sponte(request, *, redirect_view_name, default_period):
     target_date = _parse_date(request.POST.get('data'))
-    period = _agenda_period(request.POST.get('periodo', 'hoje'))
+    period = _agenda_period(request.POST.get('periodo', default_period))
+    redirect_to = f'{reverse(redirect_view_name)}?data={target_date.isoformat()}&periodo={period}'
     start_date, end_date = default_sponte_schedule_window(target_date)
     try:
         result = sync_sponte_free_class_schedule(start_date, end_date)
     except SponteConfigurationError as exc:
         messages.error(request, str(exc))
-        return redirect(f'{reverse("pedagogical_class_schedule")}?data={target_date.isoformat()}&periodo={period}')
+        return redirect(redirect_to)
 
     if result.errors:
         messages.warning(request, f'Sincronização do Sponte concluída com {len(result.errors)} aviso(s).')
@@ -1045,7 +1044,27 @@ def lessons_sync_sponte(request):
             'errors': result.errors[:10],
         },
     )
-    return redirect(f'{reverse("pedagogical_class_schedule")}?data={target_date.isoformat()}&periodo={period}')
+    return redirect(redirect_to)
+
+
+@require_POST
+@user_passes_test(_admin_check)
+def lessons_sync_sponte(request):
+    return _sync_lessons_from_sponte(
+        request,
+        redirect_view_name='pedagogical_class_schedule',
+        default_period='hoje',
+    )
+
+
+@require_POST
+@user_passes_test(_commercial_operator_check)
+def commercial_lessons_sync_sponte(request):
+    return _sync_lessons_from_sponte(
+        request,
+        redirect_view_name='commercial_lesson_agenda',
+        default_period='semana',
+    )
 
 
 @user_passes_test(_admin_check)

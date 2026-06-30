@@ -1608,8 +1608,32 @@ class CommercialDashboardTests(TestCase):
         self.assertContains(response, 'Criança Agenda')
         self.assertContains(response, 'Abrir oportunidade')
         self.assertContains(response, 'Oportunidade de outro atendente')
-        self.assertNotContains(response, 'Sincronizar Sponte')
+        self.assertContains(response, 'Sincronizar Sponte')
         self.assertNotContains(response, 'Preencher feedback')
+
+    def test_commercial_operator_can_sync_sponte_schedule_from_lesson_agenda(self):
+        today = timezone.localdate()
+        self.client.force_login(self.user)
+
+        with patch('checklists.pedagogical_views.sync_sponte_free_class_schedule') as sync_mock:
+            sync_mock.return_value = SponteScheduleSyncResult(
+                created=1,
+                updated=2,
+                unchanged=3,
+                cancelled=1,
+                students_synced=4,
+            )
+
+            response = self.client.post(
+                reverse('commercial_lessons_sync_sponte'),
+                {'data': today.isoformat(), 'periodo': 'semana'},
+                follow=True,
+            )
+
+        expected_redirect = f"{reverse('commercial_lesson_agenda')}?data={today.isoformat()}&periodo=semana"
+        self.assertEqual(response.redirect_chain[-1][0], expected_redirect)
+        sync_mock.assert_called_once()
+        self.assertContains(response, 'Agenda Sponte sincronizada')
 
     def test_commercial_funnel_board_groups_scoped_opportunities_by_stage(self):
         today = timezone.localdate()
