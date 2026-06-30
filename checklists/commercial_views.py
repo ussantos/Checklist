@@ -12,12 +12,12 @@ from django.views.decorators.http import require_POST
 
 from .audit import changed_values, log_activity, snapshot_instance
 from .forms import (
-    CommercialFunnelForm, CommercialOpportunityForm, FunnelModelFieldFormSet,
+    CommercialFunnelForm, CommercialObjectionForm, CommercialOpportunityForm, FunnelModelFieldFormSet,
     FunnelModelForm, FunnelStageForm, FunnelTypeForm, OpportunityOriginForm,
     add_months, is_lost_stage,
 )
 from .models import (
-    CommercialFunnel, CommercialOpportunity, CommercialOpportunityFollowUp,
+    CommercialFunnel, CommercialObjection, CommercialOpportunity, CommercialOpportunityFollowUp,
     Course,
     CommercialOpportunityStageEvent, FunnelModel, FunnelModelField, FunnelStage,
     FunnelType, Lesson, OpportunityOrigin, Room, SchoolHoliday, TimeSlot,
@@ -34,12 +34,13 @@ COMMERCIAL_POSITION_CODE = 'atendente-comercial'
 FUNNEL_TYPE_AUDIT_FIELDS = ['name', 'code', 'active']
 FUNNEL_STAGE_AUDIT_FIELDS = ['name', 'code', 'description', 'order', 'active']
 OPPORTUNITY_ORIGIN_AUDIT_FIELDS = ['name', 'code', 'description', 'active']
+COMMERCIAL_OBJECTION_AUDIT_FIELDS = ['name']
 FUNNEL_MODEL_AUDIT_FIELDS = ['name', 'active']
 COMMERCIAL_FUNNEL_AUDIT_FIELDS = ['name', 'funnel_model', 'active']
 COMMERCIAL_OPPORTUNITY_AUDIT_FIELDS = [
     'title', 'commercial_funnel', 'funnel_type', 'stage', 'origin', 'contact_name', 'contact_phone',
-    'interest_course', 'interest_type', 'value', 'owner', 'next_follow_up_date', 'field_values', 'notes', 'active',
-    'automation_key', 'created_at',
+    'interest_course', 'interest_type', 'value', 'owner', 'next_follow_up_date', 'objection', 'field_values',
+    'notes', 'active', 'automation_key', 'created_at',
 ]
 
 
@@ -94,6 +95,7 @@ def _commercial_opportunity_queryset():
         'stage',
         'origin',
         'interest_course',
+        'objection',
         'owner',
     ).prefetch_related('commercial_funnel__funnel_model__fields')
 
@@ -1173,6 +1175,122 @@ def opportunity_origin_delete(request, origin_id):
 
 
 @user_passes_test(_admin_check)
+def commercial_objections_list(request):
+    objections = list(
+        CommercialObjection.objects
+        .all()
+        .order_by('name')
+    )
+    for objection in objections:
+        objection.usage_count = objection.opportunities.count()
+        objection.can_delete_from_ui = objection.usage_count == 0
+
+    return render(request, 'checklists/commercial_objections_list.html', {
+        'objections': objections,
+        'is_admin': True,
+    })
+
+
+@user_passes_test(_admin_check)
+def commercial_objection_create(request):
+    if request.method == 'POST':
+        form = CommercialObjectionForm(request.POST)
+        if form.is_valid():
+            objection = form.save()
+            log_activity(
+                actor=request.user,
+                obj=objection,
+                action='Objeção comercial criada',
+                object_label=objection.name,
+                details=f'Objeção comercial: {objection.name}',
+                new_values=snapshot_instance(objection, COMMERCIAL_OBJECTION_AUDIT_FIELDS),
+            )
+            messages.success(request, 'Objeção criada.')
+            return redirect('commercial_objections')
+    else:
+        form = CommercialObjectionForm()
+
+    return render(request, 'checklists/commercial_objection_form.html', {
+        'form': form,
+        'title': 'Inserir objeção',
+        'submit_label': 'Inserir objeção',
+        'is_admin': True,
+    })
+
+
+@user_passes_test(_admin_check)
+def commercial_objection_edit(request, objection_id):
+    objection = get_object_or_404(CommercialObjection, pk=objection_id)
+    previous_values_full = snapshot_instance(objection, COMMERCIAL_OBJECTION_AUDIT_FIELDS)
+    if request.method == 'POST':
+        form = CommercialObjectionForm(request.POST, instance=objection)
+        if form.is_valid():
+            objection = form.save()
+            previous_values, new_values = changed_values(
+                previous_values_full,
+                snapshot_instance(objection, COMMERCIAL_OBJECTION_AUDIT_FIELDS),
+            )
+            log_activity(
+                actor=request.user,
+                obj=objection,
+                action='Objeção comercial atualizada',
+                object_label=objection.name,
+                details=f'Objeção comercial: {objection.name}',
+                previous_values=previous_values,
+                new_values=new_values,
+            )
+            messages.success(request, 'Objeção atualizada.')
+            return redirect('commercial_objections')
+    else:
+        form = CommercialObjectionForm(instance=objection)
+
+    return render(request, 'checklists/commercial_objection_form.html', {
+        'form': form,
+        'title': f'Editar objeção - {objection.name}',
+        'submit_label': 'Salvar alterações',
+        'objection': objection,
+        'is_admin': True,
+    })
+
+
+@user_passes_test(_admin_check)
+def commercial_objection_delete(request, objection_id):
+    objection = get_object_or_404(CommercialObjection, pk=objection_id)
+    if objection.has_usage():
+        messages.error(request, 'Esta objeção está sendo usada em oportunidades e não pode ser excluída.')
+        return redirect('commercial_objections')
+
+    if request.method == 'POST':
+        previous_values = snapshot_instance(objection, COMMERCIAL_OBJECTION_AUDIT_FIELDS)
+        object_id = str(objection.id)
+        object_label = objection.name
+        try:
+            objection.delete()
+        except ProtectedError:
+            messages.error(request, 'Esta objeção possui vínculos protegidos e não pode ser excluída.')
+            return redirect('commercial_objections')
+        log_activity(
+            actor=request.user,
+            action='Objeção comercial excluída',
+            object_type='CommercialObjection',
+            object_id=object_id,
+            object_label=object_label,
+            details=f'Objeção comercial excluída: {object_label}',
+            previous_values=previous_values,
+        )
+        messages.success(request, 'Objeção excluída.')
+        return redirect('commercial_objections')
+
+    return _confirm_delete(
+        request,
+        title='Excluir objeção',
+        object_label=objection.name,
+        warning='A exclusão só é permitida quando a objeção não está sendo usada por nenhuma oportunidade.',
+        cancel_url='commercial_objections',
+    )
+
+
+@user_passes_test(_admin_check)
 def funnel_models_list(request):
     status = request.GET.get('status', 'ativos')
     models = (
@@ -1432,6 +1550,15 @@ def commercial_opportunity_create(request):
                     opportunity.title = generated_code
                     _apply_opportunity_business_rules(opportunity, form=form)
                     opportunity.save()
+                    if form.created_objection:
+                        log_activity(
+                            actor=request.user,
+                            obj=form.created_objection,
+                            action='Objeção comercial criada pelo atendente',
+                            object_label=form.created_objection.name,
+                            details=f'Objeção comercial criada via oportunidade {opportunity.title}.',
+                            new_values=snapshot_instance(form.created_objection, COMMERCIAL_OBJECTION_AUDIT_FIELDS),
+                        )
                     opportunity = _commercial_opportunity_queryset().get(pk=opportunity.pk)
                     lesson = _build_trial_lesson_from_form(opportunity=opportunity, form=form, actor=request.user)
                     if lesson:
@@ -1512,6 +1639,15 @@ def commercial_opportunity_edit(request, opportunity_id):
                     opportunity = form.save(commit=False)
                     _apply_opportunity_business_rules(opportunity, form=form, previous_stage=previous_stage)
                     opportunity.save()
+                    if form.created_objection:
+                        log_activity(
+                            actor=request.user,
+                            obj=form.created_objection,
+                            action='Objeção comercial criada pelo atendente',
+                            object_label=form.created_objection.name,
+                            details=f'Objeção comercial criada via oportunidade {opportunity.title}.',
+                            new_values=snapshot_instance(form.created_objection, COMMERCIAL_OBJECTION_AUDIT_FIELDS),
+                        )
                     opportunity = _commercial_opportunity_queryset().get(pk=opportunity.pk)
                     lesson = _build_trial_lesson_from_form(opportunity=opportunity, form=form, actor=request.user)
                     if lesson:

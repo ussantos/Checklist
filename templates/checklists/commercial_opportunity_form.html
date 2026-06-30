@@ -91,6 +91,16 @@
         {{ form.status }}
         {{ form.status.errors }}
       </p>
+      <p>
+        {{ form.objection_choice.label_tag }}
+        {{ form.objection_choice }}
+        {{ form.objection_choice.errors }}
+      </p>
+      <p data-objection-other-wrapper {% if form.objection_choice.value != form.OBJECTION_OTHER_VALUE %}hidden{% endif %}>
+        {{ form.objection_other.label_tag }}
+        {{ form.objection_other }}
+        {{ form.objection_other.errors }}
+      </p>
       {% if form.selected_funnel and form.custom_bound_fields %}
         {% for field in form.custom_bound_fields %}
           <p>
@@ -333,6 +343,9 @@
     const lostStageId = form.dataset.lostStageId || '';
     const interestedFunnelId = form.dataset.interestedFunnelId || '';
     const lostFollowUpDate = form.dataset.lostFollowUpDate || '';
+    const objectionSelect = document.querySelector('[data-objection-select="1"]');
+    const objectionOtherWrapper = document.querySelector('[data-objection-other-wrapper]');
+    const objectionOtherInput = document.querySelector('[data-objection-other="1"]');
 
     const blockReasonForCard = (card, courseId) => {
       if (card.dataset.roomAvailable !== '1') {
@@ -411,6 +424,17 @@
     }
     if (trialCourseSelect) {
       trialCourseSelect.addEventListener('change', updateTrialSlotAvailability);
+    }
+    if (objectionSelect && objectionOtherWrapper) {
+      const toggleObjectionOther = () => {
+        const show = objectionSelect.value === '{{ form.OBJECTION_OTHER_VALUE }}';
+        objectionOtherWrapper.hidden = !show;
+        if (!show && objectionOtherInput) {
+          objectionOtherInput.value = '';
+        }
+      };
+      objectionSelect.addEventListener('change', toggleObjectionOther);
+      toggleObjectionOther();
     }
     updateTrialSlotAvailability();
   })();

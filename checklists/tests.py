@@ -13,7 +13,7 @@ from openpyxl import load_workbook
 
 from .forms import CommercialOpportunityForm, CourseForm, add_months
 from .models import (
-    CommercialFunnel, CommercialOpportunity, CommercialOpportunityFollowUp,
+    CommercialFunnel, CommercialObjection, CommercialOpportunity, CommercialOpportunityFollowUp,
     Course, FunnelModel, FunnelStage, FunnelType, Lesson, LessonFeedback,
     OpportunityOrigin, PedagogicalReportTask, PedagogicalStudent, Position,
     Room, SchoolHoliday, TimeSlot, UserProfile,
@@ -1784,6 +1784,30 @@ class CommercialOpportunityInterestFormTests(TestCase):
         self.assertEqual(opportunity.interest_type, '')
         self.assertIsNone(opportunity.value)
 
+    def test_existing_objection_can_be_selected_for_opportunity(self):
+        objection = CommercialObjection.objects.create(name='Sem agenda compatível no teste')
+        form = CommercialOpportunityForm(data=self._form_data(
+            objection_choice=f'objection:{objection.pk}',
+        ))
+        self.assertTrue(form.is_valid(), form.errors)
+
+        opportunity = form.save()
+
+        self.assertEqual(opportunity.objection, objection)
+
+    def test_other_objection_creates_reusable_option(self):
+        form = CommercialOpportunityForm(data=self._form_data(
+            objection_choice=CommercialOpportunityForm.OBJECTION_OTHER_VALUE,
+            objection_other='Preferiu esperar a turma nova',
+        ))
+        self.assertTrue(form.is_valid(), form.errors)
+
+        opportunity = form.save()
+
+        objection = CommercialObjection.objects.get(name='Preferiu esperar a turma nova')
+        self.assertEqual(opportunity.objection, objection)
+        self.assertEqual(form.created_objection, objection)
+
     def test_course_price_change_does_not_update_existing_opportunity(self):
         form = CommercialOpportunityForm(data=self._form_data(interest=f'course:{self.course.pk}'))
         self.assertTrue(form.is_valid(), form.errors)
@@ -1936,6 +1960,60 @@ class CommercialOpportunityInterestFormTests(TestCase):
         opportunity = form.save()
         self.assertFalse(opportunity.active)
         self.assertEqual(opportunity.next_follow_up_date, add_months(timezone.localdate(), 3))
+
+
+class CommercialObjectionAdminTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(username='admin-objecoes', password='teste123', is_staff=True)
+        self.funnel_model = FunnelModel.objects.create(name='Modelo objeção', active=True)
+        self.funnel = CommercialFunnel.objects.create(
+            name='Funil objeção',
+            funnel_model=self.funnel_model,
+            active=True,
+        )
+        self.stage = FunnelStage.objects.create(code='stage-objecao', name='Contato', active=True, order=1)
+        self.origin = OpportunityOrigin.objects.create(code='origem-objecao', name='WhatsApp', active=True)
+
+    def test_admin_can_create_edit_and_delete_unused_objection(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.post(reverse('commercial_objection_create'), {'name': 'Sem disponibilidade'}, follow=True)
+        self.assertEqual(response.status_code, 200)
+        objection = CommercialObjection.objects.get(name='Sem disponibilidade')
+
+        response = self.client.post(
+            reverse('commercial_objection_edit', args=[objection.pk]),
+            {'name': 'Sem disponibilidade nesta semana'},
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        objection.refresh_from_db()
+        self.assertEqual(objection.name, 'Sem disponibilidade nesta semana')
+
+        response = self.client.post(reverse('commercial_objection_delete', args=[objection.pk]), follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(CommercialObjection.objects.filter(pk=objection.pk).exists())
+
+    def test_admin_cannot_delete_used_objection(self):
+        objection = CommercialObjection.objects.create(name='Sem autorização familiar')
+        CommercialOpportunity.objects.create(
+            title='06-2026-0099',
+            commercial_funnel=self.funnel,
+            stage=self.stage,
+            origin=self.origin,
+            contact_name='Responsável',
+            contact_phone='21999990000',
+            next_follow_up_date=date(2026, 7, 10),
+            objection=objection,
+            active=True,
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.post(reverse('commercial_objection_delete', args=[objection.pk]), follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(CommercialObjection.objects.filter(pk=objection.pk).exists())
+        self.assertContains(response, 'não pode ser excluída')
 
 
 class CommercialDashboardTests(TestCase):

@@ -5,7 +5,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from checklists.models import (
-    CommercialFunnel, Course, FunnelModel, FunnelModelField, FunnelStage,
+    CommercialFunnel, CommercialObjection, Course, FunnelModel, FunnelModelField, FunnelStage,
     FunnelType, OpportunityOrigin, Position, Room, SchoolHoliday, TimeSlot,
 )
 
@@ -191,6 +191,26 @@ COMMERCIAL_OPPORTUNITY_ORIGINS = [
         'description': 'Oportunidades criadas automaticamente pelo Checklist.',
         'active': True,
     },
+]
+
+COMMERCIAL_OBJECTIONS = [
+    'Não gostou do valor / preço',
+    'Questão financeira',
+    'Mora longe da unidade',
+    'Horário incompatível',
+    'Vai pensar / vai analisar',
+    'Precisa conversar com o pai/mãe ou outro responsável',
+    'Desistiu',
+    'Não tem interesse',
+    'Fez aula experimental, mas não matriculou',
+    'Não compareceu à aula experimental',
+    'Aula experimental remarcada',
+    'Entrou em lista de espera',
+    'Encontrou outra solução (escola/concorrente)',
+    'Procurava outro produto ou serviço (filamento, impressão 3D, Excel, montagem de computador etc.)',
+    'Apenas curiosidade / sem intenção de compra',
+    'Lead falso / trote',
+    'Não responde / parou de responder (ghosting)',
 ]
 
 COMMERCIAL_FUNNEL_MODELS = [
@@ -413,6 +433,12 @@ class Command(BaseCommand):
             if created:
                 opportunity_origins_created += 1
 
+        commercial_objections_created = 0
+        for name in COMMERCIAL_OBJECTIONS:
+            _, created = CommercialObjection.objects.get_or_create(name=name)
+            if created:
+                commercial_objections_created += 1
+
         funnel_models_created = 0
         funnel_model_fields_created = 0
         for data in COMMERCIAL_FUNNEL_MODELS:
@@ -485,6 +511,7 @@ class Command(BaseCommand):
                 f'Tipos de funis novos: {funnel_types_created}. '
                 f'Etapas de funis novas: {funnel_stages_created}. '
                 f'Origens novas: {opportunity_origins_created}. '
+                f'Objeções novas: {commercial_objections_created}. '
                 f'Modelos de funis novos: {funnel_models_created}. '
                 f'Campos de modelos novos: {funnel_model_fields_created}. '
                 f'Funis novos: {commercial_funnels_created}.'

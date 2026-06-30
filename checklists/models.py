@@ -311,6 +311,38 @@ class CommercialFunnel(models.Model):
         return self.name
 
 
+class CommercialObjection(models.Model):
+    """Objeção comercial registrada em oportunidades."""
+
+    name = models.CharField('Objeção', max_length=180, unique=True)
+    created_at = models.DateTimeField('Criada em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizada em', auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Objeção comercial'
+        verbose_name_plural = 'Objeções comerciais'
+
+    def __str__(self):
+        return self.name
+
+    def has_usage(self):
+        if not self.pk:
+            return False
+        return CommercialOpportunity.objects.filter(objection=self).exists()
+
+    def can_be_deleted(self):
+        return not self.has_usage()
+
+    def delete(self, *args, **kwargs):
+        if self.has_usage():
+            raise ProtectedError(
+                'Objeções usadas em oportunidades comerciais não podem ser excluídas.',
+                [self],
+            )
+        return super().delete(*args, **kwargs)
+
+
 class CommercialOpportunity(models.Model):
     """Entrada/lead acompanhado dentro de um funil comercial."""
 
@@ -337,6 +369,7 @@ class CommercialOpportunity(models.Model):
     contact_phone = models.CharField('Telefone do responsável', max_length=30)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='owned_commercial_opportunities', verbose_name='Atendente responsável')
     next_follow_up_date = models.DateField('Data próx. Follow-Up')
+    objection = models.ForeignKey(CommercialObjection, on_delete=models.PROTECT, null=True, blank=True, related_name='opportunities', verbose_name='Objeção')
     field_values = models.JSONField('Campos adicionais preenchidos', default=dict, blank=True)
     notes = models.TextField('Observações', blank=True)
     automation_key = models.CharField('Chave de automação', max_length=160, blank=True, db_index=True)

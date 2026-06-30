@@ -11,7 +11,7 @@ from django.utils.text import slugify
 from .backup import build_remote_path, split_remote_path
 from .models import (
     ActivitySuggestion, BackupConfiguration, ChecklistOccurrence, CommercialFunnel,
-    CommercialOpportunity, Course, DailyNote, EmployeeAbsence, FunnelModel,
+    CommercialObjection, CommercialOpportunity, Course, DailyNote, EmployeeAbsence, FunnelModel,
     FunnelModelField, FunnelStage, FunnelType, Lesson, LessonFeedback, MetricRecord, MetricType,
     OpportunityOrigin, PedagogicalStudent, Position, Room, SchoolHoliday,
     TaskTemplate, TimeSlot, UserProfile,
@@ -386,6 +386,29 @@ class OpportunityOriginForm(forms.ModelForm):
         if commit:
             origin.save()
         return origin
+
+
+class CommercialObjectionForm(forms.ModelForm):
+    class Meta:
+        model = CommercialObjection
+        fields = ['name']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'input'}),
+        }
+        labels = {
+            'name': 'Nome da objeção',
+        }
+
+    def clean_name(self):
+        name = (self.cleaned_data.get('name') or '').strip()
+        if not name:
+            raise forms.ValidationError('Informe o nome da objeção.')
+        qs = CommercialObjection.objects.filter(name__iexact=name)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError('Já existe uma objeção com este nome.')
+        return name
 
 
 class FunnelModelForm(forms.ModelForm):
@@ -1022,6 +1045,8 @@ class LessonFeedbackForm(forms.ModelForm):
 class CommercialOpportunityForm(forms.ModelForm):
     INTEREST_COURSE_PREFIX = 'course:'
     INTEREST_TYPE_PREFIX = 'type:'
+    OBJECTION_PREFIX = 'objection:'
+    OBJECTION_OTHER_VALUE = '__other__'
 
     STATUS_ACTIVE = 'active'
     STATUS_INACTIVE = 'inactive'
@@ -1040,6 +1065,23 @@ class CommercialOpportunityForm(forms.ModelForm):
         required=False,
         choices=[],
         widget=forms.Select(attrs={'class': 'input', 'data-interest-select': '1'}),
+    )
+    objection_choice = forms.ChoiceField(
+        label='Objeção',
+        required=False,
+        choices=[],
+        widget=forms.Select(attrs={'class': 'input', 'data-objection-select': '1'}),
+    )
+    objection_other = forms.CharField(
+        label='Qual objeção?',
+        required=False,
+        max_length=180,
+        widget=forms.TextInput(attrs={
+            'class': 'input',
+            'data-objection-other': '1',
+            'placeholder': 'Descreva a objeção',
+            'autocomplete': 'off',
+        }),
     )
     trial_lesson_kind = forms.ChoiceField(
         label='Tipo da aula',
@@ -1115,6 +1157,7 @@ class CommercialOpportunityForm(forms.ModelForm):
         self.selected_funnel = None
         self.interest_value_map = {}
         self.trial_lesson_payload = None
+        self.created_objection = None
         if not self.is_bound and not (self.instance and self.instance.pk) and self.generated_title:
             self.fields['title'].initial = self.generated_title
         if not self.is_bound and not (self.instance and self.instance.pk) and not self.initial.get('next_follow_up_date'):
@@ -1123,6 +1166,7 @@ class CommercialOpportunityForm(forms.ModelForm):
         self.fields['status'].initial = self.STATUS_ACTIVE if self.instance.active else self.STATUS_INACTIVE
         self._configure_owner_queryset()
         self._configure_interest_choices()
+        self._configure_objection_choices()
         self._configure_trial_lesson_fields()
 
         funnels = (
@@ -1217,6 +1261,23 @@ class CommercialOpportunityForm(forms.ModelForm):
         self.fields['interest'].choices = choices
         if not self.is_bound:
             self.fields['interest'].initial = self._interest_initial()
+
+    def _configure_objection_choices(self):
+        objection_choices = [
+            (f'{self.OBJECTION_PREFIX}{objection.pk}', objection.name)
+            for objection in CommercialObjection.objects.order_by('name')
+        ]
+        choices = [('', 'Sem objeção')]
+        choices.extend(objection_choices)
+        choices.append((self.OBJECTION_OTHER_VALUE, 'Outra'))
+        self.fields['objection_choice'].choices = choices
+        if not self.is_bound:
+            self.fields['objection_choice'].initial = self._objection_initial()
+
+    def _objection_initial(self):
+        if self.instance and self.instance.pk and self.instance.objection_id:
+            return f'{self.OBJECTION_PREFIX}{self.instance.objection_id}'
+        return ''
 
     def _configure_trial_lesson_fields(self):
         courses = Course.objects.filter(active=True).order_by('name')
@@ -1379,6 +1440,8 @@ class CommercialOpportunityForm(forms.ModelForm):
         next_follow_up_date = cleaned.get('next_follow_up_date')
         cleaned['_interest_course'] = None
         cleaned['_interest_type'] = ''
+        cleaned['_objection'] = None
+        cleaned['_objection_name'] = ''
 
         if is_lost_stage(stage):
             cleaned['status'] = self.STATUS_INACTIVE
@@ -1414,6 +1477,26 @@ class CommercialOpportunityForm(forms.ModelForm):
                 cleaned['_interest_type'] = interest_type
         elif interest:
             self.add_error('interest', 'Selecione uma opção de interesse válida.')
+
+        objection_choice = cleaned.get('objection_choice') or ''
+        objection_other = (cleaned.get('objection_other') or '').strip()
+        if objection_choice.startswith(self.OBJECTION_PREFIX):
+            objection_id = objection_choice.removeprefix(self.OBJECTION_PREFIX)
+            try:
+                cleaned['_objection'] = CommercialObjection.objects.get(pk=objection_id)
+            except (CommercialObjection.DoesNotExist, ValueError):
+                self.add_error('objection_choice', 'Selecione uma objeção válida.')
+        elif objection_choice == self.OBJECTION_OTHER_VALUE:
+            if not objection_other:
+                self.add_error('objection_other', 'Informe a objeção.')
+            else:
+                existing = CommercialObjection.objects.filter(name__iexact=objection_other).first()
+                if existing:
+                    cleaned['_objection'] = existing
+                else:
+                    cleaned['_objection_name'] = objection_other
+        elif objection_choice:
+            self.add_error('objection_choice', 'Selecione uma objeção válida.')
 
         self._clean_trial_lesson(cleaned)
         return cleaned
@@ -1474,6 +1557,14 @@ class CommercialOpportunityForm(forms.ModelForm):
         opportunity.funnel_type = self._inferred_funnel_type()
         opportunity.interest_course = self.cleaned_data.get('_interest_course')
         opportunity.interest_type = self.cleaned_data.get('_interest_type') or ''
+        objection = self.cleaned_data.get('_objection')
+        objection_name = self.cleaned_data.get('_objection_name') or ''
+        if objection_name and not objection:
+            objection = CommercialObjection.objects.filter(name__iexact=objection_name).first()
+            if not objection:
+                objection = CommercialObjection.objects.create(name=objection_name)
+                self.created_objection = objection
+        opportunity.objection = objection
         if not self.cleaned_data.get('interest'):
             opportunity.value = None
         elif opportunity.interest_course_id and opportunity.value is None:

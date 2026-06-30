@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Objeções Comerciais</h1>
+    <p class="muted">Motivos usados pelo atendente para registrar barreiras ou perdas em oportunidades.</p>
+  </div>
+  <a class="btn primary" href="{% url 'commercial_objection_create' %}">Inserir objeção</a>
+</div>
+
+<table class="panel-table">
+  <thead>
+    <tr>
+      <th>Objeção</th>
+      <th>Uso em oportunidades</th>
+      <th>Ações</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for objection in objections %}
+    <tr>
+      <td>{{ objection.name }}</td>
+      <td>{{ objection.usage_count }}</td>
+      <td>
+        <div class="row-actions">
+          <a class="btn small" href="{% url 'commercial_objection_edit' objection.id %}">Editar</a>
+          {% if objection.can_delete_from_ui %}
+            <a class="btn danger small" href="{% url 'commercial_objection_delete' objection.id %}">Excluir</a>
+          {% else %}
+            <span class="muted">Exclusão bloqueada</span>
+          {% endif %}
+        </div>
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="3">Nenhuma objeção cadastrada.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
