@@ -1692,6 +1692,34 @@ class CommercialDashboardTests(TestCase):
         self.assertContains(response, 'Negociando')
         self.assertNotContains(response, 'Lead de outro atendente')
 
+    def test_commercial_funnel_board_defaults_to_qualified_funnel(self):
+        today = timezone.localdate()
+        qualified_funnel = CommercialFunnel.objects.create(
+            name='Qualificados',
+            funnel_model=self.funnel_model,
+            active=True,
+        )
+        self._opportunity(title='Lead outro funil', owner=self.user, next_follow_up_date=today)
+        CommercialOpportunity.objects.create(
+            title='Lead qualificado',
+            commercial_funnel=qualified_funnel,
+            stage=self.stage,
+            origin=self.origin,
+            contact_name='Responsável Qualificado',
+            contact_phone='21999990000',
+            owner=self.user,
+            next_follow_up_date=today,
+            active=True,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('commercial_funnel_board'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['selected_funnel'], qualified_funnel)
+        self.assertContains(response, 'Lead qualificado')
+        self.assertNotContains(response, 'Lead outro funil')
+
     def test_operator_can_open_opportunity_create_form(self):
         self.client.force_login(self.user)
 

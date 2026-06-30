@@ -668,7 +668,10 @@ def commercial_funnel_board(request):
     if selected_funnel_id and selected_funnel_id.isdigit():
         selected_funnel = CommercialFunnel.objects.filter(pk=selected_funnel_id).select_related('funnel_model').first()
     if not selected_funnel and funnels:
-        selected_funnel = funnels[0]
+        selected_funnel = next(
+            (funnel for funnel in funnels if funnel.name.casefold() == 'qualificados'),
+            funnels[0],
+        )
         selected_funnel_id = str(selected_funnel.id)
     elif selected_funnel:
         selected_funnel_id = str(selected_funnel.id)
