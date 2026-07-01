@@ -29,8 +29,8 @@ METRIC_PERIOD_CHOICES = [
 ]
 METRIC_PERIOD_LABELS = dict(METRIC_PERIOD_CHOICES)
 COMMERCIAL_POSITION_CODE = 'atendente-comercial'
-POST_SALE_AUTOMATION_KEY_PREFIX = 'post-sale:lesson-10'
-POST_SALE_OPPORTUNITY_AUDIT_FIELDS = [
+LESSON_TEN_SALE_AUTOMATION_KEY_PREFIX = 'post-sale:lesson-10'
+AUTOMATED_SALE_OPPORTUNITY_AUDIT_FIELDS = [
     'title', 'commercial_funnel', 'funnel_type', 'stage', 'origin',
     'interest_course', 'contracted_modules', 'contact_name', 'contact_phone', 'owner', 'next_follow_up_date',
     'notes', 'automation_key', 'active',
@@ -160,6 +160,43 @@ def _post_sale_funnel_components():
     return funnel_type, stage, origin, funnel
 
 
+def _qualified_funnel_components():
+    funnel_type, _ = _commercial_object_by_code_or_name(
+        FunnelType,
+        code='qualificados',
+        name='Qualificados',
+        defaults={'active': True},
+    )
+    stage, _ = _commercial_object_by_code_or_name(
+        FunnelStage,
+        code='4-follow-up',
+        name='4 - Follow-Up',
+        defaults={
+            'description': 'Follow-up comercial ativo.',
+            'order': 4,
+            'active': True,
+        },
+    )
+    origin, _ = _commercial_object_by_code_or_name(
+        OpportunityOrigin,
+        code='sistema',
+        name='Sistema',
+        defaults={
+            'description': 'Oportunidade criada automaticamente pelo Checklist.',
+            'active': True,
+        },
+    )
+    funnel_model, _ = FunnelModel.objects.get_or_create(
+        name='Modelo Cursos e Aulas Avulsas',
+        defaults={'active': True},
+    )
+    funnel, _ = CommercialFunnel.objects.get_or_create(
+        name='Qualificados',
+        defaults={'funnel_model': funnel_model, 'active': True},
+    )
+    return funnel_type, stage, origin, funnel
+
+
 def _related_commercial_opportunity_for_student(student, course=None):
     if not student:
         return None
@@ -213,8 +250,8 @@ def _post_sale_continuity_hint(module_number, contracted_modules):
     return 'Verificar continuidade do aluno e venda de novo curso, se necessário.'
 
 
-def create_post_sale_opportunity_for_lesson_feedback(feedback, *, actor=None):
-    """Cria oportunidade de pós-venda quando o feedback marca a 10ª aula.
+def create_qualified_sale_opportunity_for_lesson_feedback(feedback, *, actor=None):
+    """Cria oportunidade comercial qualificada quando o feedback marca a 10ª aula.
 
     A regra é idempotente por aluno e módulo, para que editar o feedback não
     duplique o follow-up comercial.
@@ -226,7 +263,7 @@ def create_post_sale_opportunity_for_lesson_feedback(feedback, *, actor=None):
         return None, False
 
     automation_key = (
-        f'{POST_SALE_AUTOMATION_KEY_PREFIX}:'
+        f'{LESSON_TEN_SALE_AUTOMATION_KEY_PREFIX}:'
         f'student:{lesson.student_id}:module:{feedback.module_number}'
     )
     existing = CommercialOpportunity.objects.filter(automation_key=automation_key).first()
@@ -236,7 +273,7 @@ def create_post_sale_opportunity_for_lesson_feedback(feedback, *, actor=None):
     student = lesson.student
     related_opportunity = _related_commercial_opportunity_for_student(student, course=lesson.course)
     contracted_modules = related_opportunity.contracted_modules if related_opportunity else None
-    funnel_type, stage, origin, funnel = _post_sale_funnel_components()
+    funnel_type, stage, origin, funnel = _qualified_funnel_components()
     follow_up_date = timezone.localdate() + timedelta(days=1)
     module_label = f'módulo {feedback.module_number}'
     continuity_hint = _post_sale_continuity_hint(feedback.module_number, contracted_modules)
@@ -274,7 +311,7 @@ def create_post_sale_opportunity_for_lesson_feedback(feedback, *, actor=None):
             new_stage=stage,
             previous_stage_label='',
             new_stage_label=str(stage),
-            note='Etapa inicial da oportunidade de pós-venda criada pela 10ª aula.',
+            note='Etapa inicial da oportunidade qualificada criada pela 10ª aula.',
             actor=actor,
         )
         CommercialOpportunityFollowUp.objects.create(
@@ -287,12 +324,15 @@ def create_post_sale_opportunity_for_lesson_feedback(feedback, *, actor=None):
         log_activity(
             actor=actor,
             obj=opportunity,
-            action='Oportunidade pós-venda criada automaticamente',
+            action='Oportunidade qualificada criada automaticamente',
             object_label=opportunity.title,
             details=f'Aluno: {student.name}; módulo: {feedback.module_number}; aula: 10.',
-            new_values=snapshot_instance(opportunity, POST_SALE_OPPORTUNITY_AUDIT_FIELDS),
+            new_values=snapshot_instance(opportunity, AUTOMATED_SALE_OPPORTUNITY_AUDIT_FIELDS),
         )
         return opportunity, True
+
+
+create_post_sale_opportunity_for_lesson_feedback = create_qualified_sale_opportunity_for_lesson_feedback
 
 
 def create_pedagogical_report_task_for_feedback(feedback, *, actor=None):

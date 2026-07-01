@@ -19,7 +19,7 @@ from checklists.management.commands.import_lesson_feedbacks_xlsx import (
 from checklists.models import Lesson, LessonFeedback, PedagogicalStudent
 from checklists.services import (
     create_pedagogical_report_task_for_feedback,
-    create_post_sale_opportunity_for_lesson_feedback,
+    create_qualified_sale_opportunity_for_lesson_feedback,
 )
 from checklists.sponte import (
     SponteClientError,
@@ -88,7 +88,7 @@ class HistoricalImportSummary:
     feedbacks_updated: int = 0
     feedbacks_unchanged: int = 0
     report_tasks_created: int = 0
-    post_sale_opportunities_created: int = 0
+    qualified_opportunities_created: int = 0
     pending_feedback_lessons: int = 0
     unmatched_feedback_rows: int = 0
     skipped_records: int = 0
@@ -604,7 +604,7 @@ class Command(BaseCommand):
             with transaction.atomic():
                 feedback, created, updated = feedback_parser._upsert_feedback(row, lesson, actor)
                 report_task, report_created = create_pedagogical_report_task_for_feedback(feedback, actor=actor)
-                opportunity, opportunity_created = create_post_sale_opportunity_for_lesson_feedback(feedback, actor=actor)
+                opportunity, opportunity_created = create_qualified_sale_opportunity_for_lesson_feedback(feedback, actor=actor)
         except Exception as exc:  # noqa: BLE001 - report and continue.
             summary.row_errors.append(f'{row.sheet_name} linha {row.row_number}: {exc}')
             pending_lessons.append(lesson)
@@ -613,7 +613,7 @@ class Command(BaseCommand):
         summary.feedbacks_updated += int(updated)
         summary.feedbacks_unchanged += int(not created and not updated)
         summary.report_tasks_created += int(bool(report_task and report_created))
-        summary.post_sale_opportunities_created += int(bool(opportunity and opportunity_created))
+        summary.qualified_opportunities_created += int(bool(opportunity and opportunity_created))
 
     def _next_feedback_row(self, lesson, rows_by_student_date):
         rows = rows_by_student_date.get((lesson.student_id, lesson.date))
@@ -741,7 +741,7 @@ class Command(BaseCommand):
             ('feedbacks_updated', summary.feedbacks_updated),
             ('feedbacks_unchanged', summary.feedbacks_unchanged),
             ('report_tasks_created', summary.report_tasks_created),
-            ('post_sale_opportunities_created', summary.post_sale_opportunities_created),
+            ('qualified_opportunities_created', summary.qualified_opportunities_created),
             ('pending_feedback_lessons', summary.pending_feedback_lessons),
             ('unmatched_feedback_rows', summary.unmatched_feedback_rows),
             ('skipped_records', summary.skipped_records),

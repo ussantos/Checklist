@@ -349,7 +349,7 @@ class LessonFeedbackTests(TestCase):
 
         self.assertIn('lesson', ctx.exception.message_dict)
 
-    def test_tenth_lesson_feedback_creates_post_sale_opportunity_once(self):
+    def test_tenth_lesson_feedback_creates_qualified_opportunity_once(self):
         self.client.force_login(self.instructor)
 
         response = self.client.post(
@@ -360,10 +360,10 @@ class LessonFeedbackTests(TestCase):
         self.assertRedirects(response, f"{reverse('pedagogical_lesson_feedbacks')}?data={self.lesson.date.isoformat()}")
         automation_key = f'post-sale:lesson-10:student:{self.student.id}:module:1'
         opportunity = CommercialOpportunity.objects.get(automation_key=automation_key)
-        self.assertEqual(opportunity.funnel_type.code, 'posvenda')
-        self.assertEqual(opportunity.stage.code, '6-pos-venda')
+        self.assertEqual(opportunity.funnel_type.code, 'qualificados')
+        self.assertEqual(opportunity.stage.code, '4-follow-up')
         self.assertEqual(opportunity.origin.code, 'sistema')
-        self.assertEqual(opportunity.commercial_funnel.name, 'Pós-Venda')
+        self.assertEqual(opportunity.commercial_funnel.name, 'Qualificados')
         self.assertEqual(opportunity.owner, self.sales_user)
         self.assertEqual(opportunity.contact_name, self.student.responsible_name)
         self.assertEqual(opportunity.contact_phone, self.student.whatsapp)
@@ -382,7 +382,7 @@ class LessonFeedbackTests(TestCase):
         self.assertEqual(CommercialOpportunity.objects.filter(automation_key=automation_key).count(), 1)
         self.assertEqual(CommercialOpportunityFollowUp.objects.filter(opportunity=opportunity).count(), 1)
 
-    def test_feedback_before_tenth_lesson_does_not_create_post_sale_opportunity(self):
+    def test_feedback_before_tenth_lesson_does_not_create_qualified_opportunity(self):
         self.client.force_login(self.instructor)
 
         response = self.client.post(
@@ -393,7 +393,7 @@ class LessonFeedbackTests(TestCase):
         self.assertRedirects(response, f"{reverse('pedagogical_lesson_feedbacks')}?data={self.lesson.date.isoformat()}")
         self.assertFalse(CommercialOpportunity.objects.filter(automation_key__startswith='post-sale:lesson-10').exists())
 
-    def test_tenth_lesson_post_sale_uses_contracted_modules_context(self):
+    def test_tenth_lesson_qualified_opportunity_uses_contracted_modules_context(self):
         CommercialOpportunity.objects.create(
             title='06-2026-0088',
             commercial_funnel=self.funnel,
@@ -2565,10 +2565,10 @@ class CommercialDashboardTests(TestCase):
         self.assertEqual(opportunity.next_follow_up_date, original_follow_up)
         self.assertFalse(opportunity.active)
 
-    def test_enrollment_stage_moves_to_post_sale_funnel(self):
-        enrollment_stage = FunnelStage.objects.create(code='5-matricula', name='5 - Matrícula', active=True, order=5)
+    def test_won_stage_moves_to_post_sale_funnel_and_deactivates(self):
+        won_stage = FunnelStage.objects.get(code='5-ganha')
         opportunity = self._opportunity(
-            title='Lead matricula',
+            title='Lead ganho',
             owner=self.user,
             next_follow_up_date=timezone.localdate(),
         )
@@ -2576,15 +2576,15 @@ class CommercialDashboardTests(TestCase):
 
         response = self.client.post(reverse('commercial_opportunity_edit', args=[opportunity.pk]), self._post_opportunity_data(
             commercial_funnel=str(self.funnel.pk),
-            stage=str(enrollment_stage.pk),
+            stage=str(won_stage.pk),
         ))
 
         self.assertRedirects(response, reverse('commercial_dashboard'))
         opportunity.refresh_from_db()
         self.assertEqual(opportunity.commercial_funnel.name, 'Pós-Venda')
         self.assertEqual(opportunity.funnel_type.code, 'posvenda')
-        self.assertEqual(opportunity.stage, enrollment_stage)
-        self.assertTrue(opportunity.active)
+        self.assertEqual(opportunity.stage, won_stage)
+        self.assertFalse(opportunity.active)
 
     def test_edit_stage_three_with_existing_trial_lesson_does_not_require_new_schedule(self):
         trial_stage = FunnelStage.objects.create(

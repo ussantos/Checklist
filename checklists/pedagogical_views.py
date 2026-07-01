@@ -25,7 +25,7 @@ from .models import (
 )
 from .services import (
     create_pedagogical_report_task_for_feedback,
-    create_post_sale_opportunity_for_lesson_feedback, get_user_position, is_admin_user,
+    create_qualified_sale_opportunity_for_lesson_feedback, get_user_position, is_admin_user,
 )
 from .sponte import (
     SponteClientError, SponteConfigurationError, default_sponte_schedule_window,
@@ -835,11 +835,11 @@ def lesson_feedback_edit(request, lesson_id):
                     request,
                     f'Relatório pedagógico criado com prazo em {report_task.due_date:%d/%m/%Y}.'
                 )
-            opportunity, created = create_post_sale_opportunity_for_lesson_feedback(feedback, actor=request.user)
+            opportunity, created = create_qualified_sale_opportunity_for_lesson_feedback(feedback, actor=request.user)
             if created:
                 messages.info(
                     request,
-                    f'Oportunidade de pós-venda {opportunity.title} criada para follow-up amanhã.'
+                    f'Oportunidade qualificada {opportunity.title} criada para follow-up amanhã.'
                 )
             messages.success(request, 'Feedback de aula salvo.')
             return redirect(f'{reverse("pedagogical_lesson_feedbacks")}?data={lesson.date.isoformat()}')

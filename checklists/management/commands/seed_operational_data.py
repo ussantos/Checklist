@@ -168,7 +168,7 @@ COMMERCIAL_FUNNEL_STAGES = [
     {'code': '2-negociando', 'name': '2 - Negociando', 'order': 0, 'active': True},
     {'code': '3-aula-experimental', 'name': '3 - Aula Experimental', 'order': 0, 'active': True},
     {'code': '4-follow-up', 'name': '4 - Follow-Up', 'order': 0, 'active': True},
-    {'code': '5-matricula', 'name': '5 - Matricula', 'order': 0, 'active': True},
+    {'code': '5-ganha', 'name': '5 - Ganha', 'order': 0, 'active': True},
     {'code': '5-perdido', 'name': '5 - Perdido', 'order': 0, 'active': True},
     {'code': '6-pos-venda', 'name': '6 - Pós-Venda', 'order': 0, 'active': True},
 ]

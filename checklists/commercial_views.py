@@ -233,14 +233,14 @@ def _lost_stage():
     return _stage_by_code_or_text(code='5-perdido', text='perdid')
 
 
-def _is_enrollment_stage(stage):
+def _is_won_stage(stage):
     if not stage:
         return False
-    enrollment_stage = _stage_by_code_or_text(code='5-matricula', text='matricula')
-    if enrollment_stage:
-        return stage.pk == enrollment_stage.pk
+    won_stage = _stage_by_code_or_text(code='5-ganha', text='ganha')
+    if won_stage:
+        return stage.pk == won_stage.pk
     stage_text = slugify(f'{stage.code} {stage.name}')
-    return 'matricula' in stage_text and '5' in stage_text
+    return '5' in stage_text and ('ganha' in stage_text or 'matricula' in stage_text)
 
 
 def _interested_funnel_type():
@@ -281,10 +281,11 @@ def _apply_opportunity_business_rules(opportunity, *, form, previous_stage=None)
         if not is_lost_stage(previous_stage):
             opportunity.next_follow_up_date = add_months(timezone.localdate(), 3)
         opportunity.active = False
-    elif _is_enrollment_stage(opportunity.stage):
+    elif _is_won_stage(opportunity.stage):
         post_sale_funnel_type, _post_sale_stage, _post_sale_origin, post_sale_funnel = _post_sale_funnel_components()
         opportunity.commercial_funnel = post_sale_funnel
         opportunity.funnel_type = post_sale_funnel_type
+        opportunity.active = False
     elif not opportunity.funnel_type_id:
         opportunity.funnel_type = (
             getattr(opportunity.commercial_funnel.funnel_model, 'funnel_type', None)

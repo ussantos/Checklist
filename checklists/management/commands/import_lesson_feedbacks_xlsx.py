@@ -15,7 +15,7 @@ from openpyxl import load_workbook
 from checklists.models import Lesson, LessonFeedback, PedagogicalStudent
 from checklists.services import (
     create_pedagogical_report_task_for_feedback,
-    create_post_sale_opportunity_for_lesson_feedback,
+    create_qualified_sale_opportunity_for_lesson_feedback,
 )
 from checklists.sponte import (
     _course_for_schedule,
@@ -74,7 +74,7 @@ class ImportSummary:
     feedbacks_updated: int = 0
     feedbacks_unchanged: int = 0
     report_tasks_created: int = 0
-    post_sale_opportunities_created: int = 0
+    qualified_opportunities_created: int = 0
     api_errors: list[str] = field(default_factory=list)
     row_errors: list[str] = field(default_factory=list)
 
@@ -615,7 +615,7 @@ class Command(BaseCommand):
             lesson, lesson_created, lesson_updated = self._upsert_lesson(row, match, actor)
             feedback, feedback_created, feedback_updated = self._upsert_feedback(row, lesson, actor)
             report_task, report_created = create_pedagogical_report_task_for_feedback(feedback, actor=actor)
-            opportunity, opportunity_created = create_post_sale_opportunity_for_lesson_feedback(feedback, actor=actor)
+            opportunity, opportunity_created = create_qualified_sale_opportunity_for_lesson_feedback(feedback, actor=actor)
 
         summary.rows_imported += 1
         summary.lessons_created += int(lesson_created)
@@ -624,7 +624,7 @@ class Command(BaseCommand):
         summary.feedbacks_updated += int(feedback_updated)
         summary.feedbacks_unchanged += int(not feedback_created and not feedback_updated)
         summary.report_tasks_created += int(bool(report_task and report_created))
-        summary.post_sale_opportunities_created += int(bool(opportunity and opportunity_created))
+        summary.qualified_opportunities_created += int(bool(opportunity and opportunity_created))
 
     def _upsert_lesson(self, row, match, actor):
         now = timezone.now()
@@ -741,7 +741,7 @@ class Command(BaseCommand):
             ('feedbacks_updated', summary.feedbacks_updated),
             ('feedbacks_unchanged', summary.feedbacks_unchanged),
             ('report_tasks_created', summary.report_tasks_created),
-            ('post_sale_opportunities_created', summary.post_sale_opportunities_created),
+            ('qualified_opportunities_created', summary.qualified_opportunities_created),
         ]:
             self.stdout.write(f'{name}: {value}')
         for error in summary.api_errors[:20]:
