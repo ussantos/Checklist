@@ -1941,6 +1941,18 @@ class CommercialOpportunityInterestFormTests(TestCase):
 
         self.assertTrue(form.is_valid(), form.errors)
 
+    def test_non_stage_three_ignores_stale_trial_lesson_fields_without_slot(self):
+        form = CommercialOpportunityForm(data=self._form_data(
+            trial_lesson_kind=Lesson.TRIAL_KIND_EXPERIMENTAL,
+            trial_lesson_course=str(self.course.pk),
+            trial_lesson_student_name='Criança de POST antigo',
+            trial_lesson_notes='Campos de agenda enviados fora da etapa 3.',
+            trial_lesson_slot='',
+        ))
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNone(form.trial_lesson_payload)
+
     def test_stage_three_with_existing_trial_lesson_does_not_require_new_slot(self):
         stage = FunnelStage.objects.create(
             code='3-aula-experimental-existente',
@@ -1970,8 +1982,8 @@ class CommercialOpportunityInterestFormTests(TestCase):
 
     def test_trial_lesson_payload_is_prepared_from_available_slot(self):
         stage = FunnelStage.objects.create(
-            code='aula-experimental-agendada-form',
-            name='Aula Experimental Agendada Form',
+            code='3-aula-experimental-agendada-form',
+            name='3 - Aula Experimental Agendada Form',
             active=True,
             order=3,
         )
@@ -2004,8 +2016,8 @@ class CommercialOpportunityInterestFormTests(TestCase):
 
     def test_trial_lesson_can_leave_course_to_define_during_class(self):
         stage = FunnelStage.objects.create(
-            code='aula-experimental-sem-curso',
-            name='Aula Experimental Agendada sem curso',
+            code='3-aula-experimental-sem-curso',
+            name='3 - Aula Experimental Agendada sem curso',
             active=True,
             order=4,
         )
@@ -2398,12 +2410,28 @@ class CommercialDashboardTests(TestCase):
         tomorrow = timezone.localdate() + timedelta(days=1)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Criar oportunidade')
-        self.assertContains(response, 'Agenda da semana')
+        self.assertContains(response, 'data-trial-agenda-section hidden')
         self.assertEqual(response.context['form'].initial['next_follow_up_date'], tomorrow)
         self.assertEqual(response.context['form'].initial['owner'], self.user.pk)
         self.assertContains(response, f'value="{tomorrow.isoformat()}"')
         self.assertContains(response, 'Atendente Comercial')
         self.assertContains(response, 'Outro Atendente')
+
+    def test_create_form_shows_trial_agenda_when_stage_three_is_selected(self):
+        trial_stage = FunnelStage.objects.create(
+            code='3-aula-experimental',
+            name='3 - Aula Experimental',
+            active=True,
+            order=3,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(f"{reverse('commercial_opportunity_create')}?etapa={trial_stage.pk}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['selected_stage_is_trial_lesson_stage'])
+        self.assertContains(response, 'Agenda da semana')
+        self.assertNotContains(response, 'data-trial-agenda-section hidden')
 
     def _post_opportunity_data(self, **kwargs):
         data = {
@@ -2437,6 +2465,22 @@ class CommercialDashboardTests(TestCase):
         self.assertRedirects(response, reverse('commercial_dashboard'))
         opportunity = CommercialOpportunity.objects.latest('id')
         self.assertRegex(opportunity.title, r'^\d{2}-\d{4}-0001$')
+
+    def test_create_non_trial_stage_ignores_stale_trial_lesson_fields(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse('commercial_opportunity_create'), self._post_opportunity_data(
+            trial_lesson_kind=Lesson.TRIAL_KIND_EXPERIMENTAL,
+            trial_lesson_course=str(self.course.pk),
+            trial_lesson_student_name='Criança fora da etapa 3',
+            trial_lesson_notes='Não deveria bloquear salvamento.',
+            trial_lesson_slot='',
+        ))
+
+        self.assertRedirects(response, reverse('commercial_dashboard'))
+        opportunity = CommercialOpportunity.objects.latest('id')
+        self.assertEqual(opportunity.stage, self.stage)
+        self.assertEqual(opportunity.trial_lessons.count(), 0)
 
     def test_create_can_assign_opportunity_to_another_commercial_attendant(self):
         self.client.force_login(self.user)
@@ -2474,6 +2518,27 @@ class CommercialDashboardTests(TestCase):
         self.assertRedirects(response, reverse('commercial_dashboard'))
         opportunity.refresh_from_db()
         self.assertEqual(opportunity.owner, self.other_user)
+
+    def test_edit_non_trial_stage_ignores_stale_trial_lesson_fields(self):
+        opportunity = self._opportunity(
+            title='Lead sem aula experimental',
+            owner=self.user,
+            next_follow_up_date=timezone.localdate(),
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse('commercial_opportunity_edit', args=[opportunity.pk]), self._post_opportunity_data(
+            trial_lesson_kind=Lesson.TRIAL_KIND_EXPERIMENTAL,
+            trial_lesson_course=str(self.course.pk),
+            trial_lesson_student_name='Criança fora da etapa 3',
+            trial_lesson_notes='Não deveria bloquear edição.',
+            trial_lesson_slot='',
+        ))
+
+        self.assertRedirects(response, reverse('commercial_dashboard'))
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.stage, self.stage)
+        self.assertEqual(opportunity.trial_lessons.count(), 0)
 
     def test_admin_must_choose_commercial_attendant_when_editing_opportunity(self):
         admin = User.objects.create_user(username='admin-edita-comercial', password='teste123', is_staff=True)
@@ -2643,6 +2708,7 @@ class CommercialDashboardTests(TestCase):
         self.client.force_login(self.user)
 
         response = self.client.post(reverse('commercial_opportunity_create'), self._post_opportunity_data(
+            stage=str(trial_stage.pk),
             trial_lesson_week=week_start.isoformat(),
             trial_lesson_kind=Lesson.TRIAL_KIND_EXPERIMENTAL,
             trial_lesson_course='',

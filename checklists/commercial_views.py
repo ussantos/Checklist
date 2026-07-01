@@ -536,6 +536,7 @@ def _commercial_form_context(request, *, form, title, submit_label, opportunity=
         'available_trial_slots': slots,
         'available_trial_slots_by_day': _group_slots_by_day(slots),
         'selected_trial_lesson_slot': selected_slot,
+        'selected_stage_is_trial_lesson_stage': form.selected_stage_is_trial_lesson_stage,
         'selected_stage_requires_trial_lesson': form.selected_stage_requires_trial_lesson,
         'creation_date': opportunity.created_at.date() if opportunity else timezone.localdate(),
         'trial_lesson_stage_id': getattr(_trial_lesson_stage(), 'id', ''),
@@ -1598,6 +1599,9 @@ def commercial_opportunity_create(request):
         funnel_id = request.GET.get('funil')
         if funnel_id and funnel_id.isdigit():
             initial['commercial_funnel'] = funnel_id
+        stage_id = request.GET.get('etapa')
+        if stage_id and stage_id.isdigit():
+            initial['stage'] = stage_id
         form = CommercialOpportunityForm(initial=initial, available_trial_slots=slots, generated_title=initial['title'])
 
     return render(request, 'checklists/commercial_opportunity_form.html', _commercial_form_context(

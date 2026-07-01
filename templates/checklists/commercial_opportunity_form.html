@@ -128,15 +128,15 @@
     {% endif %}
   </section>
 
-  <section class="panel opportunity-form-panel">
+  <section class="panel opportunity-form-panel" data-trial-agenda-section {% if not selected_stage_is_trial_lesson_stage %}hidden{% endif %}>
     <div class="section-heading">
       <div>
         <h2>Agenda da semana</h2>
         <p class="muted">Escolher um horário muda a etapa para 3 - Aula Experimental.</p>
       </div>
       <div class="row-actions">
-        <a class="btn small" href="?semana={{ previous_week|date:'Y-m-d' }}{% if form.selected_funnel %}&funil={{ form.selected_funnel.id }}{% endif %}">Semana anterior</a>
-        <a class="btn small" href="?semana={{ next_week|date:'Y-m-d' }}{% if form.selected_funnel %}&funil={{ form.selected_funnel.id }}{% endif %}">Próxima semana</a>
+        <a class="btn small" data-week-nav href="?semana={{ previous_week|date:'Y-m-d' }}{% if form.selected_funnel %}&funil={{ form.selected_funnel.id }}{% endif %}">Semana anterior</a>
+        <a class="btn small" data-week-nav href="?semana={{ next_week|date:'Y-m-d' }}{% if form.selected_funnel %}&funil={{ form.selected_funnel.id }}{% endif %}">Próxima semana</a>
       </div>
     </div>
     {% if selected_stage_requires_trial_lesson %}
@@ -341,6 +341,11 @@
     const funnelSelect = document.getElementById('id_commercial_funnel');
     const followUpInput = document.getElementById('id_next_follow_up_date');
     const trialCourseSelect = document.getElementById('id_trial_lesson_course');
+    const trialKindSelect = document.getElementById('id_trial_lesson_kind');
+    const trialStudentNameInput = document.getElementById('id_trial_lesson_student_name');
+    const trialNotesInput = document.getElementById('id_trial_lesson_notes');
+    const trialAgendaSection = document.querySelector('[data-trial-agenda-section]');
+    const weekNavLinks = Array.from(document.querySelectorAll('[data-week-nav]'));
     const trialSlotCards = Array.from(document.querySelectorAll('[data-trial-slot-card]'));
     const trialEmptyFiltered = document.getElementById('trial-slot-empty-filter');
     const trialEmptyRadio = document.querySelector('input[name="{{ form.trial_lesson_slot.html_name }}"][value=""]');
@@ -393,15 +398,6 @@
       }
     };
 
-    const markTrialStage = () => {
-      if (stageSelect && trialStageId) {
-        stageSelect.value = trialStageId;
-      }
-      if (statusSelect) {
-        statusSelect.value = 'active';
-      }
-    };
-
     const applyLostStage = () => {
       if (!stageSelect || !lostStageId || stageSelect.value !== lostStageId) return;
       if (statusSelect) {
@@ -415,6 +411,60 @@
       }
     };
 
+    const stageIsTrial = () => Boolean(stageSelect && trialStageId && stageSelect.value === trialStageId);
+
+    const resetTrialLessonFields = () => {
+      if (trialEmptyRadio) {
+        trialEmptyRadio.checked = true;
+      }
+      if (trialKindSelect) {
+        trialKindSelect.value = '';
+      }
+      if (trialCourseSelect) {
+        trialCourseSelect.value = '';
+      }
+      if (trialStudentNameInput) {
+        trialStudentNameInput.value = '';
+      }
+      if (trialNotesInput) {
+        trialNotesInput.value = '';
+      }
+    };
+
+    const updateWeekNavigation = () => {
+      weekNavLinks.forEach((link) => {
+        const url = new URL(link.href, window.location.origin);
+        if (stageSelect && stageSelect.value) {
+          url.searchParams.set('etapa', stageSelect.value);
+        } else {
+          url.searchParams.delete('etapa');
+        }
+        link.href = `${url.pathname}${url.search}`;
+      });
+    };
+
+    const updateTrialAgendaVisibility = () => {
+      const show = stageIsTrial();
+      if (trialAgendaSection) {
+        trialAgendaSection.hidden = !show;
+      }
+      if (!show) {
+        resetTrialLessonFields();
+      }
+      updateWeekNavigation();
+      updateTrialSlotAvailability();
+    };
+
+    const markTrialStage = () => {
+      if (stageSelect && trialStageId) {
+        stageSelect.value = trialStageId;
+        updateTrialAgendaVisibility();
+      }
+      if (statusSelect) {
+        statusSelect.value = 'active';
+      }
+    };
+
     document.querySelectorAll('input[name="{{ form.trial_lesson_slot.html_name }}"]').forEach((radio) => {
       radio.addEventListener('change', () => {
         if (radio.checked && radio.value) {
@@ -424,7 +474,10 @@
     });
 
     if (stageSelect) {
-      stageSelect.addEventListener('change', applyLostStage);
+      stageSelect.addEventListener('change', () => {
+        applyLostStage();
+        updateTrialAgendaVisibility();
+      });
       applyLostStage();
     }
     if (trialCourseSelect) {
@@ -441,6 +494,7 @@
       objectionSelect.addEventListener('change', toggleObjectionOther);
       toggleObjectionOther();
     }
+    updateTrialAgendaVisibility();
     updateTrialSlotAvailability();
   })();
 </script>

@@ -1256,6 +1256,11 @@ class CommercialOpportunityForm(forms.ModelForm):
     def selected_stage_requires_trial_lesson(self):
         return self._stage_requires_new_trial_lesson(self._selected_stage())
 
+    @property
+    def selected_stage_is_trial_lesson_stage(self):
+        stage = self._selected_stage()
+        return bool(stage and stage.requires_trial_lesson)
+
     def _stage_requires_new_trial_lesson(self, stage):
         return bool(stage and stage.requires_trial_lesson and not self.has_existing_trial_lesson)
 
@@ -1539,6 +1544,7 @@ class CommercialOpportunityForm(forms.ModelForm):
 
     def _clean_trial_lesson(self, cleaned):
         stage = cleaned.get('stage')
+        stage_allows_trial_lesson = bool(stage and stage.requires_trial_lesson)
         requires_trial_lesson = self._stage_requires_new_trial_lesson(stage)
         slot_value = cleaned.get('trial_lesson_slot') or ''
         lesson_kind = cleaned.get('trial_lesson_kind') or ''
@@ -1546,17 +1552,16 @@ class CommercialOpportunityForm(forms.ModelForm):
         student_name = (cleaned.get('trial_lesson_student_name') or '').strip()
         notes = (cleaned.get('trial_lesson_notes') or '').strip()
 
-        if requires_trial_lesson and not slot_value:
-            self.add_error('trial_lesson_slot', 'Esta etapa exige agendar uma Aula Experimental ou Play.')
-
-        if slot_value or lesson_kind or course or student_name:
-            if not lesson_kind:
-                self.add_error('trial_lesson_kind', 'Informe se a aula é Experimental ou Play.')
-            if not slot_value:
-                self.add_error('trial_lesson_slot', 'Selecione um horário livre para a aula.')
+        if not stage_allows_trial_lesson:
+            return
 
         if not slot_value:
+            if requires_trial_lesson:
+                self.add_error('trial_lesson_slot', 'Esta etapa exige agendar uma Aula Experimental ou Play.')
             return
+
+        if not lesson_kind:
+            self.add_error('trial_lesson_kind', 'Informe se a aula é Experimental ou Play.')
 
         slot_map = {slot['value']: slot for slot in self.available_trial_slots}
         slot = slot_map.get(slot_value)
