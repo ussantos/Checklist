@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from django import forms
 from django.contrib.auth import get_user_model
+from django.db.models import Case, IntegerField, Q, Value, When
 from django.forms import inlineformset_factory
 from django.forms.models import BaseInlineFormSet
 from django.forms.formsets import DELETION_FIELD_NAME
@@ -34,6 +35,33 @@ def add_months(value, months):
 
 def is_lost_stage(stage):
     return bool(stage and 'perdid' in slugify(f'{stage.code} {stage.name}'))
+
+
+def order_commercial_stages(queryset):
+    stage_five = Q(code__startswith='5-')
+    won_stage = stage_five & (
+        Q(code__icontains='ganha')
+        | Q(name__icontains='ganha')
+        | Q(code__icontains='matricula')
+        | Q(name__icontains='matrícula')
+        | Q(name__icontains='matricula')
+    )
+    lost_stage = stage_five & (Q(code__icontains='perdid') | Q(name__icontains='perdid'))
+
+    return queryset.annotate(
+        commercial_stage_order=Case(
+            When(code__startswith='1-', then=Value(10)),
+            When(code__startswith='2-', then=Value(20)),
+            When(code__startswith='3-', then=Value(30)),
+            When(code__startswith='4-', then=Value(40)),
+            When(won_stage, then=Value(50)),
+            When(lost_stage, then=Value(51)),
+            When(code__startswith='5-', then=Value(52)),
+            When(code__startswith='6-', then=Value(60)),
+            default=Value(900),
+            output_field=IntegerField(),
+        )
+    ).order_by('commercial_stage_order', 'order', 'name')
 
 
 class OccurrenceUpdateForm(forms.ModelForm):
@@ -1343,14 +1371,14 @@ class CommercialOpportunityForm(forms.ModelForm):
         return ''
 
     def _configure_standard_field_querysets(self):
-        stages = FunnelStage.objects.filter(active=True).order_by('order', 'name')
+        stages = order_commercial_stages(FunnelStage.objects.filter(active=True))
         origins = OpportunityOrigin.objects.filter(active=True).order_by('name')
 
         if self.instance and self.instance.pk:
             if self.instance.stage_id:
-                stages = FunnelStage.objects.filter(
+                stages = order_commercial_stages(FunnelStage.objects.filter(
                     pk__in=list(stages.values_list('pk', flat=True)) + [self.instance.stage_id]
-                ).order_by('order', 'name')
+                ))
             if self.instance.origin_id:
                 origins = OpportunityOrigin.objects.filter(
                     pk__in=list(origins.values_list('pk', flat=True)) + [self.instance.origin_id]

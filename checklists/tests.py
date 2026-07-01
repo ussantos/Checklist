@@ -2169,6 +2169,36 @@ class CommercialOpportunityInterestFormTests(TestCase):
         data.update(kwargs)
         return data
 
+    def test_stage_field_orders_won_before_lost_in_numeric_sequence(self):
+        stage_data = [
+            ('1-contato', '1 - Contato', 0),
+            ('2-negociando', '2 - Negociando', 0),
+            ('3-aula-experimental', '3 - Aula Experimental', 0),
+            ('4-follow-up', '4 - Follow-Up', 0),
+            ('5-perdido', '5 - Perdido', 0),
+            ('6-pos-venda', '6 - Pós-Venda', 0),
+            ('5-ganha', '5 - Ganha', 5),
+        ]
+        for code, name, order in stage_data:
+            FunnelStage.objects.update_or_create(
+                code=code,
+                defaults={'name': name, 'active': True, 'order': order},
+            )
+
+        form = CommercialOpportunityForm()
+
+        expected = [
+            '1 - Contato',
+            '2 - Negociando',
+            '3 - Aula Experimental',
+            '4 - Follow-Up',
+            '5 - Ganha',
+            '5 - Perdido',
+            '6 - Pós-Venda',
+        ]
+        labels = [stage.name for stage in form.fields['stage'].queryset]
+        self.assertEqual([label for label in labels if label in expected], expected)
+
     def test_course_interest_defaults_value_from_course(self):
         form = CommercialOpportunityForm(data=self._form_data(interest=f'course:{self.course.pk}', contracted_modules='3'))
         self.assertTrue(form.is_valid(), form.errors)
