@@ -16,7 +16,7 @@ from .models import (
     CommercialFunnel, CommercialObjection, CommercialOpportunity, CommercialOpportunityFollowUp,
     CommercialOpportunityStageEvent, Course, FunnelModel, FunnelStage, FunnelType, Lesson, LessonFeedback,
     OpportunityOrigin, PedagogicalReportTask, PedagogicalStudent, Position,
-    Room, SchoolHoliday, TimeSlot, UserProfile,
+    Room, SchoolHoliday, SponteSyncJob, TimeSlot, UserProfile,
 )
 from .sponte import (
     _sponte_config, default_sponte_schedule_window, import_sponte_course_records, import_sponte_free_class_records,
@@ -30,6 +30,11 @@ from .sponte_client import (
 
 
 User = get_user_model()
+
+
+def _agenda_week_bounds_for_test(target_date):
+    start_date = target_date - timedelta(days=target_date.weekday())
+    return start_date, start_date + timedelta(days=6)
 
 
 class PedagogicalSchedulingRulesTests(TestCase):
@@ -769,14 +774,16 @@ class InstructorExperienceTests(TestCase):
 
     def test_instructor_dashboard_imports_only_instructor_schedule_data(self):
         self.client.force_login(self.user)
+        start_date, end_date = default_sponte_schedule_window(timezone.localdate())
+        job = SponteSyncJob(
+            kind=SponteSyncJob.KIND_INSTRUCTOR_SCHEDULE,
+            requested_by=self.user,
+            period_start=start_date,
+            period_end=end_date,
+        )
 
-        with (
-            patch('checklists.pedagogical_views.import_sponte_courses') as courses_mock,
-            patch('checklists.pedagogical_views.import_sponte_students') as students_mock,
-            patch('checklists.pedagogical_views.sync_sponte_free_class_schedule') as schedule_mock,
-        ):
-            schedule_mock.return_value = SponteScheduleSyncResult(created=7, updated=8, unchanged=9, cancelled=1)
-
+        with patch('checklists.pedagogical_views.enqueue_sponte_sync_job') as enqueue_mock:
+            enqueue_mock.return_value = (job, True)
             response = self.client.post(
                 reverse('instructor_import_sponte'),
                 {'next': reverse('instructor_dashboard')},
@@ -785,10 +792,12 @@ class InstructorExperienceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.redirect_chain[-1][0], reverse('instructor_dashboard'))
-        courses_mock.assert_not_called()
-        students_mock.assert_not_called()
-        schedule_mock.assert_called_once()
-        self.assertContains(response, 'Importação do Sponte concluída para o módulo do instrutor')
+        enqueue_mock.assert_called_once()
+        self.assertEqual(enqueue_mock.call_args.kwargs['kind'], SponteSyncJob.KIND_INSTRUCTOR_SCHEDULE)
+        self.assertEqual(enqueue_mock.call_args.kwargs['requested_by'], self.user)
+        self.assertEqual(enqueue_mock.call_args.kwargs['period_start'], start_date)
+        self.assertEqual(enqueue_mock.call_args.kwargs['period_end'], end_date)
+        self.assertContains(response, 'Sincronização Sponte de agenda do instrutor iniciada em segundo plano')
 
     def test_instructor_agenda_is_read_only_and_links_feedback(self):
         self.client.force_login(self.user)
@@ -1164,7 +1173,7 @@ class SponteSOAPClientSafetyTests(TestCase):
         self.assertTrue(response.stale_cache)
         self.assertIn('FIRSTBOT 2.0', response.xml_text)
 
-    @override_settings(SPONTE_API_MAX_REQUESTS_PER_MINUTE=1)
+    @override_settings(SPONTE_API_MAX_REQUESTS_PER_MINUTE=1, SPONTE_API_WAIT_ON_RATE_LIMIT=False)
     def test_rate_limit_blocks_when_cache_cannot_be_used(self):
         client = SponteSOAPClient(fetcher=lambda _request, _timeout: self.STUDENTS_XML)
         client.get_students('Nome=A')
@@ -1531,7 +1540,56 @@ class SponteFreeClassScheduleSyncTests(TestCase):
         self.assertEqual(result.updated, 1)
         self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
 
-    def test_sync_cancels_stale_sponte_lesson_without_deleting(self):
+    def test_import_deduplicates_same_sponte_slot_from_same_payload(self):
+        duplicate_xml = '''<?xml version="1.0" encoding="utf-8"?>
+        <ArrayOfWsAgendaAluno xmlns="http://api.sponteeducacional.net.br/">
+          <wsAgendaAluno>
+            <AlunoID>123</AlunoID>
+            <AulasLivres>
+              <wsAulasLivresAluno>
+                <AulaLivreID>900</AulaLivreID>
+                <DataAula>07/07/2026</DataAula>
+                <HorarioInicial>14:00</HorarioInicial>
+                <HorarioFinal>16:00</HorarioFinal>
+                <CursoID>77</CursoID>
+                <NomeCurso>Techbot</NomeCurso>
+                <DisciplinaID>88</DisciplinaID>
+                <NomeDisciplina>Robótica</NomeDisciplina>
+                <Sala>Sala Maker</Sala>
+                <SituacaoAula>Cancelada</SituacaoAula>
+              </wsAulasLivresAluno>
+              <wsAulasLivresAluno>
+                <AulaLivreID>901</AulaLivreID>
+                <DataAula>07/07/2026</DataAula>
+                <HorarioInicial>14:00</HorarioInicial>
+                <HorarioFinal>16:00</HorarioFinal>
+                <CursoID>77</CursoID>
+                <NomeCurso>Techbot</NomeCurso>
+                <DisciplinaID>88</DisciplinaID>
+                <NomeDisciplina>Robótica</NomeDisciplina>
+                <Sala>Sala Maker</Sala>
+              </wsAulasLivresAluno>
+            </AulasLivres>
+          </wsAgendaAluno>
+        </ArrayOfWsAgendaAluno>
+        '''
+        records = parse_sponte_free_class_schedule(duplicate_xml, student_external_id='123')
+
+        result = import_sponte_free_class_records(
+            self.student,
+            records,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+        )
+
+        self.assertEqual(result.created, 1)
+        self.assertEqual(result.skipped, 1)
+        self.assertEqual(Lesson.objects.count(), 1)
+        lesson = Lesson.objects.get()
+        self.assertEqual(lesson.external_id, 'aula_livre:123:901:2026-07-07')
+        self.assertEqual(lesson.status, Lesson.STATUS_NOT_GIVEN)
+
+    def test_sync_deletes_stale_sponte_lesson(self):
         records = parse_sponte_free_class_schedule(self.SAMPLE_XML, student_external_id='123')
         import_sponte_free_class_records(
             self.student,
@@ -1546,9 +1604,9 @@ class SponteFreeClassScheduleSyncTests(TestCase):
             fetcher=lambda student_id, start, end: self.EMPTY_XML,
         )
 
-        lesson = Lesson.objects.get(external_id='aula_livre:123:900:2026-07-07')
-        self.assertEqual(result.cancelled, 1)
-        self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
+        self.assertEqual(result.deleted, 1)
+        self.assertEqual(result.cancelled, 0)
+        self.assertFalse(Lesson.objects.filter(external_id='aula_livre:123:900:2026-07-07').exists())
 
     def test_sync_uses_diary_status_when_agenda_omits_situation(self):
         diary_calls = []
@@ -1605,6 +1663,22 @@ class SponteFreeClassScheduleSyncTests(TestCase):
 
         self.assertEqual(calls, [('123', self.today, date(2026, 7, 31))])
 
+    def test_sync_can_audit_selected_past_period(self):
+        calls = []
+
+        def fetcher(student_id, start, end):
+            calls.append((student_id, start, end))
+            return self.EMPTY_XML
+
+        sync_sponte_free_class_schedule(
+            date(2026, 6, 29),
+            date(2026, 7, 5),
+            fetcher=fetcher,
+            allow_past=True,
+        )
+
+        self.assertEqual(calls, [('123', date(2026, 6, 29), date(2026, 7, 5))])
+
     def test_sync_frees_old_slot_when_student_changes_schedule_in_sponte(self):
         records = parse_sponte_free_class_schedule(self.SAMPLE_XML, student_external_id='123')
         import_sponte_free_class_records(
@@ -1642,15 +1716,58 @@ class SponteFreeClassScheduleSyncTests(TestCase):
             fetcher=lambda student_id, start, end: changed_schedule_xml,
         )
 
-        old_lesson = Lesson.objects.get(external_id='aula_livre:123:900:2026-07-07')
         new_lesson = Lesson.objects.get(external_id='aula_livre:123:901:2026-07-07')
         self.assertEqual(result.created, 1)
-        self.assertEqual(result.cancelled, 1)
-        self.assertEqual(old_lesson.status, Lesson.STATUS_CANCELLED)
+        self.assertEqual(result.deleted, 1)
+        self.assertFalse(Lesson.objects.filter(external_id='aula_livre:123:900:2026-07-07').exists())
         self.assertEqual(new_lesson.status, Lesson.STATUS_NOT_GIVEN)
         self.assertEqual(new_lesson.start_time, time(16, 0))
 
-    def test_sync_cancels_future_sponte_lessons_outside_active_student_scope(self):
+    def test_sync_reuses_natural_match_when_sponte_changes_lesson_id(self):
+        records = parse_sponte_free_class_schedule(self.CANCELLED_XML, student_external_id='123')
+        import_sponte_free_class_records(
+            self.student,
+            records,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+        )
+        changed_id_same_slot_xml = '''<?xml version="1.0" encoding="utf-8"?>
+        <ArrayOfWsAgendaAluno xmlns="http://api.sponteeducacional.net.br/">
+          <wsAgendaAluno>
+            <AlunoID>123</AlunoID>
+            <AulasLivres>
+              <wsAulasLivresAluno>
+                <AulaLivreID>901</AulaLivreID>
+                <DataAula>07/07/2026</DataAula>
+                <HorarioInicial>14:00</HorarioInicial>
+                <HorarioFinal>16:00</HorarioFinal>
+                <CursoID>77</CursoID>
+                <NomeCurso>Techbot</NomeCurso>
+                <DisciplinaID>88</DisciplinaID>
+                <NomeDisciplina>Robótica</NomeDisciplina>
+                <ProfessorID>99</ProfessorID>
+                <NomeProfessor>Professor Sponte</NomeProfessor>
+                <Sala>Sala Maker</Sala>
+              </wsAulasLivresAluno>
+            </AulasLivres>
+          </wsAgendaAluno>
+        </ArrayOfWsAgendaAluno>
+        '''
+
+        result = sync_sponte_free_class_schedule(
+            date(2026, 7, 1),
+            date(2026, 7, 31),
+            fetcher=lambda student_id, start, end: changed_id_same_slot_xml,
+        )
+
+        self.assertEqual(result.created, 0)
+        self.assertEqual(result.updated, 1)
+        self.assertEqual(Lesson.objects.count(), 1)
+        lesson = Lesson.objects.get()
+        self.assertEqual(lesson.external_id, 'aula_livre:123:901:2026-07-07')
+        self.assertEqual(lesson.status, Lesson.STATUS_NOT_GIVEN)
+
+    def test_sync_deletes_future_sponte_lessons_outside_active_student_scope(self):
         inactive_student = PedagogicalStudent.objects.create(
             name='Aluno Inativo Sponte',
             responsible_name='Responsável',
@@ -1680,9 +1797,8 @@ class SponteFreeClassScheduleSyncTests(TestCase):
             fetcher=lambda student_id, start, end: self.EMPTY_XML,
         )
 
-        lesson.refresh_from_db()
-        self.assertEqual(result.cancelled, 1)
-        self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
+        self.assertEqual(result.deleted, 1)
+        self.assertFalse(Lesson.objects.filter(pk=lesson.pk).exists())
 
 
 class LessonAgendaViewTests(TestCase):
@@ -2417,16 +2533,17 @@ class CommercialDashboardTests(TestCase):
     def test_commercial_operator_can_sync_sponte_schedule_from_lesson_agenda(self):
         today = timezone.localdate()
         self.client.force_login(self.user)
+        start_date, end_date = _agenda_week_bounds_for_test(today)
+        job = SponteSyncJob(
+            kind=SponteSyncJob.KIND_SCHEDULE,
+            requested_by=self.user,
+            period_start=start_date,
+            period_end=end_date,
+            allow_past=True,
+        )
 
-        with patch('checklists.pedagogical_views.sync_sponte_free_class_schedule') as sync_mock:
-            sync_mock.return_value = SponteScheduleSyncResult(
-                created=1,
-                updated=2,
-                unchanged=3,
-                cancelled=1,
-                students_synced=4,
-            )
-
+        with patch('checklists.pedagogical_views.enqueue_sponte_sync_job') as enqueue_mock:
+            enqueue_mock.return_value = (job, True)
             response = self.client.post(
                 reverse('commercial_lessons_sync_sponte'),
                 {'data': today.isoformat(), 'periodo': 'semana'},
@@ -2435,8 +2552,13 @@ class CommercialDashboardTests(TestCase):
 
         expected_redirect = f"{reverse('commercial_lesson_agenda')}?data={today.isoformat()}&periodo=semana"
         self.assertEqual(response.redirect_chain[-1][0], expected_redirect)
-        sync_mock.assert_called_once()
-        self.assertContains(response, 'Agenda Sponte sincronizada')
+        enqueue_mock.assert_called_once()
+        self.assertEqual(enqueue_mock.call_args.kwargs['kind'], SponteSyncJob.KIND_SCHEDULE)
+        self.assertEqual(enqueue_mock.call_args.kwargs['requested_by'], self.user)
+        self.assertEqual(enqueue_mock.call_args.kwargs['period_start'], start_date)
+        self.assertEqual(enqueue_mock.call_args.kwargs['period_end'], end_date)
+        self.assertTrue(enqueue_mock.call_args.kwargs['allow_past'])
+        self.assertContains(response, 'Sincronização Sponte de agenda iniciada em segundo plano')
 
     def test_commercial_funnel_board_groups_scoped_opportunities_by_stage(self):
         today = timezone.localdate()

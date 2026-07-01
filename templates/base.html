@@ -127,6 +127,60 @@
   {% block content %}{% endblock %}
 </main>
 <footer class="footer">Sistema interno. Não expor publicamente sem VPN/firewall.</footer>
+{% if user.is_authenticated %}
+<div class="sync-toast-stack" data-sponte-sync-stack aria-live="polite" aria-label="Notificações de sincronização"></div>
+<script>
+  (() => {
+    const stack = document.querySelector('[data-sponte-sync-stack]');
+    if (!stack || !window.fetch) return;
+    const endpoint = "{% url 'sponte_sync_notifications' %}";
+    const storageKey = 'checklist-sponte-sync-dismissed';
+    const readDismissed = () => {
+      try { return new Set(JSON.parse(sessionStorage.getItem(storageKey) || '[]')); }
+      catch (_error) { return new Set(); }
+    };
+    const writeDismissed = (dismissed) => {
+      sessionStorage.setItem(storageKey, JSON.stringify([...dismissed].slice(-60)));
+    };
+    const renderJobs = (jobs) => {
+      const dismissed = readDismissed();
+      stack.innerHTML = '';
+      jobs
+        .filter((job) => !dismissed.has(job.key))
+        .forEach((job) => {
+          const toast = document.createElement('section');
+          toast.className = `sync-toast sync-toast-${job.status}`;
+          toast.dataset.syncJobKey = job.key;
+          const title = document.createElement('strong');
+          title.textContent = `${job.kind_label} Sponte`;
+          const message = document.createElement('p');
+          message.textContent = job.period ? `${job.message} ${job.period}` : job.message;
+          const close = document.createElement('button');
+          close.type = 'button';
+          close.className = 'sync-toast-close';
+          close.setAttribute('aria-label', 'Fechar notificação');
+          close.textContent = '×';
+          close.addEventListener('click', () => {
+            const nextDismissed = readDismissed();
+            nextDismissed.add(job.key);
+            writeDismissed(nextDismissed);
+            toast.remove();
+          });
+          toast.append(title, message, close);
+          stack.appendChild(toast);
+        });
+    };
+    const loadJobs = () => {
+      fetch(endpoint, {headers: {'Accept': 'application/json'}})
+        .then((response) => response.ok ? response.json() : {jobs: []})
+        .then((payload) => renderJobs(payload.jobs || []))
+        .catch(() => {});
+    };
+    loadJobs();
+    window.setInterval(loadJobs, 15000);
+  })();
+</script>
+{% endif %}
 <script>
   (() => {
     const button = document.querySelector('[data-theme-toggle]');

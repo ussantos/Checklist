@@ -284,6 +284,14 @@ class SponteSOAPClient:
     def max_requests_per_minute(self):
         return max(_as_int(_setting('SPONTE_API_MAX_REQUESTS_PER_MINUTE', 30), 30), 0)
 
+    @property
+    def wait_on_rate_limit(self):
+        return _as_bool(_setting('SPONTE_API_WAIT_ON_RATE_LIMIT', True), True)
+
+    @property
+    def rate_limit_wait_padding_seconds(self):
+        return max(_as_int(_setting('SPONTE_API_RATE_LIMIT_WAIT_PADDING_SECONDS', 2), 2), 0)
+
     def call(self, operation, data=None, *, use_cache=True):
         data = data or {}
         if not is_sponte_api_enabled():
@@ -365,18 +373,31 @@ class SponteSOAPClient:
         limit = self.max_requests_per_minute
         if limit <= 0:
             return
-        bucket = int(self.clock() // 60)
-        cache_key = f'sponte:rate:{bucket}'
-        self.cache.add(cache_key, 0, timeout=65)
-        try:
-            current = self.cache.incr(cache_key)
-        except ValueError:
-            self.cache.set(cache_key, 1, timeout=65)
-            current = 1
-        if current > limit:
-            raise SponteAPIRateLimitError(
-                f'Limite local de {limit} chamada(s) por minuto para a API Sponte atingido.'
+        while True:
+            now = self.clock()
+            bucket = int(now // 60)
+            cache_key = f'sponte:rate:{bucket}'
+            self.cache.add(cache_key, 0, timeout=65)
+            try:
+                current = self.cache.incr(cache_key)
+            except ValueError:
+                self.cache.set(cache_key, 1, timeout=65)
+                current = 1
+            if current <= limit:
+                return
+            if not self.wait_on_rate_limit:
+                raise SponteAPIRateLimitError(
+                    f'Limite local de {limit} chamada(s) por minuto para a API Sponte atingido.'
+                )
+
+            wait_seconds = max(((bucket + 1) * 60) - now, 1) + self.rate_limit_wait_padding_seconds
+            LOGGER.info(
+                'sponte_api method=%s status=rate_limit_wait wait_seconds=%d limit=%d',
+                operation,
+                int(wait_seconds),
+                limit,
             )
+            time.sleep(wait_seconds)
 
     def _post(self, operation, data):
         payload = urlencode({

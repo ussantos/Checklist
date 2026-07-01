@@ -1416,3 +1416,68 @@ class ActivityLog(models.Model):
 
     def __str__(self):
         return f'{self.created_at:%d/%m/%Y %H:%M} - {self.action}'
+
+
+class SponteSyncJob(models.Model):
+    """Execução assíncrona de sincronizações do Sponte."""
+
+    KIND_STUDENTS = 'students'
+    KIND_COURSES = 'courses'
+    KIND_SCHEDULE = 'schedule'
+    KIND_INSTRUCTOR_SCHEDULE = 'instructor_schedule'
+
+    KIND_CHOICES = [
+        (KIND_STUDENTS, 'Alunos'),
+        (KIND_COURSES, 'Cursos'),
+        (KIND_SCHEDULE, 'Agenda'),
+        (KIND_INSTRUCTOR_SCHEDULE, 'Agenda do instrutor'),
+    ]
+
+    STATUS_QUEUED = 'queued'
+    STATUS_RUNNING = 'running'
+    STATUS_SUCCEEDED = 'succeeded'
+    STATUS_FAILED = 'failed'
+
+    STATUS_CHOICES = [
+        (STATUS_QUEUED, 'Na fila'),
+        (STATUS_RUNNING, 'Em execução'),
+        (STATUS_SUCCEEDED, 'Concluída'),
+        (STATUS_FAILED, 'Falhou'),
+    ]
+
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sponte_sync_jobs',
+    )
+    kind = models.CharField('Tipo de sincronização', max_length=40, choices=KIND_CHOICES)
+    status = models.CharField('Status', max_length=20, choices=STATUS_CHOICES, default=STATUS_QUEUED)
+    period_start = models.DateField('Início do período', null=True, blank=True)
+    period_end = models.DateField('Fim do período', null=True, blank=True)
+    allow_past = models.BooleanField('Permite período passado', default=False)
+    result = models.JSONField('Resultado', default=dict, blank=True)
+    error_message = models.TextField('Erro', blank=True)
+    started_at = models.DateTimeField('Iniciado em', null=True, blank=True)
+    finished_at = models.DateTimeField('Finalizado em', null=True, blank=True)
+    created_at = models.DateTimeField('Criado em', auto_now_add=True)
+    updated_at = models.DateTimeField('Atualizado em', auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['requested_by', 'status', 'created_at'], name='spontejob_user_status_created'),
+            models.Index(fields=['kind', 'status', 'created_at'], name='spontejob_kind_status_created'),
+        ]
+        verbose_name = 'Job de sincronização Sponte'
+        verbose_name_plural = 'Jobs de sincronização Sponte'
+
+    def __str__(self):
+        return f'{self.get_kind_display()} - {self.get_status_display()}'
+
+    @property
+    def period_label(self):
+        if self.period_start and self.period_end:
+            return f'{self.period_start:%d/%m/%Y} a {self.period_end:%d/%m/%Y}'
+        return ''

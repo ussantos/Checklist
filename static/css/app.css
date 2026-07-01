@@ -1517,6 +1517,77 @@ th {
   color: #b42318;
 }
 
+.sync-toast-stack {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 60;
+  display: grid;
+  gap: 10px;
+  width: min(420px, calc(100vw - 32px));
+}
+
+.sync-toast {
+  position: relative;
+  padding: 14px 42px 14px 14px;
+  border: 1px solid #c8edf9;
+  border-left: 5px solid var(--info);
+  border-radius: 8px;
+  background: #f8fcff;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+  color: var(--text);
+}
+
+.sync-toast strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.95rem;
+}
+
+.sync-toast p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.sync-toast-running,
+.sync-toast-queued {
+  border-left-color: #0ea5e9;
+}
+
+.sync-toast-succeeded {
+  border-left-color: #22c55e;
+}
+
+.sync-toast-failed {
+  border-left-color: #ef4444;
+}
+
+.sync-toast-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sync-toast-close:hover,
+.sync-toast-close:focus-visible {
+  border-color: var(--line);
+  color: var(--text);
+}
+
 .badge {
   display: inline-block;
   border-radius: 999px;
@@ -2809,6 +2880,24 @@ html[data-theme="dark"] .message.error {
   background: #451a1a;
   border-color: #7f1d1d;
   color: #fecaca;
+}
+
+html[data-theme="dark"] .sync-toast {
+  background: #111827;
+  border-color: #334155;
+  color: var(--text);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.36);
+}
+
+html[data-theme="dark"] .sync-toast p,
+html[data-theme="dark"] .sync-toast-close {
+  color: var(--muted);
+}
+
+html[data-theme="dark"] .sync-toast-close:hover,
+html[data-theme="dark"] .sync-toast-close:focus-visible {
+  border-color: #475569;
+  color: var(--text);
 }
 
 html[data-theme="dark"] .info-light {

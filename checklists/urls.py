@@ -2,6 +2,7 @@ from django.urls import path
 from . import views
 from . import commercial_views
 from . import pedagogical_views
+from . import sponte_job_views
 from .auth_views import RequiredPasswordChangeView
 from . import user_views
 from django.contrib.auth import views as auth_views
@@ -13,6 +14,7 @@ urlpatterns = [
     path('auditoria.csv', views.admin_activity_history_csv, name='admin_activity_history_csv'),
     path('backups/', views.backups, name='backups'),
     path('backups/<str:backup_name>/download/', views.download_local_backup, name='backup_download'),
+    path('sponte/sincronizacoes/notificacoes/', sponte_job_views.sponte_sync_notifications, name='sponte_sync_notifications'),
     path('gestao-comercial/tipos-de-funis/', commercial_views.funnel_types_list, name='commercial_funnel_types'),
     path('gestao-comercial/tipos-de-funis/novo/', commercial_views.funnel_type_create, name='funnel_type_create'),
     path('gestao-comercial/tipos-de-funis/<int:funnel_type_id>/editar/', commercial_views.funnel_type_edit, name='funnel_type_edit'),

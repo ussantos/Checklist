@@ -18,6 +18,8 @@ SPONTE_API_TOKEN=
 SPONTE_API_TIMEOUT_SECONDS=30
 SPONTE_API_CACHE_TTL_MINUTES=60
 SPONTE_API_MAX_REQUESTS_PER_MINUTE=30
+SPONTE_API_WAIT_ON_RATE_LIMIT=True
+SPONTE_API_RATE_LIMIT_WAIT_PADDING_SECONDS=2
 SPONTE_STUDENT_SEARCH_PARAMS=Nome=%
 SPONTE_COURSE_SEARCH_PARAMS=Situacao=1
 SPONTE_SCHEDULE_SYNC_DAYS_BACK=0
@@ -77,19 +79,21 @@ As chamadas SOAP passam por `checklists.sponte_client.SponteSOAPClient`.
 
 O cache é feito por tipo de consulta e parâmetros. O TTL é controlado por `SPONTE_API_CACHE_TTL_MINUTES`.
 
-Se houver timeout, erro de rede ou limite local atingido, o cliente tenta usar o último cache válido quando existir. Se não houver cache, retorna erro amigável para a tela administrativa.
+Se houver timeout ou erro de rede, o cliente tenta usar o último cache válido quando existir. Se não houver cache, retorna erro amigável para a tela administrativa.
 
-As telas não fazem chamadas externas dentro de templates.
+As telas não fazem chamadas externas dentro de templates. As sincronizações disparadas por botões são registradas como jobs em segundo plano; o usuário recebe notificação de início, conclusão ou falha enquanto continua usando o sistema.
 
 ## Rate limit local
 
 `SPONTE_API_MAX_REQUESTS_PER_MINUTE` limita chamadas externas por minuto. Esse controle é defensivo, mesmo sem cobrança explícita por request no contrato.
 
+Com `SPONTE_API_WAIT_ON_RATE_LIMIT=True`, o cliente aguarda a próxima janela de minuto quando o limite local é atingido, registra `rate_limit_wait` no log técnico e continua a sincronização. `SPONTE_API_RATE_LIMIT_WAIT_PADDING_SECONDS` adiciona uma pequena folga após a virada do minuto para evitar bater no limite por diferença de relógio.
+
 Valores recomendados:
 
 - homologação: `10`;
 - produção pequena: `30`;
-- integração intensiva: avaliar caso a caso antes de aumentar.
+- integração intensiva: manter `30`, rodar em segundo plano e avaliar caso a caso antes de aumentar.
 
 ## Logs seguros
 
@@ -129,5 +133,7 @@ Para sincronizar dados manualmente:
 - alunos: **Gestão Pedagógica > Alunos > Importar do Sponte**;
 - cursos: **Gestão Pedagógica > Cursos > Sincronizar Sponte**;
 - agenda regular: **Gestão Pedagógica > Agenda de Aulas > Sincronizar Sponte**.
+
+Ao clicar, o job entra na fila e a tela retorna imediatamente. A notificação final indica sucesso ou falha. Se a mesma pessoa clicar de novo enquanto já existe job equivalente em andamento, o sistema reutiliza o job existente em vez de criar concorrência desnecessária.
 
 Use VPN/firewall. A aplicação e a API de backup não devem ser expostas publicamente.

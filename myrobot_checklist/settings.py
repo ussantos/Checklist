@@ -1,4 +1,5 @@
 import os
+import tempfile
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -98,6 +99,14 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': os.environ.get('DJANGO_CACHE_DIR', str(Path(tempfile.gettempdir()) / 'checklist-django-cache')),
+        'TIMEOUT': 300,
+    }
+}
+
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'dashboard'
 LOGOUT_REDIRECT_URL = 'login'
@@ -127,6 +136,8 @@ SPONTE_API_TOKEN = _SPONTE_TOKEN
 SPONTE_API_TIMEOUT_SECONDS = int(os.environ.get('SPONTE_API_TIMEOUT_SECONDS', os.environ.get('SPONTE_TIMEOUT_SECONDS', '30')))
 SPONTE_API_CACHE_TTL_MINUTES = int(os.environ.get('SPONTE_API_CACHE_TTL_MINUTES', '60'))
 SPONTE_API_MAX_REQUESTS_PER_MINUTE = int(os.environ.get('SPONTE_API_MAX_REQUESTS_PER_MINUTE', '30'))
+SPONTE_API_WAIT_ON_RATE_LIMIT = _env_bool('SPONTE_API_WAIT_ON_RATE_LIMIT', True)
+SPONTE_API_RATE_LIMIT_WAIT_PADDING_SECONDS = int(os.environ.get('SPONTE_API_RATE_LIMIT_WAIT_PADDING_SECONDS', '2'))
 
 # Aliases legados mantidos para código/configurações antigas.
 SPONTE_API_URL = SPONTE_API_BASE_URL

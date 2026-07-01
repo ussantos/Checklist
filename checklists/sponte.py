@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import ProtectedError
 from django.utils import timezone
 
 from .models import Course, Lesson, PedagogicalStudent, Room
@@ -65,13 +66,14 @@ class SponteScheduleSyncResult:
     updated: int = 0
     unchanged: int = 0
     cancelled: int = 0
+    deleted: int = 0
     skipped: int = 0
     students_synced: int = 0
     errors: list[str] = field(default_factory=list)
 
     @property
     def total_processed(self):
-        return self.created + self.updated + self.unchanged + self.cancelled
+        return self.created + self.updated + self.unchanged + self.cancelled + self.deleted
 
 
 @dataclass
@@ -845,18 +847,19 @@ def _post_sponte_form(operation, data, error_context, *, use_cache=True):
         raise SponteClientError(f'{error_context}: {exc}') from exc
 
 
-def _forward_schedule_window(start_date=None, end_date=None):
+def _forward_schedule_window(start_date=None, end_date=None, *, allow_past=False):
     today = timezone.localdate()
     days_ahead = int(_sponte_setting('SPONTE_SCHEDULE_SYNC_DAYS_AHEAD', 90) or 90)
-    effective_start = today
+    requested_start = start_date or today
+    effective_start = requested_start if allow_past else max(requested_start, today)
     effective_end = end_date or (today + timedelta(days=days_ahead))
     if effective_end < effective_start:
         effective_end = effective_start
     return effective_start, effective_end
 
 
-def fetch_sponte_student_schedule_xml(student_external_id, start_date, end_date):
-    start_date, end_date = _forward_schedule_window(start_date, end_date)
+def fetch_sponte_student_schedule_xml(student_external_id, start_date, end_date, *, allow_past=False):
+    start_date, end_date = _forward_schedule_window(start_date, end_date, allow_past=allow_past)
     return _post_sponte_form(
         'GetAgendaAluno',
         {
@@ -1044,6 +1047,42 @@ def _course_for_schedule(record):
     return course
 
 
+def _lesson_feedback(lesson):
+    try:
+        return lesson.feedback
+    except Exception:
+        return None
+
+
+def _move_feedback_if_possible(source_lesson, target_lesson):
+    if source_lesson.pk == target_lesson.pk:
+        return
+    source_feedback = _lesson_feedback(source_lesson)
+    if source_feedback is None or _lesson_feedback(target_lesson) is not None:
+        return
+    source_feedback.lesson = target_lesson
+    source_feedback.save(update_fields=['lesson', 'updated_at'])
+
+
+def _delete_sponte_lessons_or_cancel(queryset, *, target_lesson=None, now=None):
+    deleted = 0
+    cancelled = 0
+    now = now or timezone.now()
+    for lesson in list(queryset):
+        if target_lesson is not None:
+            _move_feedback_if_possible(lesson, target_lesson)
+        try:
+            lesson.delete()
+            deleted += 1
+        except ProtectedError:
+            if lesson.status != Lesson.STATUS_CANCELLED or lesson.synced_at != now:
+                lesson.status = Lesson.STATUS_CANCELLED
+                lesson.synced_at = now
+                lesson.save(update_fields=['status', 'synced_at', 'updated_at'])
+            cancelled += 1
+    return deleted, cancelled
+
+
 def _room_for_schedule(record):
     name = _truncate(record.get('room_name'), 120)
     if not name:
@@ -1055,9 +1094,42 @@ def _room_for_schedule(record):
     return room
 
 
-def import_sponte_free_class_records(student, records, *, start_date, end_date):
-    start_date, end_date = _forward_schedule_window(start_date, end_date)
+def _sponte_record_natural_key(record):
+    return (
+        _parse_sponte_date(record.get('date')),
+        _parse_sponte_time(record.get('start_time')),
+        _parse_sponte_time(record.get('end_time')),
+        (record.get('course_external_id') or record.get('course_name') or '').strip(),
+        (record.get('discipline_external_id') or record.get('discipline_name') or '').strip(),
+        (record.get('room_name') or '').strip(),
+    )
+
+
+def _sponte_record_choice_score(record):
+    status = _lesson_status_from_sponte(record.get('lesson_status'))
+    free_class_id = _parse_int(record.get('free_class_id')) or 0
+    return (
+        int(status != Lesson.STATUS_CANCELLED),
+        int(bool(record.get('lesson_status_from_sponte'))),
+        free_class_id,
+    )
+
+
+def _dedupe_sponte_schedule_records(records):
+    selected = {}
+    for record in records:
+        key = _sponte_record_natural_key(record)
+        current = selected.get(key)
+        if current is None or _sponte_record_choice_score(record) >= _sponte_record_choice_score(current):
+            selected[key] = record
+    return list(selected.values()), max(len(records) - len(selected), 0)
+
+
+def import_sponte_free_class_records(student, records, *, start_date, end_date, allow_past=False):
+    start_date, end_date = _forward_schedule_window(start_date, end_date, allow_past=allow_past)
+    records, duplicated_records = _dedupe_sponte_schedule_records(records)
     result = SponteScheduleSyncResult(students_synced=1)
+    result.skipped += duplicated_records
     now = timezone.now()
     seen_external_ids = set()
     with transaction.atomic():
@@ -1108,10 +1180,54 @@ def import_sponte_free_class_records(student, records, *, start_date, end_date):
             }
             lesson = Lesson.objects.filter(source=Lesson.SOURCE_SPONTE, external_id=external_id).first()
             if lesson is None:
+                lesson = (
+                    Lesson.objects
+                    .filter(
+                        source=Lesson.SOURCE_SPONTE,
+                        student=student,
+                        date=class_date,
+                        start_time=start_time,
+                        end_time=end_time,
+                        course=course,
+                        room=room,
+                    )
+                    .order_by('-synced_at', '-id')
+                    .first()
+                )
+                if lesson is None:
+                    values['status'] = incoming_status
+                    lesson = Lesson.objects.create(**values)
+                    result.created += 1
+                    stale_duplicates = Lesson.objects.none()
+                    continue
                 values['status'] = incoming_status
-                Lesson.objects.create(**values)
-                result.created += 1
-                continue
+                stale_duplicates = (
+                    Lesson.objects
+                    .filter(
+                        source=Lesson.SOURCE_SPONTE,
+                        student=student,
+                        date=class_date,
+                        start_time=start_time,
+                        end_time=end_time,
+                        course=course,
+                        room=room,
+                    )
+                    .exclude(pk=lesson.pk)
+                )
+            else:
+                stale_duplicates = (
+                    Lesson.objects
+                    .filter(
+                        source=Lesson.SOURCE_SPONTE,
+                        student=student,
+                        date=class_date,
+                        start_time=start_time,
+                        end_time=end_time,
+                        course=course,
+                        room=room,
+                    )
+                    .exclude(pk=lesson.pk)
+                )
             if record.get('lesson_status_from_sponte'):
                 values['status'] = incoming_status
 
@@ -1126,19 +1242,36 @@ def import_sponte_free_class_records(student, records, *, start_date, end_date):
             else:
                 result.unchanged += 1
 
+            deleted, cancelled = _delete_sponte_lessons_or_cancel(
+                stale_duplicates,
+                target_lesson=lesson,
+                now=now,
+            )
+            result.deleted += deleted
+            result.cancelled += cancelled
+
         stale_lessons = Lesson.objects.filter(
             source=Lesson.SOURCE_SPONTE,
             student=student,
             date__gte=start_date,
             date__lte=end_date,
-            status__in=Lesson.OCCUPYING_STATUSES,
         ).exclude(external_id__in=seen_external_ids)
-        result.cancelled = stale_lessons.update(status=Lesson.STATUS_CANCELLED, synced_at=now, updated_at=now)
+        deleted, cancelled = _delete_sponte_lessons_or_cancel(stale_lessons, now=now)
+        result.deleted += deleted
+        result.cancelled += cancelled
     return result
 
 
-def sync_sponte_free_class_schedule(start_date, end_date, fetcher=None, diary_fetcher=None, contracts_fetcher=None):
-    start_date, end_date = _forward_schedule_window(start_date, end_date)
+def sync_sponte_free_class_schedule(
+    start_date,
+    end_date,
+    fetcher=None,
+    diary_fetcher=None,
+    contracts_fetcher=None,
+    *,
+    allow_past=False,
+):
+    start_date, end_date = _forward_schedule_window(start_date, end_date, allow_past=allow_past)
     students = list(PedagogicalStudent.objects.filter(
         source=SPONTE_SOURCE,
         external_id__gt='',
@@ -1148,7 +1281,15 @@ def sync_sponte_free_class_schedule(start_date, end_date, fetcher=None, diary_fe
     attempted_student_ids = {student.pk for student in students}
     for student in students:
         try:
-            xml_text = (fetcher or fetch_sponte_student_schedule_xml)(student.external_id, start_date, end_date)
+            if fetcher is None:
+                xml_text = fetch_sponte_student_schedule_xml(
+                    student.external_id,
+                    start_date,
+                    end_date,
+                    allow_past=allow_past,
+                )
+            else:
+                xml_text = fetcher(student.external_id, start_date, end_date)
             records = parse_sponte_free_class_schedule(xml_text, student_external_id=student.external_id)
             if records and (diary_fetcher is not None or fetcher is None):
                 contracts = []
@@ -1169,6 +1310,7 @@ def sync_sponte_free_class_schedule(start_date, end_date, fetcher=None, diary_fe
                 records,
                 start_date=start_date,
                 end_date=end_date,
+                allow_past=allow_past,
             )
         except SponteClientError as exc:
             result.errors.append(f'{student.name}: {exc}')
@@ -1177,6 +1319,7 @@ def sync_sponte_free_class_schedule(start_date, end_date, fetcher=None, diary_fe
         result.updated += student_result.updated
         result.unchanged += student_result.unchanged
         result.cancelled += student_result.cancelled
+        result.deleted += student_result.deleted
         result.skipped += student_result.skipped
         result.students_synced += student_result.students_synced
         result.errors.extend(student_result.errors)
@@ -1185,9 +1328,10 @@ def sync_sponte_free_class_schedule(start_date, end_date, fetcher=None, diary_fe
         source=Lesson.SOURCE_SPONTE,
         date__gte=start_date,
         date__lte=end_date,
-        status__in=Lesson.OCCUPYING_STATUSES,
     ).exclude(student_id__in=attempted_student_ids)
-    result.cancelled += orphan_stale_lessons.update(status=Lesson.STATUS_CANCELLED, synced_at=now, updated_at=now)
+    deleted, cancelled = _delete_sponte_lessons_or_cancel(orphan_stale_lessons, now=now)
+    result.deleted += deleted
+    result.cancelled += cancelled
     return result
 
 

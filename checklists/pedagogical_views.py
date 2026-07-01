@@ -21,16 +21,14 @@ from .forms import (
 )
 from .models import (
     CommercialOpportunity, Course, Lesson, LessonFeedback, PedagogicalReportTask,
-    PedagogicalStudent, Room, SchoolHoliday, TimeSlot,
+    PedagogicalStudent, Room, SchoolHoliday, SponteSyncJob, TimeSlot,
 )
 from .services import (
     create_pedagogical_report_task_for_feedback,
     create_qualified_sale_opportunity_for_lesson_feedback, get_user_position, is_admin_user,
 )
-from .sponte import (
-    SponteClientError, SponteConfigurationError, default_sponte_schedule_window,
-    import_sponte_courses, import_sponte_students, sync_sponte_free_class_schedule,
-)
+from .sponte import default_sponte_schedule_window
+from .sponte_jobs import enqueue_sponte_sync_job
 
 
 COURSE_AUDIT_FIELDS = [
@@ -170,6 +168,21 @@ def _posted_next_url(request, fallback):
     if url_has_allowed_host_and_scheme(target, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
         return target
     return fallback
+
+
+def _notify_sponte_job(request, job, created):
+    period = f' Período: {job.period_label}.' if job.period_label else ''
+    if created:
+        messages.info(
+            request,
+            f'Sincronização Sponte de {job.get_kind_display().lower()} iniciada em segundo plano.{period} '
+            'Você pode continuar usando o sistema.',
+        )
+    else:
+        messages.warning(
+            request,
+            f'Já existe uma sincronização Sponte de {job.get_kind_display().lower()} em andamento.{period}',
+        )
 
 
 def _feedback_lessons_queryset():
@@ -323,45 +336,11 @@ def courses_list(request):
 @require_POST
 @user_passes_test(_admin_check)
 def courses_sync_sponte(request):
-    try:
-        result = import_sponte_courses()
-    except SponteConfigurationError as exc:
-        messages.error(request, str(exc))
-        return redirect('pedagogical_courses')
-    except SponteClientError as exc:
-        messages.error(request, f'Sincronização de cursos do Sponte não concluída: {exc}')
-        return redirect('pedagogical_courses')
-
-    if result.total_processed:
-        messages.success(
-            request,
-            'Cursos do Sponte sincronizados: '
-            f'{result.created} criado(s), {result.updated} atualizado(s), '
-            f'{result.unchanged} sem alteração.'
-        )
-    else:
-        messages.warning(request, 'Sincronização de cursos do Sponte concluída sem cursos processados.')
-    if result.skipped:
-        messages.warning(request, f'{result.skipped} curso(s) foram ignorados por dados incompletos ou versão legada.')
-    for error in result.errors[:5]:
-        messages.warning(request, error)
-
-    log_activity(
-        actor=request.user,
-        action='Sincronização de cursos Sponte',
-        object_type='Course',
-        object_label='Cursos Sponte',
-        details=(
-            f'Cursos criados: {result.created}; atualizados: {result.updated}; '
-            f'sem alteração: {result.unchanged}; ignorados: {result.skipped}.'
-        ),
-        new_values={
-            'created': result.created,
-            'updated': result.updated,
-            'unchanged': result.unchanged,
-            'skipped': result.skipped,
-        },
+    job, created = enqueue_sponte_sync_job(
+        kind=SponteSyncJob.KIND_COURSES,
+        requested_by=request.user,
     )
+    _notify_sponte_job(request, job, created)
     return redirect('pedagogical_courses')
 
 
@@ -672,45 +651,11 @@ def students_list(request):
 @require_POST
 @user_passes_test(_admin_check)
 def students_import_sponte(request):
-    try:
-        result = import_sponte_students()
-    except SponteConfigurationError as exc:
-        messages.error(request, str(exc))
-        return redirect('pedagogical_students')
-    except SponteClientError as exc:
-        messages.error(request, f'Importação do Sponte não concluída: {exc}')
-        return redirect('pedagogical_students')
-
-    if result.total_processed:
-        messages.success(
-            request,
-            'Importação do Sponte concluída: '
-            f'{result.created} criado(s), {result.updated} atualizado(s), '
-            f'{result.unchanged} sem alteração.'
-        )
-    else:
-        messages.warning(request, 'Importação do Sponte concluída sem alunos processados.')
-    if result.skipped:
-        messages.warning(request, f'{result.skipped} aluno(s) foram ignorados por dados incompletos.')
-    for error in result.errors[:5]:
-        messages.warning(request, error)
-
-    log_activity(
-        actor=request.user,
-        action='Importação de alunos Sponte',
-        object_type='PedagogicalStudent',
-        object_label='Importação de alunos Sponte',
-        details=(
-            f'Alunos criados: {result.created}; atualizados: {result.updated}; '
-            f'sem alteração: {result.unchanged}; ignorados: {result.skipped}.'
-        ),
-        new_values={
-            'created': result.created,
-            'updated': result.updated,
-            'unchanged': result.unchanged,
-            'skipped': result.skipped,
-        },
+    job, created = enqueue_sponte_sync_job(
+        kind=SponteSyncJob.KIND_STUDENTS,
+        requested_by=request.user,
     )
+    _notify_sponte_job(request, job, created)
     return redirect('pedagogical_students')
 
 
@@ -1095,54 +1040,13 @@ def instructor_import_sponte(request):
     redirect_to = _posted_next_url(request, reverse('instructor_dashboard'))
     today = timezone.localdate()
     start_date, end_date = default_sponte_schedule_window(today)
-
-    try:
-        schedule_result = sync_sponte_free_class_schedule(start_date, end_date)
-    except SponteConfigurationError as exc:
-        messages.error(request, str(exc))
-        return redirect(redirect_to)
-    except SponteClientError as exc:
-        messages.error(request, f'Importação do Sponte não concluída: {exc}')
-        return redirect(redirect_to)
-
-    messages.success(
-        request,
-        'Importação do Sponte concluída para o módulo do instrutor: '
-        f'agenda {schedule_result.created} criada(s), {schedule_result.updated} atualizada(s), '
-        f'{schedule_result.unchanged} sem alteração e {schedule_result.cancelled} cancelada(s). '
-        f'Período: {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}.'
+    job, created = enqueue_sponte_sync_job(
+        kind=SponteSyncJob.KIND_INSTRUCTOR_SCHEDULE,
+        requested_by=request.user,
+        period_start=start_date,
+        period_end=end_date,
     )
-
-    if schedule_result.skipped:
-        messages.warning(request, f'{schedule_result.skipped} aula(s) ignorada(s) por dados incompletos.')
-
-    for error in schedule_result.errors[:5]:
-        messages.warning(request, error)
-
-    log_activity(
-        actor=request.user,
-        action='Importação Sponte instrutor',
-        object_type='Sponte',
-        object_label='Agenda Sponte para instrutor',
-        details=(
-            f'Período da agenda: {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}; '
-            f'aulas criadas: {schedule_result.created}; aulas atualizadas: {schedule_result.updated}; '
-            f'aulas canceladas: {schedule_result.cancelled}.'
-        ),
-        new_values={
-            'schedule': {
-                'start_date': start_date.isoformat(),
-                'end_date': end_date.isoformat(),
-                'students_synced': schedule_result.students_synced,
-                'created': schedule_result.created,
-                'updated': schedule_result.updated,
-                'unchanged': schedule_result.unchanged,
-                'cancelled': schedule_result.cancelled,
-                'skipped': schedule_result.skipped,
-                'errors': schedule_result.errors[:10],
-            },
-        },
-    )
+    _notify_sponte_job(request, job, created)
     return redirect(redirect_to)
 
 
@@ -1212,51 +1116,15 @@ def _sync_lessons_from_sponte(request, *, redirect_view_name, default_period):
     target_date = _parse_date(request.POST.get('data'))
     period = _agenda_period(request.POST.get('periodo', default_period))
     redirect_to = f'{reverse(redirect_view_name)}?data={target_date.isoformat()}&periodo={period}'
-    start_date, end_date = default_sponte_schedule_window(target_date)
-    try:
-        result = sync_sponte_free_class_schedule(start_date, end_date)
-    except SponteConfigurationError as exc:
-        messages.error(request, str(exc))
-        return redirect(redirect_to)
-
-    if result.errors:
-        messages.warning(request, f'Sincronização do Sponte concluída com {len(result.errors)} aviso(s).')
-        for error in result.errors[:5]:
-            messages.warning(request, error)
-    if result.students_synced:
-        messages.success(
-            request,
-            'Agenda Sponte sincronizada: '
-            f'{result.created} criada(s), {result.updated} atualizada(s), '
-            f'{result.unchanged} sem alteração e {result.cancelled} cancelada(s). '
-            f'Período: {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}.'
-        )
-    else:
-        messages.warning(request, 'Nenhum aluno ativo importado do Sponte foi encontrado para sincronizar agenda.')
-
-    log_activity(
-        actor=request.user,
-        action='Sincronização de agenda Sponte',
-        object_type='Lesson',
-        object_label='Agenda Sponte - Aulas Livres',
-        details=(
-            f'Período: {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}; '
-            f'alunos: {result.students_synced}; criadas: {result.created}; '
-            f'atualizadas: {result.updated}; sem alteração: {result.unchanged}; '
-            f'canceladas: {result.cancelled}; ignoradas: {result.skipped}.'
-        ),
-        new_values={
-            'start_date': start_date.isoformat(),
-            'end_date': end_date.isoformat(),
-            'students_synced': result.students_synced,
-            'created': result.created,
-            'updated': result.updated,
-            'unchanged': result.unchanged,
-            'cancelled': result.cancelled,
-            'skipped': result.skipped,
-            'errors': result.errors[:10],
-        },
+    start_date, end_date = _agenda_period_bounds(period, target_date)
+    job, created = enqueue_sponte_sync_job(
+        kind=SponteSyncJob.KIND_SCHEDULE,
+        requested_by=request.user,
+        period_start=start_date,
+        period_end=end_date,
+        allow_past=True,
     )
+    _notify_sponte_job(request, job, created)
     return redirect(redirect_to)
 
 
