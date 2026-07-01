@@ -1586,8 +1586,8 @@ class SponteFreeClassScheduleSyncTests(TestCase):
         self.assertEqual(result.skipped, 1)
         self.assertEqual(Lesson.objects.count(), 1)
         lesson = Lesson.objects.get()
-        self.assertEqual(lesson.external_id, 'aula_livre:123:901:2026-07-07')
-        self.assertEqual(lesson.status, Lesson.STATUS_NOT_GIVEN)
+        self.assertEqual(lesson.external_id, 'aula_livre:123:900:2026-07-07')
+        self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
 
     def test_sync_deletes_stale_sponte_lesson(self):
         records = parse_sponte_free_class_schedule(self.SAMPLE_XML, student_external_id='123')

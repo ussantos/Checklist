@@ -1108,9 +1108,15 @@ def _sponte_record_natural_key(record):
 def _sponte_record_choice_score(record):
     status = _lesson_status_from_sponte(record.get('lesson_status'))
     free_class_id = _parse_int(record.get('free_class_id')) or 0
+    status_priority = {
+        Lesson.STATUS_CANCELLED: 4,
+        Lesson.STATUS_ABSENT: 3,
+        Lesson.STATUS_DONE: 2,
+        Lesson.STATUS_NOT_GIVEN: 1,
+    }.get(status, 0)
     return (
-        int(status != Lesson.STATUS_CANCELLED),
         int(bool(record.get('lesson_status_from_sponte'))),
+        status_priority,
         free_class_id,
     )
 
@@ -1270,13 +1276,16 @@ def sync_sponte_free_class_schedule(
     contracts_fetcher=None,
     *,
     allow_past=False,
+    include_inactive_students=False,
 ):
     start_date, end_date = _forward_schedule_window(start_date, end_date, allow_past=allow_past)
-    students = list(PedagogicalStudent.objects.filter(
+    students_qs = PedagogicalStudent.objects.filter(
         source=SPONTE_SOURCE,
         external_id__gt='',
-        status=PedagogicalStudent.STATUS_ACTIVE,
-    ).order_by('name'))
+    )
+    if not include_inactive_students:
+        students_qs = students_qs.filter(status=PedagogicalStudent.STATUS_ACTIVE)
+    students = list(students_qs.order_by('name'))
     result = SponteScheduleSyncResult()
     attempted_student_ids = {student.pk for student in students}
     for student in students:
