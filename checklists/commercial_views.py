@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta
+from calendar import Calendar
+from datetime import date, datetime, timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import user_passes_test
@@ -154,6 +155,22 @@ def _group_opportunities_by_funnel_stage(opportunities, *, max_per_stage=None):
     return groups
 
 
+def _funnel_display_order_key(funnel):
+    if not funnel:
+        return (99, '')
+    name = slugify(funnel.name)
+    priority = {
+        'qualificados': 1,
+        'pos-venda': 2,
+        'parcerias': 3,
+    }.get(name, 99)
+    return (priority, name)
+
+
+def _sort_funnel_groups(groups):
+    return sorted(groups, key=lambda group: _funnel_display_order_key(group.get('funnel')))
+
+
 def _kanban_columns_for_funnel(opportunities):
     stages = list(FunnelStage.objects.filter(active=True).order_by('order', 'name'))
     stage_ids = {stage.id for stage in stages}
@@ -241,6 +258,27 @@ def _is_won_stage(stage):
         return stage.pk == won_stage.pk
     stage_text = slugify(f'{stage.code} {stage.name}')
     return '5' in stage_text and ('ganha' in stage_text or 'matricula' in stage_text)
+
+
+def _won_stage():
+    return _stage_by_code_or_text(code='5-ganha', text='ganha')
+
+
+def _event_points_to_won_stage(event):
+    if event.new_stage_id and _is_won_stage(event.new_stage):
+        return True
+    return 'ganha' in slugify(event.new_stage_label)
+
+
+def _opportunity_won_datetime(opportunity):
+    won_events = [
+        event
+        for event in opportunity.stage_events.all()
+        if _event_points_to_won_stage(event)
+    ]
+    if won_events:
+        return max(won_events, key=lambda event: event.created_at).created_at
+    return opportunity.updated_at
 
 
 def _interested_funnel_type():
@@ -574,7 +612,9 @@ def commercial_dashboard(request):
             'title',
         )
     )
-    opportunity_funnel_groups = _group_opportunities_by_funnel_stage(dashboard_opportunities, max_per_stage=4)
+    opportunity_funnel_groups = _sort_funnel_groups(
+        _group_opportunities_by_funnel_stage(dashboard_opportunities, max_per_stage=4)
+    )
 
     return render(request, 'checklists/commercial_dashboard.html', {
         'today': today,
@@ -602,6 +642,94 @@ def _parse_week_reference(value):
         return datetime.strptime(value, '%Y-%m-%d').date()
     except ValueError:
         return timezone.localdate()
+
+
+def _parse_reference_date(value):
+    if not value:
+        return timezone.localdate()
+    try:
+        return datetime.strptime(value, '%Y-%m-%d').date()
+    except ValueError:
+        return timezone.localdate()
+
+
+def _period_bounds(period, reference_date):
+    if period == 'dia':
+        return reference_date, reference_date
+    if period == 'semana':
+        start = reference_date - timedelta(days=reference_date.weekday())
+        return start, start + timedelta(days=6)
+    if period == 'ano':
+        return date(reference_date.year, 1, 1), date(reference_date.year, 12, 31)
+
+    start = reference_date.replace(day=1)
+    end = add_months(start, 1) - timedelta(days=1)
+    return start, end
+
+
+def _shift_period_reference(period, reference_date, amount):
+    if period == 'dia':
+        return reference_date + timedelta(days=amount)
+    if period == 'semana':
+        return reference_date + timedelta(days=amount * 7)
+    if period == 'ano':
+        return add_months(reference_date, amount * 12)
+    return add_months(reference_date, amount)
+
+
+def _period_label(period, start_date, end_date):
+    if period == 'dia':
+        return start_date.strftime('%d/%m/%Y')
+    if period == 'semana':
+        return f'{start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}'
+    if period == 'ano':
+        return str(start_date.year)
+    return start_date.strftime('%m/%Y')
+
+
+def _calendar_rows(period, start_date, end_date, sales_by_day):
+    if period == 'dia':
+        rows = [[start_date]]
+    elif period == 'semana':
+        rows = [[start_date + timedelta(days=offset) for offset in range(7)]]
+    else:
+        rows = Calendar(firstweekday=0).monthdatescalendar(start_date.year, start_date.month)
+
+    today = timezone.localdate()
+    return [
+        [
+            {
+                'date': day,
+                'sales': sales_by_day.get(day, []),
+                'count': len(sales_by_day.get(day, [])),
+                'outside_period': not (start_date <= day <= end_date),
+                'is_today': day == today,
+            }
+            for day in row
+        ]
+        for row in rows
+    ]
+
+
+def _won_sales_queryset_for_user(user):
+    return _scope_commercial_opportunities(
+        _commercial_opportunity_queryset().filter(active=False),
+        user,
+    ).prefetch_related('stage_events__new_stage')
+
+
+def _won_sales_for_period(user, *, start_date, end_date):
+    sales = []
+    for opportunity in _won_sales_queryset_for_user(user):
+        if not _is_won_stage(opportunity.stage):
+            continue
+        won_datetime = _opportunity_won_datetime(opportunity)
+        won_date = timezone.localtime(won_datetime).date()
+        if start_date <= won_date <= end_date:
+            opportunity.won_datetime = won_datetime
+            opportunity.won_date = won_date
+            sales.append(opportunity)
+    return sorted(sales, key=lambda item: (item.won_date, item.title))
 
 
 @user_passes_test(_commercial_access_check)
@@ -664,6 +792,65 @@ def commercial_follow_up_agenda(request):
         'week_days': week_days,
         'opportunity_count': len(opportunities),
         'today': today,
+        'is_admin': _is_commercial_admin_context(request.user),
+        'is_commercial_operator': _is_commercial_operator(request.user),
+    })
+
+
+@user_passes_test(_commercial_access_check)
+def commercial_won_sales(request):
+    period = request.GET.get('periodo') or 'mes'
+    if period not in {'dia', 'semana', 'mes', 'ano'}:
+        period = 'mes'
+    reference_date = _parse_reference_date(request.GET.get('data'))
+    start_date, end_date = _period_bounds(period, reference_date)
+    previous_reference = _shift_period_reference(period, reference_date, -1)
+    next_reference = _shift_period_reference(period, reference_date, 1)
+    current_reference = timezone.localdate()
+
+    sales = _won_sales_for_period(request.user, start_date=start_date, end_date=end_date)
+    sales_by_day = {}
+    for opportunity in sales:
+        sales_by_day.setdefault(opportunity.won_date, []).append(opportunity)
+
+    month_cards = []
+    if period == 'ano':
+        for month in range(1, 13):
+            month_start = date(reference_date.year, month, 1)
+            month_end = add_months(month_start, 1) - timedelta(days=1)
+            month_sales = [
+                opportunity
+                for opportunity in sales
+                if month_start <= opportunity.won_date <= month_end
+            ]
+            month_cards.append({
+                'date': month_start,
+                'sales': month_sales,
+                'count': len(month_sales),
+                'total_value': sum((opportunity.value or 0 for opportunity in month_sales), 0),
+            })
+
+    total_value = sum((opportunity.value or 0 for opportunity in sales), 0)
+
+    return render(request, 'checklists/commercial_won_sales.html', {
+        'period': period,
+        'period_label': _period_label(period, start_date, end_date),
+        'reference_date': reference_date,
+        'start_date': start_date,
+        'end_date': end_date,
+        'previous_reference': previous_reference,
+        'next_reference': next_reference,
+        'current_reference': current_reference,
+        'period_choices': [
+            ('dia', 'Dia'),
+            ('semana', 'Semana'),
+            ('mes', 'Mês'),
+            ('ano', 'Ano'),
+        ],
+        'calendar_rows': _calendar_rows(period, start_date, end_date, sales_by_day) if period != 'ano' else [],
+        'month_cards': month_cards,
+        'sales_count': len(sales),
+        'total_value': total_value,
         'is_admin': _is_commercial_admin_context(request.user),
         'is_commercial_operator': _is_commercial_operator(request.user),
     })

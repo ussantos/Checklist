@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block container_class %}container-wide{% endblock %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Oportunidades Ganhas</h1>
+    <p class="muted">Oportunidades na etapa 5 - Ganha, já desativadas e preservadas para consulta.</p>
+  </div>
+  <div class="row-actions">
+    <a class="btn" href="?periodo={{ period }}&data={{ previous_reference|date:'Y-m-d' }}">Período anterior</a>
+    {% if reference_date != current_reference %}
+      <a class="btn" href="?periodo={{ period }}&data={{ current_reference|date:'Y-m-d' }}">Período atual</a>
+    {% endif %}
+    <a class="btn" href="?periodo={{ period }}&data={{ next_reference|date:'Y-m-d' }}">Próximo período</a>
+    <a class="btn primary" href="{% url 'commercial_opportunity_create' %}">Cadastrar oportunidade</a>
+  </div>
+</div>
+
+<form method="get" class="filters panel won-sales-filters">
+  <label>Período
+    <select class="input" name="periodo">
+      {% for value, label in period_choices %}
+        <option value="{{ value }}" {% if period == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Data base
+    <input class="input" type="date" name="data" value="{{ reference_date|date:'Y-m-d' }}">
+  </label>
+  <button class="btn" type="submit">Filtrar</button>
+  <span class="won-sales-period">{{ period_label }}</span>
+</form>
+
+<section class="commercial-workspace">
+  <div class="section-title">
+    <div>
+      <span class="section-eyebrow">Calendário</span>
+      <h2>{{ sales_count }} oportunidade{{ sales_count|pluralize }} ganha{{ sales_count|pluralize }} no período</h2>
+      <p class="muted">Total registrado: R$ {{ total_value|floatformat:2 }}. Clique em uma oportunidade para abrir o cadastro.</p>
+    </div>
+  </div>
+
+  {% if period == 'ano' %}
+    <div class="won-sales-month-grid">
+      {% for month in month_cards %}
+        <section class="won-sales-month-card">
+          <div class="won-sales-month-head">
+            <div>
+              <strong>{{ month.date|date:"F" }}</strong>
+              <span>R$ {{ month.total_value|floatformat:2 }}</span>
+            </div>
+            <b>{{ month.count }}</b>
+          </div>
+          <div class="won-sales-list">
+            {% for sale in month.sales %}
+              <a class="won-sale-card" href="{% url 'commercial_opportunity_edit' sale.id %}">
+                <strong>{{ sale.title }}</strong>
+                <span>{{ sale.contact_name }}</span>
+                <small>{{ sale.won_datetime|date:"d/m/Y H:i" }}{% if sale.owner %} · {{ sale.owner.get_full_name|default:sale.owner.username }}{% endif %}</small>
+              </a>
+            {% empty %}
+              <p class="muted">Sem oportunidades.</p>
+            {% endfor %}
+          </div>
+        </section>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="won-sales-calendar">
+      {% if period != 'dia' %}
+        <div class="won-sales-weekdays">
+          <span>Seg</span>
+          <span>Ter</span>
+          <span>Qua</span>
+          <span>Qui</span>
+          <span>Sex</span>
+          <span>Sáb</span>
+          <span>Dom</span>
+        </div>
+      {% endif %}
+      {% for row in calendar_rows %}
+        <div class="won-sales-row {% if period == 'dia' %}single-day{% endif %}">
+          {% for day in row %}
+            <section class="won-sales-day{% if day.outside_period %} outside-period{% endif %}{% if day.is_today %} today{% endif %}">
+              <div class="won-sales-day-head">
+                <div>
+                  <strong>{{ day.date|date:"d/m" }}</strong>
+                  <span>{{ day.date|date:"l" }}</span>
+                </div>
+                <b>{{ day.count }}</b>
+              </div>
+              <div class="won-sales-list">
+                {% for sale in day.sales %}
+                  <a class="won-sale-card" href="{% url 'commercial_opportunity_edit' sale.id %}">
+                    <strong>{{ sale.title }}</strong>
+                    <span>{{ sale.contact_name }}</span>
+                    <small>{{ sale.commercial_funnel.name }} · {{ sale.won_datetime|date:"H:i" }}</small>
+                    {% if sale.value %}<small>R$ {{ sale.value|floatformat:2 }}</small>{% endif %}
+                  </a>
+                {% empty %}
+                  <p class="muted">Sem oportunidades.</p>
+                {% endfor %}
+              </div>
+            </section>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

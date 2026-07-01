@@ -43,6 +43,7 @@ urlpatterns = [
     path('gestao-comercial/funis/gestao/<int:funnel_id>/alternar-status/', commercial_views.commercial_funnel_toggle, name='commercial_funnel_toggle'),
     path('acompanhamento/comercial/', commercial_views.commercial_dashboard, name='commercial_dashboard'),
     path('acompanhamento/follow-ups/', commercial_views.commercial_follow_up_agenda, name='commercial_follow_up_agenda'),
+    path('acompanhamento/oportunidades-ganhas/', commercial_views.commercial_won_sales, name='commercial_won_sales'),
     path('acompanhamento/agenda/', pedagogical_views.commercial_lesson_agenda, name='commercial_lesson_agenda'),
     path('acompanhamento/agenda/sincronizar-sponte/', pedagogical_views.commercial_lessons_sync_sponte, name='commercial_lessons_sync_sponte'),
     path('acompanhamento/funis/', commercial_views.commercial_funnel_board, name='commercial_funnel_board'),

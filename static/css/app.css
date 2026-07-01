@@ -2336,6 +2336,135 @@ th {
   font-size: 0.88rem;
 }
 
+.won-sales-filters {
+  align-items: flex-end;
+}
+
+.won-sales-period {
+  color: var(--muted);
+  font-weight: 800;
+  padding: 12px 0;
+}
+
+.won-sales-calendar {
+  display: grid;
+  gap: 10px;
+}
+
+.won-sales-weekdays,
+.won-sales-row {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(7, minmax(145px, 1fr));
+}
+
+.won-sales-row.single-day {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.won-sales-weekdays span {
+  color: #475467;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.won-sales-day,
+.won-sales-month-card {
+  min-height: 180px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 12px;
+}
+
+.won-sales-day.today {
+  border-color: var(--sky);
+  box-shadow: 0 0 0 1px rgba(0, 173, 239, 0.18), var(--shadow);
+}
+
+.won-sales-day.outside-period {
+  background: #f8fafc;
+  box-shadow: none;
+  opacity: 0.68;
+}
+
+.won-sales-day-head,
+.won-sales-month-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+}
+
+.won-sales-day-head strong,
+.won-sales-day-head span,
+.won-sales-month-head strong,
+.won-sales-month-head span {
+  display: block;
+}
+
+.won-sales-day-head strong,
+.won-sales-month-head strong {
+  color: var(--dark);
+  font-size: 0.96rem;
+}
+
+.won-sales-day-head span,
+.won-sales-month-head span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.won-sales-day-head b,
+.won-sales-month-head b {
+  align-self: flex-start;
+  background: #fff1d8;
+  border: 1px solid #ffd49a;
+  border-radius: 999px;
+  color: #8a4600;
+  min-width: 28px;
+  padding: 3px 8px;
+  text-align: center;
+}
+
+.won-sales-list {
+  display: grid;
+  gap: 8px;
+}
+
+.won-sale-card {
+  display: grid;
+  gap: 2px;
+  background: var(--field-soft);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--ok);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 9px;
+}
+
+.won-sale-card:hover {
+  background: var(--card-hover);
+  border-color: #ffd7ad;
+  color: var(--text);
+}
+
+.won-sale-card span,
+.won-sale-card small {
+  color: var(--muted);
+}
+
+.won-sales-month-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+}
+
 .lesson-agenda-filters {
   align-items: flex-end;
 }
@@ -2702,8 +2831,30 @@ html[data-theme="dark"] .calendar-note {
 }
 
 html[data-theme="dark"] .calendar-weekdays span,
-html[data-theme="dark"] .calendar-note span {
+html[data-theme="dark"] .calendar-note span,
+html[data-theme="dark"] .won-sales-weekdays span,
+html[data-theme="dark"] .won-sale-card span,
+html[data-theme="dark"] .won-sale-card small {
   color: var(--muted);
+}
+
+html[data-theme="dark"] .won-sales-day,
+html[data-theme="dark"] .won-sales-month-card {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+html[data-theme="dark"] .won-sales-day.outside-period,
+html[data-theme="dark"] .won-sale-card {
+  background: var(--field-soft);
+  border-color: var(--line);
+}
+
+html[data-theme="dark"] .won-sales-day-head b,
+html[data-theme="dark"] .won-sales-month-head b {
+  background: #422b12;
+  border-color: #7c4a03;
+  color: #fed7aa;
 }
 
 html[data-theme="dark"] .message,
@@ -2871,6 +3022,10 @@ html[data-theme="dark"] .mini-card:hover {
   .commercial-kanban-col {
     min-width: 220px;
   }
+
+  .won-sales-month-grid {
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+  }
 }
 
 @media (max-width: 900px) {
@@ -2910,12 +3065,18 @@ html[data-theme="dark"] .mini-card:hover {
     grid-template-columns: 1fr 1fr;
   }
 
-  .calendar-weekdays {
+  .calendar-weekdays,
+  .won-sales-weekdays {
     display: none;
   }
 
-  .calendar-row {
+  .calendar-row,
+  .won-sales-row {
     grid-template-columns: 1fr;
+  }
+
+  .won-sales-day {
+    min-height: auto;
   }
 
   .lesson-calendar-weekdays {

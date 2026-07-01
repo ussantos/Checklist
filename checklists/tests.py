@@ -14,7 +14,7 @@ from openpyxl import load_workbook
 from .forms import CommercialOpportunityForm, CourseForm, add_months
 from .models import (
     CommercialFunnel, CommercialObjection, CommercialOpportunity, CommercialOpportunityFollowUp,
-    Course, FunnelModel, FunnelStage, FunnelType, Lesson, LessonFeedback,
+    CommercialOpportunityStageEvent, Course, FunnelModel, FunnelStage, FunnelType, Lesson, LessonFeedback,
     OpportunityOrigin, PedagogicalReportTask, PedagogicalStudent, Position,
     Room, SchoolHoliday, TimeSlot, UserProfile,
 )
@@ -2184,17 +2184,27 @@ class CommercialDashboardTests(TestCase):
         self.room = Room.objects.create(name='Sala Comercial', capacity=2, active=True)
         self.lost_objection = CommercialObjection.objects.create(name='Não responde no fluxo comercial')
 
-    def _opportunity(self, *, title, owner, next_follow_up_date, updated_at=None):
+    def _opportunity(
+        self,
+        *,
+        title,
+        owner,
+        next_follow_up_date,
+        updated_at=None,
+        commercial_funnel=None,
+        stage=None,
+        active=True,
+    ):
         opportunity = CommercialOpportunity.objects.create(
             title=title,
-            commercial_funnel=self.funnel,
-            stage=self.stage,
+            commercial_funnel=commercial_funnel or self.funnel,
+            stage=stage or self.stage,
             origin=self.origin,
             contact_name='Responsável',
             contact_phone='21999990000',
             owner=owner,
             next_follow_up_date=next_follow_up_date,
-            active=True,
+            active=active,
         )
         if updated_at:
             CommercialOpportunity.objects.filter(pk=opportunity.pk).update(updated_at=updated_at)
@@ -2232,6 +2242,22 @@ class CommercialDashboardTests(TestCase):
         self.assertContains(response, 'Lead crítico')
         self.assertNotContains(response, 'Lead de outro atendente')
 
+    def test_commercial_dashboard_orders_pipeline_funnels(self):
+        today = timezone.localdate()
+        qualified = CommercialFunnel.objects.create(name='Qualificados', funnel_model=self.funnel_model, active=True)
+        post_sale = CommercialFunnel.objects.create(name='Pós-Venda', funnel_model=self.funnel_model, active=True)
+        partnerships = CommercialFunnel.objects.create(name='Parcerias', funnel_model=self.funnel_model, active=True)
+
+        self._opportunity(title='Lead parceria', owner=self.user, next_follow_up_date=today, commercial_funnel=partnerships)
+        self._opportunity(title='Lead pós-venda', owner=self.user, next_follow_up_date=today, commercial_funnel=post_sale)
+        self._opportunity(title='Lead qualificado', owner=self.user, next_follow_up_date=today, commercial_funnel=qualified)
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('commercial_dashboard'))
+
+        funnel_names = [group['funnel'].name for group in response.context['opportunity_funnel_groups'][:3]]
+        self.assertEqual(funnel_names, ['Qualificados', 'Pós-Venda', 'Parcerias'])
+
     def test_commercial_operator_menu_includes_lesson_agenda(self):
         self.client.force_login(self.user)
 
@@ -2242,6 +2268,62 @@ class CommercialDashboardTests(TestCase):
         self.assertContains(response, 'Agenda de Follow-Ups')
         self.assertContains(response, reverse('commercial_lesson_agenda'))
         self.assertContains(response, 'Agenda de Aulas')
+        self.assertContains(response, reverse('commercial_won_sales'))
+        self.assertContains(response, 'Oportunidades Ganhas')
+
+    def test_commercial_won_opportunities_calendar_is_scoped_to_logged_operator(self):
+        today = timezone.localdate()
+        won_stage, _ = FunnelStage.objects.get_or_create(
+            code='5-ganha',
+            defaults={'name': '5 - Ganha', 'active': True, 'order': 5},
+        )
+        own_sale = self._opportunity(
+            title='Venda ganha própria',
+            owner=self.user,
+            next_follow_up_date=today,
+            stage=won_stage,
+            active=False,
+        )
+        other_sale = self._opportunity(
+            title='Venda ganha de outro atendente',
+            owner=self.other_user,
+            next_follow_up_date=today,
+            stage=won_stage,
+            active=False,
+        )
+        self._opportunity(
+            title='Venda ainda ativa',
+            owner=self.user,
+            next_follow_up_date=today,
+            stage=won_stage,
+            active=True,
+        )
+        CommercialOpportunityStageEvent.objects.create(
+            opportunity=own_sale,
+            previous_stage=self.stage,
+            new_stage=won_stage,
+            previous_stage_label=self.stage.name,
+            new_stage_label=won_stage.name,
+            actor=self.user,
+        )
+        CommercialOpportunityStageEvent.objects.create(
+            opportunity=other_sale,
+            previous_stage=self.stage,
+            new_stage=won_stage,
+            previous_stage_label=self.stage.name,
+            new_stage_label=won_stage.name,
+            actor=self.other_user,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(f"{reverse('commercial_won_sales')}?periodo=dia&data={today.isoformat()}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Oportunidades Ganhas')
+        self.assertContains(response, 'Venda ganha própria')
+        self.assertNotContains(response, 'Venda ganha de outro atendente')
+        self.assertNotContains(response, 'Venda ainda ativa')
+        self.assertEqual(response.context['sales_count'], 1)
 
     def test_commercial_follow_up_agenda_groups_week_and_is_scoped(self):
         today = timezone.localdate()
