@@ -1,6 +1,6 @@
 # Integração Sponte
 
-Este documento descreve os cuidados técnicos e operacionais da integração entre o Checklist e a API SOAP da Sponte.
+Este documento descreve os cuidados técnicos e operacionais da integração entre o Checklist e as APIs da Sponte.
 
 ## Objetivo
 
@@ -20,6 +20,14 @@ SPONTE_API_CACHE_TTL_MINUTES=60
 SPONTE_API_MAX_REQUESTS_PER_MINUTE=30
 SPONTE_API_WAIT_ON_RATE_LIMIT=True
 SPONTE_API_RATE_LIMIT_WAIT_PADDING_SECONDS=2
+SPONTE_REST_API_ENABLED=False
+SPONTE_REST_API_BASE_URL=https://integracao.sponteweb.net.br
+SPONTE_REST_API_CLIENT_CODE=
+SPONTE_REST_API_LOGIN=
+SPONTE_REST_API_PASSWORD=
+SPONTE_REST_API_TIMEOUT_SECONDS=30
+SPONTE_REST_API_TOKEN_TTL_MINUTES=50
+SPONTE_REST_API_REQUIRED_FOR_SCHEDULE_STATUS=False
 SPONTE_STUDENT_SEARCH_PARAMS=Nome=%
 SPONTE_COURSE_SEARCH_PARAMS=Situacao=1
 SPONTE_SCHEDULE_SYNC_DAYS_BACK=0
@@ -31,6 +39,24 @@ SPONTE_SCHEDULE_SYNC_DAYS_AHEAD=90
 As variáveis antigas `SPONTE_API_URL`, `SPONTE_CODIGO_CLIENTE`, `SPONTE_TOKEN` e `SPONTE_TIMEOUT_SECONDS` ainda são aceitas por compatibilidade, mas novas instalações devem usar os nomes `SPONTE_API_*`.
 
 Sincronizações datadas do Sponte devem sempre considerar o dia da execução para frente. `SPONTE_SCHEDULE_SYNC_DAYS_AHEAD` define a quantidade de dias futuros buscados. `SPONTE_SCHEDULE_SYNC_DAYS_BACK` é mantida apenas por compatibilidade e deve permanecer `0`; dados antigos não são importados nem usados para bloquear horários.
+
+## Situação da Aula
+
+A fonte correta e autoritativa para **Situação da Aula** em Aulas Livres é a API REST da Sponte:
+
+- autenticação: `POST /api/v1/login`, com `SPONTE_REST_API_LOGIN` e `SPONTE_REST_API_PASSWORD`;
+- consulta: `GET /api/v1/aulaslivres`, filtrando por `CodCliSponte`, período e `AlunoID`;
+- campos usados: `presenca` quando vier texto/abreviação e `situacao` como código numérico conhecido, sempre mapeados para as nomenclaturas do Sponte: `Presença`, `Falta`, `Não dada` e `Cancelada`.
+
+O SOAP continua sendo usado para buscar estrutura de alunos, cursos, contratos e agenda, mas não deve ser tratado como fonte definitiva da Situação da Aula. Quando `SPONTE_REST_API_ENABLED=True`, a sincronização sobrepõe o status da agenda com o valor REST antes de salvar. Para reconciliações/auditorias, use `SPONTE_REST_API_REQUIRED_FOR_SCHEDULE_STATUS=True` ou o comando `reconcile_sponte_lessons`, que exige REST por padrão.
+
+Para corrigir aulas já importadas após configurar as credenciais REST:
+
+```bash
+docker compose exec web python manage.py reconcile_sponte_lessons --start-date 2025-11-01
+```
+
+Esse comando falha se o REST não devolver a Situação da Aula correspondente. A opção `--allow-soap-status-fallback` existe apenas para diagnóstico e não deve ser usada para auditoria operacional.
 
 ## Dados vindos da Sponte
 

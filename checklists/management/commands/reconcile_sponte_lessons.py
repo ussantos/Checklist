@@ -40,6 +40,13 @@ class Command(BaseCommand):
             default=None,
             help='Data final no formato AAAA-MM-DD. Padrão: hoje.',
         )
+        parser.add_argument(
+            '--allow-soap-status-fallback',
+            action='store_false',
+            dest='require_rest_status',
+            default=True,
+            help='Permite reconciliar mesmo sem Situação da Aula vinda da API REST /api/v1/aulaslivres.',
+        )
 
     def handle(self, *args, **options):
         start_date = _parse_date(options['start_date'])
@@ -65,6 +72,7 @@ class Command(BaseCommand):
                 chunk_end,
                 allow_past=True,
                 include_inactive_students=True,
+                require_rest_status=options['require_rest_status'],
             )
             totals['created'] += result.created
             totals['updated'] += result.updated
@@ -85,6 +93,12 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(f'  - {error}'))
             if len(result.errors) > 10:
                 self.stdout.write(self.style.WARNING(f'  - ... mais {len(result.errors) - 10} erro(s).'))
+
+        if totals['errors']:
+            raise CommandError(
+                'Reconciliação concluída com erro(s). Corrija a configuração REST do Sponte ou rode '
+                'com --allow-soap-status-fallback apenas para diagnóstico.'
+            )
 
         self.stdout.write(self.style.SUCCESS(
             'Reconciliação concluída: '

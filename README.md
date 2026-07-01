@@ -166,6 +166,14 @@ SPONTE_API_CACHE_TTL_MINUTES=60
 SPONTE_API_MAX_REQUESTS_PER_MINUTE=30
 SPONTE_API_WAIT_ON_RATE_LIMIT=True
 SPONTE_API_RATE_LIMIT_WAIT_PADDING_SECONDS=2
+SPONTE_REST_API_ENABLED=False
+SPONTE_REST_API_BASE_URL=https://integracao.sponteweb.net.br
+SPONTE_REST_API_CLIENT_CODE=
+SPONTE_REST_API_LOGIN=
+SPONTE_REST_API_PASSWORD=
+SPONTE_REST_API_TIMEOUT_SECONDS=30
+SPONTE_REST_API_TOKEN_TTL_MINUTES=50
+SPONTE_REST_API_REQUIRED_FOR_SCHEDULE_STATUS=False
 SPONTE_STUDENT_SEARCH_PARAMS=Nome=%
 SPONTE_COURSE_SEARCH_PARAMS=Situacao=1
 SPONTE_SCHEDULE_SYNC_DAYS_BACK=0
@@ -176,7 +184,7 @@ O sistema importa alunos ativos e inativos retornados pelo Sponte, incluindo nom
 
 A tela **Gestão Pedagógica > Cursos** possui o botão **Sincronizar Sponte** para buscar cursos pelo endpoint SOAP `GetCursos`. Cursos com versão `1.0` são ignorados; quando houver conflito de nome-base, a versão do Sponte, preferencialmente `2.0`, substitui o cadastro local sem exclusão física e preservando valor/kits já configurados no Checklist.
 
-Na tela **Gestão Pedagógica > Agenda**, o botão **Sincronizar Sponte** busca a agenda de cada aluno ativo importado do Sponte pelo endpoint `GetAgendaAluno` e aproveita somente a seção **AulasLivres**. Essas aulas regulares são exibidas no Checklist como somente leitura. O Checklist continua criando localmente apenas **Aulas Experimentais ou Play**. Sincronizações iniciadas pelas telas rodam em segundo plano; o usuário recebe uma notificação ao iniciar e outra ao concluir ou falhar.
+Na tela **Gestão Pedagógica > Agenda**, o botão **Sincronizar Sponte** busca a agenda de cada aluno ativo importado do Sponte pelo endpoint SOAP `GetAgendaAluno` e aproveita somente a seção **AulasLivres**. A **Situação da Aula** deve vir da API REST oficial `GET /api/v1/aulaslivres`, autenticada via `POST /api/v1/login`, usando as nomenclaturas `Presença`, `Falta`, `Não dada` e `Cancelada`. Configure `SPONTE_REST_API_ENABLED=True` para aplicar esse status autoritativo na sincronização; para auditorias, `SPONTE_REST_API_REQUIRED_FOR_SCHEDULE_STATUS=True` impede gravação quando o REST não devolver a situação correspondente. Essas aulas regulares são exibidas no Checklist como somente leitura. O Checklist continua criando localmente apenas **Aulas Experimentais ou Play**. Sincronizações iniciadas pelas telas rodam em segundo plano; o usuário recebe uma notificação ao iniciar e outra ao concluir ou falhar.
 
 Ao cadastrar uma **Aula Experimental ou Play**, o administrador deve informar se ela é `Experimental` ou `Play` e vinculá-la a uma oportunidade comercial. Uma oportunidade pode ter várias Aulas Experimentais ou Play, garantindo rastreabilidade para clientes que ainda não existem no Sponte.
 
@@ -483,6 +491,14 @@ SPONTE_API_CACHE_TTL_MINUTES=60
 SPONTE_API_MAX_REQUESTS_PER_MINUTE=30
 SPONTE_API_WAIT_ON_RATE_LIMIT=True
 SPONTE_API_RATE_LIMIT_WAIT_PADDING_SECONDS=2
+SPONTE_REST_API_ENABLED=False
+SPONTE_REST_API_BASE_URL=https://integracao.sponteweb.net.br
+SPONTE_REST_API_CLIENT_CODE=
+SPONTE_REST_API_LOGIN=
+SPONTE_REST_API_PASSWORD=
+SPONTE_REST_API_TIMEOUT_SECONDS=30
+SPONTE_REST_API_TOKEN_TTL_MINUTES=50
+SPONTE_REST_API_REQUIRED_FOR_SCHEDULE_STATUS=False
 SPONTE_STUDENT_SEARCH_PARAMS=Nome=%
 SPONTE_COURSE_SEARCH_PARAMS=Situacao=1
 SPONTE_SCHEDULE_SYNC_DAYS_BACK=0
@@ -493,7 +509,7 @@ The system imports active and inactive students returned by Sponte, including na
 
 On **Pedagogical Management > Courses**, the **Sync Sponte** button fetches courses from the SOAP `GetCursos` endpoint. Courses with version `1.0` are ignored; when a base-name conflict exists, the Sponte version, preferably `2.0`, replaces the local record without physical deletion and preserves value/kits already configured in Checklist.
 
-On **Pedagogical Management > Schedule**, the **Sync Sponte** button fetches each active Sponte-imported student's schedule through `GetAgendaAluno` and uses only the **AulasLivres** section. These regular lessons are displayed in Checklist as read-only records. Checklist continues to create only **Trial or Play Lessons** locally. Syncs started from the UI run in the background; users see one notification when the job starts and another when it finishes or fails.
+On **Pedagogical Management > Schedule**, the **Sync Sponte** button fetches each active Sponte-imported student's schedule through the SOAP `GetAgendaAluno` endpoint and uses only the **AulasLivres** section. The lesson situation must come from the official REST API `GET /api/v1/aulaslivres`, authenticated through `POST /api/v1/login`, using Sponte labels: `Presença`, `Falta`, `Não dada`, and `Cancelada`. Set `SPONTE_REST_API_ENABLED=True` to apply this authoritative status during sync; for audits, `SPONTE_REST_API_REQUIRED_FOR_SCHEDULE_STATUS=True` prevents writes when REST does not return the matching lesson situation. These regular lessons are displayed in Checklist as read-only records. Checklist continues to create only **Trial or Play Lessons** locally. Syncs started from the UI run in the background; users see one notification when the job starts and another when it finishes or fails.
 
 When creating a **Trial or Play Lesson**, the administrator must choose whether it is `Trial` or `Play` and link it to a commercial opportunity. One opportunity may have several Trial or Play Lessons, keeping traceability for clients that do not exist in Sponte yet.
 
