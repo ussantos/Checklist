@@ -20,14 +20,6 @@ SPONTE_API_CACHE_TTL_MINUTES=60
 SPONTE_API_MAX_REQUESTS_PER_MINUTE=30
 SPONTE_API_WAIT_ON_RATE_LIMIT=True
 SPONTE_API_RATE_LIMIT_WAIT_PADDING_SECONDS=2
-SPONTE_REST_API_ENABLED=False
-SPONTE_REST_API_BASE_URL=https://integracao.sponteweb.net.br
-SPONTE_REST_API_CLIENT_CODE=
-SPONTE_REST_API_LOGIN=
-SPONTE_REST_API_PASSWORD=
-SPONTE_REST_API_TIMEOUT_SECONDS=30
-SPONTE_REST_API_TOKEN_TTL_MINUTES=50
-SPONTE_REST_API_REQUIRED_FOR_SCHEDULE_STATUS=False
 SPONTE_STUDENT_SEARCH_PARAMS=Nome=%
 SPONTE_COURSE_SEARCH_PARAMS=Situacao=1
 SPONTE_SCHEDULE_SYNC_DAYS_BACK=0
@@ -42,21 +34,29 @@ Sincronizações datadas do Sponte devem sempre considerar o dia da execução p
 
 ## Situação da Aula
 
-A fonte correta e autoritativa para **Situação da Aula** em Aulas Livres é a API REST da Sponte:
+A integração do Checklist deve permanecer na superfície SOAP da Sponte. A agenda regular é lida por `GetAgendaAluno` e, quando disponível, a situação da aula é complementada por consultas SOAP de diário de aula livre.
 
-- autenticação: `POST /api/v1/login`, com `SPONTE_REST_API_LOGIN` e `SPONTE_REST_API_PASSWORD`;
-- consulta: `GET /api/v1/aulaslivres`, filtrando por `CodCliSponte`, período e `AlunoID`;
-- campos usados: `presenca` quando vier texto/abreviação e `situacao` como código numérico conhecido, sempre mapeados para as nomenclaturas do Sponte: `Presença`, `Falta`, `Não dada` e `Cancelada`.
+Como a API SOAP nem sempre devolve a **Situação da Aula** na agenda, a fonte operacional para auditoria e correção em lote é o relatório Sponte **Aulas Livres** exportado em XML pela própria interface do Sponte. Gere o relatório com:
 
-O SOAP continua sendo usado para buscar estrutura de alunos, cursos, contratos e agenda, mas não deve ser tratado como fonte definitiva da Situação da Aula. Quando `SPONTE_REST_API_ENABLED=True`, a sincronização sobrepõe o status da agenda com o valor REST antes de salvar. Para reconciliações/auditorias, use `SPONTE_REST_API_REQUIRED_FOR_SCHEDULE_STATUS=True` ou o comando `reconcile_sponte_lessons`, que exige REST por padrão.
+- **Situação da Aula** = Todas;
+- período completo a reconciliar;
+- tipo de relatório detalhado;
+- exportação em XML.
 
-Para corrigir aulas já importadas após configurar as credenciais REST:
+O XML usa códigos de situação mapeados para as nomenclaturas do Sponte:
+
+- `0`: `Não dada`;
+- `1`: `Presença`;
+- `2`: `Falta`;
+- `3`: `Cancelada`.
+
+Para corrigir aulas já importadas usando o XML do relatório:
 
 ```bash
-docker compose exec web python manage.py reconcile_sponte_lessons --start-date 2025-11-01
+docker compose exec web python manage.py reconcile_sponte_lessons --start-date 2025-11-01 --end-date 2026-06-30 --report-xml /app/tmp/aulas-livres.xml
 ```
 
-Esse comando falha se o REST não devolver a Situação da Aula correspondente. A opção `--allow-soap-status-fallback` existe apenas para diagnóstico e não deve ser usada para auditoria operacional.
+O comando usa o XML como fonte de verdade para o período informado. Aulas que existem no banco, mas não aparecem no relatório daquele aluno/período, são removidas ou canceladas conforme a regra de preservação local.
 
 ## Dados vindos da Sponte
 

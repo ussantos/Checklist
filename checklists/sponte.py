@@ -1,19 +1,13 @@
-import json
 import os
 import re
-import hashlib
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Callable
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
 from django.conf import settings
-from django.core.cache import cache as default_cache
 from django.db import transaction
 from django.db.models import ProtectedError
 from django.utils import timezone
@@ -27,15 +21,14 @@ from .sponte_client import (
 
 SPONTE_SOURCE = 'Sponte'
 DEFAULT_API_URL = DEFAULT_SPONTE_API_BASE_URL
-DEFAULT_REST_API_URL = 'https://integracao.sponteweb.net.br'
 DEFAULT_STUDENT_SEARCH_PARAMS = 'Nome=%'
 DEFAULT_COURSE_SEARCH_PARAMS = 'Situacao=1'
 LEGACY_STUDENT_SEARCH_PARAMS = {'Situacao=1'}
-REST_SITUATION_STATUS_LABELS = {
+REPORT_SITUATION_STATUS_LABELS = {
+    0: 'Não dada',
     1: 'Presença',
     2: 'Falta',
-    3: 'Não dada',
-    4: 'Cancelada',
+    3: 'Cancelada',
 }
 
 
@@ -428,15 +421,6 @@ def _sponte_setting(name, default=''):
     return getattr(settings, name, os.environ.get(name, default))
 
 
-def _sponte_bool_setting(name, default=False):
-    value = _sponte_setting(name, default)
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return default
-    return str(value).strip().lower() in {'1', 'true', 'yes', 'on', 'sim'}
-
-
 def _sponte_auth_config():
     api_url = (_sponte_setting('SPONTE_API_BASE_URL', '') or _sponte_setting('SPONTE_API_URL', DEFAULT_API_URL) or DEFAULT_API_URL).rstrip('/')
     client_code = str(_sponte_setting('SPONTE_API_CLIENT_CODE', '') or _sponte_setting('SPONTE_CODIGO_CLIENTE', '') or '').strip()
@@ -448,86 +432,6 @@ def _sponte_auth_config():
             'Configure SPONTE_API_CLIENT_CODE e SPONTE_API_TOKEN no .env antes de usar a integração com o Sponte.'
         )
     return api_url, client_code, token, timeout
-
-
-def _sponte_rest_api_enabled():
-    return _sponte_bool_setting('SPONTE_REST_API_ENABLED', False)
-
-
-def _sponte_rest_required_for_schedule_status():
-    return _sponte_bool_setting('SPONTE_REST_API_REQUIRED_FOR_SCHEDULE_STATUS', False)
-
-
-def _sponte_rest_config():
-    api_url = str(_sponte_setting('SPONTE_REST_API_BASE_URL', DEFAULT_REST_API_URL) or DEFAULT_REST_API_URL).rstrip('/')
-    client_code = str(
-        _sponte_setting('SPONTE_REST_API_CLIENT_CODE', '') or _sponte_setting('SPONTE_API_CLIENT_CODE', '') or ''
-    ).strip()
-    login = str(_sponte_setting('SPONTE_REST_API_LOGIN', '') or '').strip()
-    password = str(_sponte_setting('SPONTE_REST_API_PASSWORD', '') or '').strip()
-    timeout = int(_sponte_setting('SPONTE_REST_API_TIMEOUT_SECONDS', '') or _sponte_setting('SPONTE_API_TIMEOUT_SECONDS', 30) or 30)
-    token_ttl_minutes = int(_sponte_setting('SPONTE_REST_API_TOKEN_TTL_MINUTES', 50) or 50)
-
-    if not api_url or not client_code or not login or not password:
-        raise SponteConfigurationError(
-            'Configure SPONTE_REST_API_CLIENT_CODE, SPONTE_REST_API_LOGIN e '
-            'SPONTE_REST_API_PASSWORD no .env para sincronizar a Situação da Aula pelo REST do Sponte.'
-        )
-    return api_url, client_code, login, password, timeout, max(token_ttl_minutes, 1)
-
-
-def _json_request(url, *, method='GET', payload=None, headers=None, timeout=30, purpose='consultar Sponte REST'):
-    headers = {
-        'Accept': 'application/json',
-        **(headers or {}),
-    }
-    body = None
-    if payload is not None:
-        body = json.dumps(payload).encode('utf-8')
-        headers['Content-Type'] = 'application/json'
-    request = Request(url, data=body, headers=headers, method=method)
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            raw = response.read().decode('utf-8')
-    except HTTPError as exc:
-        if exc.code == 401:
-            raise SponteClientError(
-                f'Credenciais REST do Sponte recusadas ao {purpose}. '
-                'Revise SPONTE_REST_API_LOGIN e SPONTE_REST_API_PASSWORD.'
-            ) from exc
-        raise SponteClientError(f'Falha HTTP {exc.code} ao {purpose}.') from exc
-    except URLError as exc:
-        raise SponteClientError(f'Falha de conexão ao {purpose}: {exc.reason}') from exc
-    except TimeoutError as exc:
-        raise SponteClientError(f'Tempo esgotado ao {purpose}.') from exc
-
-    if not raw.strip():
-        return {}
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise SponteClientError(f'Resposta JSON inválida ao {purpose}.') from exc
-
-
-def _sponte_rest_login_token(api_url, login, password, timeout, ttl_minutes):
-    cache_basis = f'{api_url}|{login}'
-    cache_key = 'sponte_rest_token:' + hashlib.sha256(cache_basis.encode('utf-8')).hexdigest()
-    cached_token = default_cache.get(cache_key)
-    if cached_token:
-        return cached_token
-
-    response = _json_request(
-        f'{api_url}/api/v1/login',
-        method='POST',
-        payload={'login': login, 'senha': password},
-        timeout=timeout,
-        purpose='autenticar no Sponte REST',
-    )
-    token = (response.get('token') or response.get('Token') or '').strip()
-    if not token:
-        raise SponteClientError('Sponte REST autenticou sem devolver token JWT.')
-    default_cache.set(cache_key, token, ttl_minutes * 60)
-    return token
 
 
 def _sponte_config():
@@ -768,7 +672,8 @@ def _parse_sponte_time(value):
     value = (value or '').strip()
     if not value:
         return None
-    value = value.split(' ', 1)[0]
+    match = re.search(r'\d{1,2}:\d{2}(?::\d{2})?', value)
+    value = match.group(0) if match else value.split(' ', 1)[0]
     for time_format in ('%H:%M:%S', '%H:%M'):
         try:
             return datetime.strptime(value, time_format).time()
@@ -831,103 +736,70 @@ def parse_sponte_free_class_schedule(xml_text, *, student_external_id=''):
     return records
 
 
-def _rest_status_label_from_value(value):
+def _report_status_label_from_value(value):
     if value in (None, ''):
         return ''
     parsed_int = _parse_int(value)
-    if parsed_int is not None and parsed_int in REST_SITUATION_STATUS_LABELS:
-        return REST_SITUATION_STATUS_LABELS[parsed_int]
-    normalized = _normalize(value)
-    if normalized in {'p', 'presenca', 'presente', 'dada', 'realizada', 'ministrada'}:
-        return _lesson_status_choice_label(Lesson.STATUS_DONE)
-    if normalized in {'f', 'falta', 'ausente'}:
-        return _lesson_status_choice_label(Lesson.STATUS_ABSENT)
-    if normalized in {'c', 'cancelada', 'cancelado'}:
-        return _lesson_status_choice_label(Lesson.STATUS_CANCELLED)
-    if normalized in {'n', 'nao dada', 'nao realizado', 'nao realizada', 'nao ministrada'}:
-        return _lesson_status_choice_label(Lesson.STATUS_NOT_GIVEN)
-    if 'cancel' in normalized:
-        return _lesson_status_choice_label(Lesson.STATUS_CANCELLED)
-    if 'falta' in normalized or 'ausente' in normalized:
-        return _lesson_status_choice_label(Lesson.STATUS_ABSENT)
-    if 'presenc' in normalized or 'dada' in normalized or 'realiz' in normalized or 'ministrad' in normalized:
-        return _lesson_status_choice_label(Lesson.STATUS_DONE)
-    if 'nao' in normalized:
-        return _lesson_status_choice_label(Lesson.STATUS_NOT_GIVEN)
-    return ''
+    if parsed_int is not None and parsed_int in REPORT_SITUATION_STATUS_LABELS:
+        return REPORT_SITUATION_STATUS_LABELS[parsed_int]
+    return _lesson_status_choice_label(_lesson_status_from_sponte(value))
 
 
-def _rest_status_label_from_item(item):
-    for key in (
-        'situacaoDescricao',
-        'situacaoAula',
-        'situacaoTexto',
-        'statusAula',
-        'status',
-        'presenca',
-    ):
-        label = _rest_status_label_from_value(item.get(key))
-        if label:
-            return label
-    return _rest_status_label_from_value(item.get('situacao'))
+def _sponte_report_free_class_id(fields):
+    parts = [
+        fields.get('ContratoAulaLivreID', ''),
+        fields.get('ContratoAulaLivreDisciplinaID', ''),
+        fields.get('NumeroContrato', ''),
+        fields.get('HoraInicial', ''),
+        fields.get('HoraFinal', ''),
+    ]
+    normalized_parts = [
+        re.sub(r'[^A-Za-z0-9_-]+', '-', str(part).strip()).strip('-')
+        for part in parts
+        if str(part or '').strip()
+    ]
+    free_class_id = 'relatorio-' + '-'.join(normalized_parts)
+    return _truncate(free_class_id.strip('-') or 'relatorio-aula-livre', 80)
 
 
-def parse_sponte_free_class_rest_statuses(payload, *, student_external_id=''):
-    if isinstance(payload, dict):
-        items = payload.get('listDados') or payload.get('ListDados') or payload.get('dados') or []
-    elif isinstance(payload, list):
-        items = payload
-    else:
-        items = []
+def parse_sponte_free_class_report_xml(xml_text):
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as exc:
+        raise SponteClientError(f'Relatório XML inválido do Sponte: {exc}') from exc
 
     records = []
-    for item in items:
-        if not isinstance(item, dict):
+    for table in root.iter():
+        if _local_name(table.tag) != 'Table':
             continue
-        free_class_id = str(item.get('aulaLivreID') or item.get('AulaLivreID') or '').strip()
-        class_date = item.get('dataAula') or item.get('DataAula') or ''
-        lesson_status = _rest_status_label_from_item(item)
-        if not free_class_id or not lesson_status:
+        fields = _children_text_map(table)
+        student_external_id = fields.get('AlunoID', '').strip()
+        class_date = fields.get('Data', '').strip()
+        start_time = fields.get('HoraInicial', '').strip()
+        end_time = fields.get('HoraFinal', '').strip()
+        lesson_status = _report_status_label_from_value(fields.get('Situacao', ''))
+        if not all([student_external_id, class_date, start_time, end_time, lesson_status]):
             continue
         records.append({
-            'student_external_id': str(item.get('alunoID') or item.get('AlunoID') or student_external_id or '').strip(),
-            'free_class_id': free_class_id,
+            'student_external_id': student_external_id,
+            'student_name': fields.get('Aluno', '').strip(),
+            'free_class_id': _sponte_report_free_class_id(fields),
             'date': class_date,
+            'start_time': start_time,
+            'end_time': end_time,
             'lesson_status': lesson_status,
-            'lesson_status_raw': str(item.get('situacao') or item.get('presenca') or '').strip(),
+            'lesson_status_raw': fields.get('Situacao', '').strip(),
             'lesson_status_from_sponte': True,
-            'lesson_status_source': 'rest_aulaslivres',
+            'lesson_status_source': 'report_xml',
+            'course_name': fields.get('Curso', '').strip() or fields.get('Disciplina', '').strip() or 'Curso Sponte',
+            'room_name': fields.get('Sala', '').strip(),
+            'teacher_name': fields.get('Professor', '').strip(),
+            'course_external_id': '',
+            'discipline_external_id': fields.get('ContratoAulaLivreDisciplinaID', '').strip(),
+            'discipline_name': fields.get('Disciplina', '').strip(),
+            'teacher_external_id': '',
+            'contract_number': fields.get('NumeroContrato', '').strip(),
         })
-    return records
-
-
-def fetch_sponte_free_class_status_records(student_external_id, start_date, end_date):
-    api_url, client_code, login, password, timeout, token_ttl_minutes = _sponte_rest_config()
-    token = _sponte_rest_login_token(api_url, login, password, timeout, token_ttl_minutes)
-    page = 1
-    records = []
-    while True:
-        params = {
-            'CodCliSponte': client_code,
-            'DataInicio': start_date.isoformat(),
-            'DataTermino': end_date.isoformat(),
-            'Pagina': page,
-            'SituacaoAula': 0,
-            'AlunoID': student_external_id,
-            'TurmaAulaLivreID': 0,
-        }
-        query = urlencode(params)
-        payload = _json_request(
-            f'{api_url}/api/v1/aulaslivres?{query}',
-            headers={'Authorization': f'Bearer {token}'},
-            timeout=timeout,
-            purpose='consultar Situação da Aula no Sponte REST',
-        )
-        records.extend(parse_sponte_free_class_rest_statuses(payload, student_external_id=student_external_id))
-        total_pages = _parse_int(payload.get('totalPaginas') if isinstance(payload, dict) else None) or page
-        if page >= total_pages:
-            break
-        page += 1
     return records
 
 
@@ -1160,44 +1032,11 @@ def _matching_sponte_diary_record(agenda_record, diary_records):
     return diary_records[0] if len(diary_records) == 1 else None
 
 
-def _overlay_sponte_rest_statuses(records, rest_status_records):
-    if not records or not rest_status_records:
-        return records
-    by_free_class_id = {
-        (record.get('free_class_id') or '').strip(): record
-        for record in rest_status_records
-        if (record.get('free_class_id') or '').strip()
-    }
-    merged_records = []
-    for record in records:
-        free_class_id = (record.get('free_class_id') or '').strip()
-        rest_record = by_free_class_id.get(free_class_id)
-        if not rest_record:
-            merged_records.append(record)
-            continue
-        merged = {**record}
-        for field_name in (
-            'lesson_status',
-            'lesson_status_raw',
-            'lesson_status_from_sponte',
-            'lesson_status_source',
-        ):
-            if field_name in rest_record:
-                merged[field_name] = rest_record[field_name]
-        merged_records.append(merged)
-    return merged_records
-
-
 def _merge_sponte_diary_status(agenda_record, diary_record):
     if not diary_record:
         return agenda_record
     merged = {**agenda_record}
     for field_name, value in diary_record.items():
-        if (
-            agenda_record.get('lesson_status_source') == 'rest_aulaslivres'
-            and field_name in {'lesson_status', 'lesson_status_raw', 'lesson_status_from_sponte'}
-        ):
-            continue
         if value or field_name in {'lesson_status_from_sponte'}:
             merged[field_name] = value
     return merged
@@ -1393,7 +1232,7 @@ def import_sponte_free_class_records(student, records, *, start_date, end_date, 
             status_note = (
                 f'Situação no Sponte: {record.get("lesson_status") or "-"}'
                 if record.get('lesson_status_from_sponte')
-                else 'Situação no Sponte: não informada pela API; padrão/preservação Checklist.'
+                else 'Situação no Sponte: não informada pela integração SOAP; padrão/preservação Checklist.'
             )
             notes_parts = [
                 'Aula Livre sincronizada do Sponte.',
@@ -1503,20 +1342,71 @@ def import_sponte_free_class_records(student, records, *, start_date, end_date, 
     return result
 
 
+def reconcile_sponte_free_class_report_xml(xml_text, *, start_date=None, end_date=None, allow_past=True):
+    records = parse_sponte_free_class_report_xml(xml_text)
+    record_dates = [
+        parsed_date
+        for parsed_date in (_parse_sponte_date(record.get('date')) for record in records)
+        if parsed_date is not None
+    ]
+    if record_dates:
+        start_date = start_date or min(record_dates)
+        end_date = end_date or max(record_dates)
+    else:
+        today = timezone.localdate()
+        start_date = start_date or today
+        end_date = end_date or today
+
+    result = SponteScheduleSyncResult()
+    records_by_student = {}
+    for record in records:
+        records_by_student.setdefault(record.get('student_external_id') or '', []).append(record)
+
+    for student_external_id, student_records in sorted(records_by_student.items()):
+        student = (
+            PedagogicalStudent.objects
+            .filter(source=SPONTE_SOURCE, external_id=student_external_id)
+            .order_by('id')
+            .first()
+        )
+        if student is None:
+            student_name = student_records[0].get('student_name') or student_external_id
+            result.skipped += len(student_records)
+            result.errors.append(
+                f'Aluno Sponte {student_name} ({student_external_id}) não encontrado no Checklist. '
+                'Importe os alunos do Sponte antes de reconciliar o relatório XML.'
+            )
+            continue
+
+        student_result = import_sponte_free_class_records(
+            student,
+            student_records,
+            start_date=start_date,
+            end_date=end_date,
+            allow_past=allow_past,
+        )
+        result.created += student_result.created
+        result.updated += student_result.updated
+        result.unchanged += student_result.unchanged
+        result.cancelled += student_result.cancelled
+        result.deleted += student_result.deleted
+        result.skipped += student_result.skipped
+        result.students_synced += student_result.students_synced
+        result.errors.extend(student_result.errors)
+    return result
+
+
 def sync_sponte_free_class_schedule(
     start_date,
     end_date,
     fetcher=None,
     diary_fetcher=None,
     contracts_fetcher=None,
-    status_fetcher=None,
     *,
     allow_past=False,
     include_inactive_students=False,
-    require_rest_status=False,
 ):
     start_date, end_date = _forward_schedule_window(start_date, end_date, allow_past=allow_past)
-    require_rest_status = require_rest_status or _sponte_rest_required_for_schedule_status()
     students_qs = PedagogicalStudent.objects.filter(
         source=SPONTE_SOURCE,
         external_id__gt='',
@@ -1538,35 +1428,6 @@ def sync_sponte_free_class_schedule(
             else:
                 xml_text = fetcher(student.external_id, start_date, end_date)
             records = parse_sponte_free_class_schedule(xml_text, student_external_id=student.external_id)
-            if records:
-                effective_status_fetcher = status_fetcher
-                if effective_status_fetcher is None and _sponte_rest_api_enabled():
-                    effective_status_fetcher = fetch_sponte_free_class_status_records
-                if effective_status_fetcher is not None:
-                    try:
-                        status_records = effective_status_fetcher(student.external_id, start_date, end_date)
-                    except (SponteClientError, SponteAPIError) as exc:
-                        if require_rest_status:
-                            raise SponteClientError(f'Situação da Aula via Sponte REST: {exc}') from exc
-                        result.errors.append(f'{student.name}: Situação da Aula via Sponte REST indisponível: {exc}')
-                    else:
-                        records = _overlay_sponte_rest_statuses(records, status_records)
-                        if require_rest_status:
-                            missing_status_ids = [
-                                record.get('free_class_id') or '?'
-                                for record in records
-                                if record.get('lesson_status_source') != 'rest_aulaslivres'
-                            ]
-                            if missing_status_ids:
-                                sample = ', '.join(missing_status_ids[:5])
-                                raise SponteClientError(
-                                    'Sponte REST não devolveu Situação da Aula para '
-                                    f'{len(missing_status_ids)} aula(s) da agenda. AulaLivreID: {sample}.'
-                                )
-                elif require_rest_status:
-                    raise SponteClientError(
-                        'SPONTE_REST_API_ENABLED precisa estar True para usar a Situação da Aula oficial do Sponte.'
-                    )
             if records and (diary_fetcher is not None or fetcher is None):
                 contracts = []
                 if contracts_fetcher is not None or fetcher is None:

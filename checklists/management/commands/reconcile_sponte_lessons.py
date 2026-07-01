@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from checklists.sponte import sync_sponte_free_class_schedule
+from checklists.sponte import reconcile_sponte_free_class_report_xml, sync_sponte_free_class_schedule
 
 
 def _parse_date(value):
@@ -27,7 +28,7 @@ def _month_chunks(start_date, end_date):
 
 
 class Command(BaseCommand):
-    help = 'Reconcilia aulas livres do Sponte no Checklist, usando o Sponte como fonte de verdade.'
+    help = 'Reconcilia aulas livres do Sponte no Checklist, usando SOAP e opcionalmente o XML do relatório Aulas Livres.'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -41,11 +42,12 @@ class Command(BaseCommand):
             help='Data final no formato AAAA-MM-DD. Padrão: hoje.',
         )
         parser.add_argument(
-            '--allow-soap-status-fallback',
-            action='store_false',
-            dest='require_rest_status',
-            default=True,
-            help='Permite reconciliar mesmo sem Situação da Aula vinda da API REST /api/v1/aulaslivres.',
+            '--report-xml',
+            default='',
+            help=(
+                'Caminho para o XML exportado do relatório Sponte "Aulas Livres". '
+                'Use relatório com Situação da Aula = Todas e período completo a reconciliar.'
+            ),
         )
 
     def handle(self, *args, **options):
@@ -53,6 +55,23 @@ class Command(BaseCommand):
         end_date = _parse_date(options['end_date']) if options['end_date'] else timezone.localdate()
         if start_date > end_date:
             raise CommandError('A data inicial não pode ser maior que a data final.')
+
+        report_xml_path = (options.get('report_xml') or '').strip()
+        if report_xml_path:
+            xml_text = _read_xml_file(report_xml_path)
+            self.stdout.write(
+                f'Reconciliando pelo XML do relatório Aulas Livres: {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}...'
+            )
+            result = reconcile_sponte_free_class_report_xml(
+                xml_text,
+                start_date=start_date,
+                end_date=end_date,
+                allow_past=True,
+            )
+            self._print_result(result)
+            if result.errors:
+                raise CommandError('Reconciliação pelo XML concluída com erro(s).')
+            return
 
         totals = {
             'created': 0,
@@ -72,7 +91,6 @@ class Command(BaseCommand):
                 chunk_end,
                 allow_past=True,
                 include_inactive_students=True,
-                require_rest_status=options['require_rest_status'],
             )
             totals['created'] += result.created
             totals['updated'] += result.updated
@@ -95,10 +113,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(f'  - ... mais {len(result.errors) - 10} erro(s).'))
 
         if totals['errors']:
-            raise CommandError(
-                'Reconciliação concluída com erro(s). Corrija a configuração REST do Sponte ou rode '
-                'com --allow-soap-status-fallback apenas para diagnóstico.'
-            )
+            raise CommandError('Reconciliação SOAP concluída com erro(s).')
 
         self.stdout.write(self.style.SUCCESS(
             'Reconciliação concluída: '
@@ -107,3 +122,29 @@ class Command(BaseCommand):
             f'cancelados={totals["cancelled"]}, ignorados={totals["skipped"]}, '
             f'alunos={totals["students_synced"]}, erros={totals["errors"]}.'
         ))
+
+    def _print_result(self, result):
+        self.stdout.write(
+            '  '
+            f'criados={result.created}, atualizados={result.updated}, '
+            f'inalterados={result.unchanged}, removidos={result.deleted}, '
+            f'cancelados={result.cancelled}, ignorados={result.skipped}, '
+            f'alunos={result.students_synced}, erros={len(result.errors)}'
+        )
+        for error in result.errors[:10]:
+            self.stdout.write(self.style.WARNING(f'  - {error}'))
+        if len(result.errors) > 10:
+            self.stdout.write(self.style.WARNING(f'  - ... mais {len(result.errors) - 10} erro(s).'))
+
+
+def _read_xml_file(path):
+    xml_path = Path(path)
+    if not xml_path.exists():
+        raise CommandError(f'Arquivo XML não encontrado: {path}')
+    raw = xml_path.read_bytes()
+    for encoding in ('utf-8-sig', 'utf-8', 'latin1'):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    raise CommandError(f'Não foi possível ler o XML: {path}')
