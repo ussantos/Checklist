@@ -84,6 +84,30 @@
   <span class="filter-summary">{{ period_start|date:"d/m/Y" }}{% if period_end != period_start %} a {{ period_end|date:"d/m/Y" }}{% endif %}</span>
 </form>
 
+{% if sponte_xml_form and sponte_xml_import_url and not commercial_mode and not trial_only %}
+<section class="panel sponte-xml-import">
+  <div>
+    <h2>Corrigir situações pelo XML do Sponte</h2>
+    <p class="muted">Use o relatório Aulas Livres exportado em XML com Situação da Aula = Todas.</p>
+  </div>
+  <form method="post" action="{{ sponte_xml_import_url }}" enctype="multipart/form-data" class="sponte-xml-import-form">
+    {% csrf_token %}
+    <input type="hidden" name="data" value="{{ target_date|date:'Y-m-d' }}">
+    <input type="hidden" name="periodo" value="{{ selected.period }}">
+    <label>Data inicial
+      <input class="input" type="date" name="start_date" value="{{ period_start|date:'Y-m-d' }}" required>
+    </label>
+    <label>Data final
+      <input class="input" type="date" name="end_date" value="{{ period_end|date:'Y-m-d' }}" required>
+    </label>
+    <label>XML do Sponte
+      <input class="input" type="file" name="report_xml" accept=".xml,text/xml,application/xml" required>
+    </label>
+    <button class="btn primary" type="submit">Importar XML</button>
+  </form>
+</section>
+{% endif %}
+
 <section class="lesson-calendar" aria-label="Calendário de aulas">
   {% if selected.period != "hoje" %}
     <div class="lesson-calendar-weekdays">

@@ -50,13 +50,21 @@ O XML usa códigos de situação mapeados para as nomenclaturas do Sponte:
 - `2`: `Falta`;
 - `3`: `Cancelada`.
 
-Para corrigir aulas já importadas usando o XML do relatório:
+Para auditar aulas já importadas usando o XML do relatório, sem alterar o banco:
+
+```bash
+docker compose exec web python manage.py reconcile_sponte_lessons --start-date 2025-11-01 --end-date 2026-06-30 --report-xml /app/tmp/aulas-livres.xml --audit-only
+```
+
+Para aplicar a correção:
 
 ```bash
 docker compose exec web python manage.py reconcile_sponte_lessons --start-date 2025-11-01 --end-date 2026-06-30 --report-xml /app/tmp/aulas-livres.xml
 ```
 
-O comando usa o XML como fonte de verdade para o período informado. Aulas que existem no banco, mas não aparecem no relatório daquele aluno/período, são removidas ou canceladas conforme a regra de preservação local.
+Também é possível aplicar a correção pela tela **Gestão Pedagógica > Agenda de Aulas** ou pela **Agenda do Instrutor**, no bloco **Corrigir situações pelo XML do Sponte**. Informe o período do relatório, envie o XML exportado e confirme a importação.
+
+O comando e a tela usam o XML como fonte de verdade para o período informado. Aulas que existem no banco, mas não aparecem no relatório daquele aluno/período, são removidas ou canceladas conforme a regra de preservação local. O modo `--audit-only` calcula o mesmo impacto dentro de uma transação com rollback.
 
 ## Dados vindos da Sponte
 
@@ -102,6 +110,8 @@ Esses campos não devem ser persistidos no Checklist nem aparecer em logs.
 ## Cache e contingência
 
 As chamadas SOAP passam por `checklists.sponte_client.SponteSOAPClient`.
+
+O endpoint `GetSalas` exige o payload completo definido no WSDL (`nSalaID`, `sSigla`, `sDescricao`, `nAtivo` e `sParametrosBusca`), mesmo quando os filtros ficam vazios. Não use somente `sParametrosBusca` nessa chamada.
 
 O cache é feito por tipo de consulta e parâmetros. O TTL é controlado por `SPONTE_API_CACHE_TTL_MINUTES`.
 

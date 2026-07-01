@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 from django.utils import timezone
 
 from checklists.sponte import reconcile_sponte_free_class_report_xml, sync_sponte_free_class_schedule
@@ -49,6 +50,11 @@ class Command(BaseCommand):
                 'Use relatório com Situação da Aula = Todas e período completo a reconciliar.'
             ),
         )
+        parser.add_argument(
+            '--audit-only',
+            action='store_true',
+            help='Simula a reconciliação e mostra o impacto, mas desfaz qualquer alteração no banco.',
+        )
 
     def handle(self, *args, **options):
         start_date = _parse_date(options['start_date'])
@@ -57,20 +63,26 @@ class Command(BaseCommand):
             raise CommandError('A data inicial não pode ser maior que a data final.')
 
         report_xml_path = (options.get('report_xml') or '').strip()
+        audit_only = bool(options.get('audit_only'))
         if report_xml_path:
             xml_text = _read_xml_file(report_xml_path)
+            action = 'Auditando' if audit_only else 'Reconciliando'
             self.stdout.write(
-                f'Reconciliando pelo XML do relatório Aulas Livres: {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}...'
+                f'{action} pelo XML do relatório Aulas Livres: {start_date:%d/%m/%Y} a {end_date:%d/%m/%Y}...'
             )
-            result = reconcile_sponte_free_class_report_xml(
+            result = self._run_xml_reconciliation(
                 xml_text,
                 start_date=start_date,
                 end_date=end_date,
-                allow_past=True,
+                audit_only=audit_only,
             )
             self._print_result(result)
+            if audit_only:
+                self.stdout.write(self.style.WARNING(
+                    'Auditoria concluída sem alterar o banco. Rode novamente sem --audit-only para aplicar.'
+                ))
             if result.errors:
-                raise CommandError('Reconciliação pelo XML concluída com erro(s).')
+                raise CommandError('Auditoria pelo XML concluída com erro(s).' if audit_only else 'Reconciliação pelo XML concluída com erro(s).')
             return
 
         totals = {
@@ -84,6 +96,46 @@ class Command(BaseCommand):
             'errors': 0,
         }
 
+        if audit_only:
+            with transaction.atomic():
+                self._run_soap_reconciliation(start_date, end_date, totals)
+                transaction.set_rollback(True)
+            self.stdout.write(self.style.WARNING(
+                'Auditoria concluída sem alterar o banco. Rode novamente sem --audit-only para aplicar.'
+            ))
+        else:
+            self._run_soap_reconciliation(start_date, end_date, totals)
+
+        if totals['errors']:
+            raise CommandError('Reconciliação SOAP concluída com erro(s).')
+
+        self.stdout.write(self.style.SUCCESS(
+            ('Auditoria concluída: ' if audit_only else 'Reconciliação concluída: ') +
+            f'criados={totals["created"]}, atualizados={totals["updated"]}, '
+            f'inalterados={totals["unchanged"]}, removidos={totals["deleted"]}, '
+            f'cancelados={totals["cancelled"]}, ignorados={totals["skipped"]}, '
+            f'alunos={totals["students_synced"]}, erros={totals["errors"]}.'
+        ))
+
+    def _run_xml_reconciliation(self, xml_text, *, start_date, end_date, audit_only):
+        if not audit_only:
+            return reconcile_sponte_free_class_report_xml(
+                xml_text,
+                start_date=start_date,
+                end_date=end_date,
+                allow_past=True,
+            )
+        with transaction.atomic():
+            result = reconcile_sponte_free_class_report_xml(
+                xml_text,
+                start_date=start_date,
+                end_date=end_date,
+                allow_past=True,
+            )
+            transaction.set_rollback(True)
+        return result
+
+    def _run_soap_reconciliation(self, start_date, end_date, totals):
         for chunk_start, chunk_end in _month_chunks(start_date, end_date):
             self.stdout.write(f'Reconciliando {chunk_start:%d/%m/%Y} a {chunk_end:%d/%m/%Y}...')
             result = sync_sponte_free_class_schedule(
@@ -100,28 +152,7 @@ class Command(BaseCommand):
             totals['skipped'] += result.skipped
             totals['students_synced'] += result.students_synced
             totals['errors'] += len(result.errors)
-            self.stdout.write(
-                '  '
-                f'criados={result.created}, atualizados={result.updated}, '
-                f'inalterados={result.unchanged}, removidos={result.deleted}, '
-                f'cancelados={result.cancelled}, ignorados={result.skipped}, '
-                f'alunos={result.students_synced}, erros={len(result.errors)}'
-            )
-            for error in result.errors[:10]:
-                self.stdout.write(self.style.WARNING(f'  - {error}'))
-            if len(result.errors) > 10:
-                self.stdout.write(self.style.WARNING(f'  - ... mais {len(result.errors) - 10} erro(s).'))
-
-        if totals['errors']:
-            raise CommandError('Reconciliação SOAP concluída com erro(s).')
-
-        self.stdout.write(self.style.SUCCESS(
-            'Reconciliação concluída: '
-            f'criados={totals["created"]}, atualizados={totals["updated"]}, '
-            f'inalterados={totals["unchanged"]}, removidos={totals["deleted"]}, '
-            f'cancelados={totals["cancelled"]}, ignorados={totals["skipped"]}, '
-            f'alunos={totals["students_synced"]}, erros={totals["errors"]}.'
-        ))
+            self._print_result(result)
 
     def _print_result(self, result):
         self.stdout.write(

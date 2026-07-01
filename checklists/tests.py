@@ -1,11 +1,15 @@
 from decimal import Decimal
 from datetime import date, timedelta, time
-from io import BytesIO
+from io import BytesIO, StringIO
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.cache import cache
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -25,7 +29,7 @@ from .sponte import (
     reconcile_sponte_free_class_report_xml, SponteScheduleSyncResult, sync_sponte_free_class_schedule,
 )
 from .sponte_client import (
-    SponteAPIDisabledError, SponteAPIRateLimitError, SponteSOAPClient, normalize_students,
+    SponteAPIDisabledError, SponteAPIRateLimitError, SponteSOAPClient, normalize_rooms, normalize_students,
 )
 
 
@@ -1115,6 +1119,17 @@ class SponteSOAPClientSafetyTests(TestCase):
     </ArrayOfWsCurso>
     '''
 
+    ROOMS_XML = '''<?xml version="1.0" encoding="utf-8"?>
+    <ArrayOfWsSalas xmlns="http://api.sponteeducacional.net.br/">
+      <wsSalas>
+        <RetornoOperacao>01 - Operação Realizada com Sucesso.</RetornoOperacao>
+        <SalaID>7</SalaID>
+        <Descricao>Sala Maker</Descricao>
+        <Ativo>1</Ativo>
+      </wsSalas>
+    </ArrayOfWsSalas>
+    '''
+
     def setUp(self):
         cache.clear()
 
@@ -1160,6 +1175,31 @@ class SponteSOAPClientSafetyTests(TestCase):
         self.assertTrue(cached_after_refresh.from_cache)
         self.assertIn('FIRSTBOT 2.0', refreshed.xml_text)
         self.assertIn('FIRSTBOT 2.0', cached_after_refresh.xml_text)
+
+    def test_get_rooms_sends_full_wsdl_payload_expected_by_sponte(self):
+        requests = []
+
+        def fetcher(request, _timeout):
+            requests.append(request)
+            return self.ROOMS_XML
+
+        client = SponteSOAPClient(fetcher=fetcher)
+        response = client.get_rooms(active='1')
+
+        payload = requests[0].data.decode('utf-8')
+        self.assertIn('nSalaID=', payload)
+        self.assertIn('sSigla=', payload)
+        self.assertIn('sDescricao=', payload)
+        self.assertIn('nAtivo=1', payload)
+        self.assertIn('sParametrosBusca=', payload)
+        self.assertEqual(response.return_code, '01')
+
+    def test_normalize_rooms_accepts_plural_sponte_element_name(self):
+        snapshots = normalize_rooms(self.ROOMS_XML)
+
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual(snapshots[0].external_id, '7')
+        self.assertEqual(snapshots[0].name, 'Sala Maker')
 
     def test_timeout_uses_last_valid_cache_when_available(self):
         client = SponteSOAPClient(fetcher=lambda _request, _timeout: self.COURSES_XML)
@@ -1680,6 +1720,36 @@ class SponteFreeClassScheduleSyncTests(TestCase):
         self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
         self.assertIn('Situação no Sponte: Cancelada', lesson.notes)
 
+    def test_reconcile_command_audit_only_reports_without_changing_database(self):
+        records = parse_sponte_free_class_schedule(self.SAMPLE_XML, student_external_id='123')
+        import_sponte_free_class_records(
+            self.student,
+            records,
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 31),
+        )
+        with NamedTemporaryFile('w', suffix='.xml', delete=False, encoding='utf-8') as temp_file:
+            temp_file.write(self.REPORT_XML)
+            xml_path = temp_file.name
+
+        output = StringIO()
+        try:
+            call_command(
+                'reconcile_sponte_lessons',
+                '--start-date', '2026-07-01',
+                '--end-date', '2026-07-31',
+                '--report-xml', xml_path,
+                '--audit-only',
+                stdout=output,
+            )
+        finally:
+            Path(xml_path).unlink(missing_ok=True)
+
+        lesson = Lesson.objects.get()
+        self.assertEqual(lesson.status, Lesson.STATUS_NOT_GIVEN)
+        self.assertIn('atualizados=1', output.getvalue())
+        self.assertIn('sem alterar o banco', output.getvalue())
+
     def test_sync_prefers_contract_module_when_fetching_diary_status(self):
         diary_calls = []
 
@@ -1860,6 +1930,19 @@ class LessonAgendaViewTests(TestCase):
             email='agenda-admin@example.com',
             password='testpass123',
         )
+        self.instructor_position = Position.objects.create(
+            name='Instrutor de Cursos Livres',
+            code='instrutor-aula-livre',
+            active=True,
+        )
+        self.instructor = User.objects.create_user(username='agenda-instructor', password='testpass123')
+        UserProfile.objects.create(
+            user=self.instructor,
+            display_name='Instrutor Agenda',
+            system_role=UserProfile.ROLE_OPERATOR,
+            position=self.instructor_position,
+            active=True,
+        )
         self.course = Course.objects.create(name='Techbot', value=Decimal('3690.00'), kit_quantity=4, active=True)
         self.room = Room.objects.create(name='Sala Maker', capacity=4, active=True)
         self.student = PedagogicalStudent.objects.create(
@@ -1908,6 +1991,123 @@ class LessonAgendaViewTests(TestCase):
         self.assertEqual(response.context['period_end'], date(2026, 7, 12))
         self.assertEqual(len(response.context['calendar_weeks']), 1)
         self.assertEqual(response.context['calendar_weeks'][0][0]['date'], date(2026, 7, 6))
+
+    def test_instructor_agenda_shows_sponte_xml_import(self):
+        self.client.force_login(self.instructor)
+
+        response = self.client.get(reverse('instructor_agenda'), {
+            'data': '2026-07-08',
+            'periodo': 'semana',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Corrigir situações pelo XML do Sponte')
+        self.assertContains(response, reverse('instructor_lessons_import_sponte_xml'))
+
+    def test_admin_can_import_sponte_report_xml_to_update_lesson_status(self):
+        self.student.source = 'Sponte'
+        self.student.external_id = '123'
+        self.student.save(update_fields=['source', 'external_id', 'updated_at'])
+        lesson = Lesson.objects.create(
+            lesson_type=Lesson.TYPE_REGULAR,
+            student=self.student,
+            student_name_snapshot=self.student.name,
+            responsible_name_snapshot=self.student.responsible_name,
+            course=self.course,
+            room=self.room,
+            date=date(2026, 7, 7),
+            start_time=time(14, 0),
+            end_time=time(16, 0),
+            status=Lesson.STATUS_NOT_GIVEN,
+            source=Lesson.SOURCE_SPONTE,
+            external_id='aula_livre:123:old:2026-07-07',
+        )
+        report_xml = '''<?xml version="1.0" encoding="utf-8"?>
+        <NewDataSet>
+          <Table>
+            <AlunoID>123</AlunoID>
+            <Aluno>Aluno Agenda</Aluno>
+            <ContratoAulaLivreID>66</ContratoAulaLivreID>
+            <ContratoAulaLivreDisciplinaID>88</ContratoAulaLivreDisciplinaID>
+            <NumeroContrato>55/1</NumeroContrato>
+            <Data>2026-07-07T00:00:00-03:00</Data>
+            <HoraInicial>1900-01-01T14:00:00-03:00</HoraInicial>
+            <HoraFinal>1900-01-01T16:00:00-03:00</HoraFinal>
+            <Situacao>3</Situacao>
+            <Curso>Techbot</Curso>
+            <Disciplina>Robótica</Disciplina>
+            <Professor>Professor Sponte</Professor>
+            <Sala>Sala Maker</Sala>
+          </Table>
+        </NewDataSet>
+        '''
+        self.client.force_login(self.admin)
+
+        response = self.client.post(reverse('pedagogical_lessons_import_sponte_xml'), {
+            'data': '2026-07-07',
+            'periodo': 'semana',
+            'start_date': '2026-07-01',
+            'end_date': '2026-07-31',
+            'report_xml': SimpleUploadedFile('aulas-livres.xml', report_xml.encode('utf-8'), content_type='application/xml'),
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, f"{reverse('pedagogical_class_schedule')}?data=2026-07-07&periodo=semana")
+        lesson.refresh_from_db()
+        self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
+        self.assertIn('Situação no Sponte: Cancelada', lesson.notes)
+
+    def test_instructor_can_import_sponte_report_xml_from_agenda(self):
+        self.student.source = 'Sponte'
+        self.student.external_id = '456'
+        self.student.save(update_fields=['source', 'external_id', 'updated_at'])
+        lesson = Lesson.objects.create(
+            lesson_type=Lesson.TYPE_REGULAR,
+            student=self.student,
+            student_name_snapshot=self.student.name,
+            responsible_name_snapshot=self.student.responsible_name,
+            course=self.course,
+            room=self.room,
+            date=date(2026, 7, 8),
+            start_time=time(15, 0),
+            end_time=time(16, 59),
+            status=Lesson.STATUS_NOT_GIVEN,
+            source=Lesson.SOURCE_SPONTE,
+            external_id='aula_livre:456:old:2026-07-08',
+        )
+        report_xml = '''<?xml version="1.0" encoding="utf-8"?>
+        <NewDataSet>
+          <Table>
+            <AlunoID>456</AlunoID>
+            <Aluno>Aluno Agenda</Aluno>
+            <ContratoAulaLivreID>77</ContratoAulaLivreID>
+            <ContratoAulaLivreDisciplinaID>99</ContratoAulaLivreDisciplinaID>
+            <NumeroContrato>66/1</NumeroContrato>
+            <Data>2026-07-08T00:00:00-03:00</Data>
+            <HoraInicial>1900-01-01T15:00:00-03:00</HoraInicial>
+            <HoraFinal>1900-01-01T16:59:00-03:00</HoraFinal>
+            <Situacao>3</Situacao>
+            <Curso>Techbot</Curso>
+            <Disciplina>Robótica</Disciplina>
+            <Professor>Professor Sponte</Professor>
+            <Sala>Sala Maker</Sala>
+          </Table>
+        </NewDataSet>
+        '''
+        self.client.force_login(self.instructor)
+
+        response = self.client.post(reverse('instructor_lessons_import_sponte_xml'), {
+            'data': '2026-07-08',
+            'periodo': 'semana',
+            'start_date': '2026-07-01',
+            'end_date': '2026-07-31',
+            'report_xml': SimpleUploadedFile('aulas-livres.xml', report_xml.encode('utf-8'), content_type='application/xml'),
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, f"{reverse('instructor_agenda')}?data=2026-07-08&periodo=semana")
+        lesson.refresh_from_db()
+        self.assertEqual(lesson.status, Lesson.STATUS_CANCELLED)
 
 
 class CommercialOpportunityInterestFormTests(TestCase):

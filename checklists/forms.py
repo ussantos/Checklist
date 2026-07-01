@@ -2157,6 +2157,39 @@ class BackupUploadForm(AdminPasswordConfirmationForm):
         return uploaded
 
 
+class SponteLessonReportXMLUploadForm(forms.Form):
+    start_date = forms.DateField(
+        label='Data inicial',
+        widget=forms.DateInput(attrs={'class': 'input', 'type': 'date'}),
+    )
+    end_date = forms.DateField(
+        label='Data final',
+        widget=forms.DateInput(attrs={'class': 'input', 'type': 'date'}),
+    )
+    report_xml = forms.FileField(
+        label='XML do relatório Aulas Livres',
+        widget=forms.ClearableFileInput(attrs={'class': 'input', 'accept': '.xml,text/xml,application/xml'}),
+        help_text='Exporte no Sponte com Situação da Aula = Todas.',
+    )
+
+    def clean_report_xml(self):
+        uploaded = self.cleaned_data['report_xml']
+        if not uploaded.name.lower().endswith('.xml'):
+            raise forms.ValidationError('Envie o arquivo XML exportado do relatório Aulas Livres do Sponte.')
+        max_bytes = 20 * 1024 * 1024
+        if uploaded.size > max_bytes:
+            raise forms.ValidationError('Arquivo XML maior que 20 MB.')
+        return uploaded
+
+    def clean(self):
+        cleaned = super().clean()
+        start_date = cleaned.get('start_date')
+        end_date = cleaned.get('end_date')
+        if start_date and end_date and start_date > end_date:
+            raise forms.ValidationError('A data inicial deve ser menor ou igual à data final.')
+        return cleaned
+
+
 # Aliases mantidos para compatibilidade com as views/URLs antigas.
 EmployeeCreateForm = UserCreateForm
 EmployeeUpdateForm = UserUpdateForm

@@ -172,6 +172,14 @@ def _iter_xml_items(xml_text, tag_name):
             yield item
 
 
+def _iter_xml_items_any(xml_text, tag_names):
+    wanted = set(tag_names)
+    root = ET.fromstring(xml_text)
+    for item in root.iter():
+        if _local_name(item.tag) in wanted:
+            yield item
+
+
 def _xml_metadata(xml_text):
     try:
         root = ET.fromstring(xml_text)
@@ -240,7 +248,7 @@ def normalize_courses(xml_text):
 
 def normalize_rooms(xml_text):
     snapshots = []
-    for item in _iter_xml_items(xml_text, 'wsSala'):
+    for item in _iter_xml_items_any(xml_text, ('wsSala', 'wsSalas')):
         fields, discarded = _children_text_map(item)
         snapshots.append(RoomSnapshot(
             external_id=_first(fields, 'SalaID', 'IDSala', 'CodigoSala', 'Codigo'),
@@ -346,8 +354,14 @@ class SponteSOAPClient:
     def get_courses(self, search_params='Situacao=1'):
         return self.call('GetCursos', {'sParametrosBusca': search_params})
 
-    def get_rooms(self, search_params=''):
-        return self.call('GetSalas', {'sParametrosBusca': search_params})
+    def get_rooms(self, search_params='', *, room_id='', abbreviation='', description='', active=''):
+        return self.call('GetSalas', {
+            'nSalaID': room_id,
+            'sSigla': abbreviation,
+            'sDescricao': description,
+            'nAtivo': active,
+            'sParametrosBusca': search_params,
+        })
 
     def get_class_schedules(self, student_id, start_date, end_date, class_id='', course_id=''):
         return self.call('GetAgendaAluno', {

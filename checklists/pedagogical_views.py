@@ -17,7 +17,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from .audit import changed_values, log_activity, snapshot_instance
 from .forms import (
     CourseForm, LessonFeedbackForm, LessonForm, PedagogicalStudentForm, RoomForm, SchoolHolidayForm,
-    TimeSlotForm,
+    SponteLessonReportXMLUploadForm, TimeSlotForm,
 )
 from .models import (
     CommercialOpportunity, Course, Lesson, LessonFeedback, PedagogicalReportTask,
@@ -27,7 +27,7 @@ from .services import (
     create_pedagogical_report_task_for_feedback,
     create_qualified_sale_opportunity_for_lesson_feedback, get_user_position, is_admin_user,
 )
-from .sponte import default_sponte_schedule_window
+from .sponte import SponteClientError, default_sponte_schedule_window, reconcile_sponte_free_class_report_xml
 from .sponte_jobs import enqueue_sponte_sync_job
 
 
@@ -1010,6 +1010,10 @@ def instructor_agenda(request):
     target_date = _parse_date(request.GET.get('data'))
     period = _agenda_period(request.GET.get('periodo', 'semana'))
     period_start, period_end = _agenda_period_bounds(period, target_date)
+    sponte_xml_form = SponteLessonReportXMLUploadForm(initial={
+        'start_date': period_start,
+        'end_date': period_end,
+    })
     lessons = _required_instructor_lesson_queryset().filter(date__gte=period_start, date__lte=period_end)
     lessons, selected = _apply_lesson_filters(request, lessons)
     lessons = _attach_lesson_display_state(list(lessons))
@@ -1030,6 +1034,8 @@ def instructor_agenda(request):
         'status_choices': Lesson.STATUS_CHOICES,
         'trial_only': False,
         'instructor_mode': True,
+        'sponte_xml_form': sponte_xml_form,
+        'sponte_xml_import_url': reverse('instructor_lessons_import_sponte_xml'),
         'is_admin': False,
     })
 
@@ -1089,6 +1095,10 @@ def lesson_agenda(request):
     target_date = _parse_date(request.GET.get('data'))
     period = _agenda_period(request.GET.get('periodo', 'hoje'))
     period_start, period_end = _agenda_period_bounds(period, target_date)
+    sponte_xml_form = SponteLessonReportXMLUploadForm(initial={
+        'start_date': period_start,
+        'end_date': period_end,
+    })
     lessons = _lesson_queryset().filter(date__gte=period_start, date__lte=period_end)
     lessons, selected = _apply_lesson_filters(request, lessons)
     lessons = _attach_lesson_display_state(list(lessons))
@@ -1108,6 +1118,8 @@ def lesson_agenda(request):
         'lesson_type_choices': Lesson.TYPE_CHOICES,
         'status_choices': Lesson.STATUS_CHOICES,
         'trial_only': False,
+        'sponte_xml_form': sponte_xml_form,
+        'sponte_xml_import_url': reverse('pedagogical_lessons_import_sponte_xml'),
         'is_admin': True,
     })
 
@@ -1128,6 +1140,21 @@ def _sync_lessons_from_sponte(request, *, redirect_view_name, default_period):
     return redirect(redirect_to)
 
 
+def _sponte_report_redirect(request, *, redirect_view_name, fallback_period='hoje'):
+    target_date = _parse_date(request.POST.get('data'))
+    period = _agenda_period(request.POST.get('periodo', fallback_period))
+    return f'{reverse(redirect_view_name)}?data={target_date.isoformat()}&periodo={period}'
+
+
+def _sponte_xml_result_message(result):
+    return (
+        'XML do Sponte processado. '
+        f'Criadas: {result.created}; atualizadas: {result.updated}; '
+        f'sem alteração: {result.unchanged}; removidas: {result.deleted}; '
+        f'canceladas por ausência no XML: {result.cancelled}; ignoradas: {result.skipped}.'
+    )
+
+
 @require_POST
 @user_passes_test(_admin_check)
 def lessons_sync_sponte(request):
@@ -1135,6 +1162,65 @@ def lessons_sync_sponte(request):
         request,
         redirect_view_name='pedagogical_class_schedule',
         default_period='hoje',
+    )
+
+
+def _import_lessons_from_sponte_xml(request, *, redirect_view_name, fallback_period):
+    redirect_to = _sponte_report_redirect(
+        request,
+        redirect_view_name=redirect_view_name,
+        fallback_period=fallback_period,
+    )
+    form = SponteLessonReportXMLUploadForm(request.POST, request.FILES)
+    if not form.is_valid():
+        for error in form.non_field_errors():
+            messages.error(request, error)
+        for field_name, field_errors in form.errors.items():
+            if field_name == '__all__':
+                continue
+            field = form.fields.get(field_name)
+            label = field.label if field else field_name
+            for error in field_errors:
+                messages.error(request, f'{label}: {error}')
+        return redirect(redirect_to)
+
+    uploaded_xml = form.cleaned_data['report_xml']
+    try:
+        result = reconcile_sponte_free_class_report_xml(
+            uploaded_xml.read(),
+            start_date=form.cleaned_data['start_date'],
+            end_date=form.cleaned_data['end_date'],
+            allow_past=True,
+        )
+    except SponteClientError as exc:
+        messages.error(request, str(exc))
+        return redirect(redirect_to)
+
+    messages.success(request, _sponte_xml_result_message(result))
+    for warning in result.errors[:5]:
+        messages.warning(request, warning)
+    if len(result.errors) > 5:
+        messages.warning(request, f'Mais {len(result.errors) - 5} aviso(s) omitidos. Verifique alunos importados do Sponte.')
+    return redirect(redirect_to)
+
+
+@require_POST
+@user_passes_test(_admin_check)
+def lessons_import_sponte_xml(request):
+    return _import_lessons_from_sponte_xml(
+        request,
+        redirect_view_name='pedagogical_class_schedule',
+        fallback_period='hoje',
+    )
+
+
+@require_POST
+@user_passes_test(_instructor_check)
+def instructor_lessons_import_sponte_xml(request):
+    return _import_lessons_from_sponte_xml(
+        request,
+        redirect_view_name='instructor_agenda',
+        fallback_period='semana',
     )
 
 
