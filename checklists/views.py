@@ -35,6 +35,7 @@ from .activity_import import (
 )
 from .grafana_sync import sync_all_metric_dashboards, sync_metric_area
 from .metric_import import import_metrics_xlsx
+from .metric_records import refresh_commercial_metric_records
 from .nps_import import import_nps_xlsx
 from .services import (
     absence_for_user_on_date, create_due_occurrences, create_occurrences_for_positions,
@@ -209,6 +210,16 @@ def _notify_grafana_sync(request, result):
         messages.warning(request, f'{result.message}: {result.error}')
     else:
         messages.warning(request, result.message)
+
+
+def _mark_metric_areas_pending(*areas):
+    clean_areas = [area for area in areas if area]
+    if not clean_areas:
+        return
+    MetricType.objects.filter(area__in=clean_areas).update(
+        grafana_sync_status=MetricType.GRAFANA_PENDING,
+        grafana_last_error='Alteração pendente. Use "Atualizar dados e Grafana" para publicar no Grafana.',
+    )
 
 
 @user_passes_test(_admin_check)
@@ -1287,7 +1298,8 @@ def metric_type_create(request):
                 new_values=snapshot_instance(metric, METRIC_TYPE_AUDIT_FIELDS),
             )
             messages.success(request, 'Indicador criado.')
-            _notify_grafana_sync(request, sync_metric_area(metric.area))
+            _mark_metric_areas_pending(metric.area)
+            messages.info(request, 'Atualize dados e Grafana quando terminar os ajustes de metas.')
             return redirect('metric_types_list')
     else:
         form = MetricTypeForm()
@@ -1334,9 +1346,8 @@ def metric_type_edit(request, metric_id):
                 new_values=new_values,
             )
             messages.success(request, 'Indicador atualizado.')
-            if previous_area != metric.area:
-                _notify_grafana_sync(request, sync_metric_area(previous_area))
-            _notify_grafana_sync(request, sync_metric_area(metric.area))
+            _mark_metric_areas_pending(previous_area, metric.area)
+            messages.info(request, 'Atualize dados e Grafana quando terminar os ajustes de metas.')
             return redirect('metric_types_list')
     else:
         form = MetricTypeForm(instance=metric)
@@ -1376,7 +1387,8 @@ def metric_type_toggle(request, metric_id):
         new_values=new_values,
     )
     messages.success(request, 'Indicador ativado.' if metric.active else 'Indicador desativado.')
-    _notify_grafana_sync(request, sync_metric_area(metric.area))
+    _mark_metric_areas_pending(metric.area)
+    messages.info(request, 'Atualize dados e Grafana quando terminar os ajustes de metas.')
     return redirect('metric_types_list')
 
 
@@ -1398,7 +1410,8 @@ def metric_type_delete(request, metric_id):
             previous_values=previous_values,
         )
         messages.success(request, 'Indicador excluído.')
-        _notify_grafana_sync(request, sync_metric_area(previous_area))
+        _mark_metric_areas_pending(previous_area)
+        messages.info(request, 'Atualize dados e Grafana quando terminar os ajustes de metas.')
         return redirect('metric_types_list')
 
     return render(request, 'checklists/metric_type_confirm_delete.html', {
@@ -1444,7 +1457,7 @@ def metric_types_import_xlsx(request):
         details=(
             f'Importação XLSX: {result.created} criados, {result.updated} atualizados, '
             f'{result.skipped} ignorados, {result.deleted_metrics} indicadores removidos, '
-            f'{result.deleted_records} registros removidos. '
+            f'{result.deleted_records} registros removidos, {result.refreshed_records} registros recalculados. '
             f'Áreas sincronizadas: {", ".join(result.synced_areas) or "-"}'
         ),
         new_values={
@@ -1453,6 +1466,7 @@ def metric_types_import_xlsx(request):
             'skipped': result.skipped,
             'deleted_metrics': result.deleted_metrics,
             'deleted_records': result.deleted_records,
+            'refreshed_records': result.refreshed_records,
             'cleared_dashboards': result.cleared_dashboards,
             'synced_areas': result.synced_areas,
             'errors': result.errors[:20],
@@ -1536,6 +1550,7 @@ def nps_dashboard(request):
 def metric_types_sync_grafana(request):
     if request.method != 'POST':
         return redirect('metric_types_list')
+    refresh_result = refresh_commercial_metric_records()
     results = sync_all_metric_dashboards()
     ok_count = sum(1 for item in results if item.ok)
     fail_count = len(results) - ok_count
@@ -1544,17 +1559,21 @@ def metric_types_sync_grafana(request):
         action='Sincronização manual Grafana',
         object_type='MetricType',
         object_label='Metas e Indicadores',
-        details=f'Sincronização manual: {ok_count} dashboards OK, {fail_count} com falha.',
+        details=(
+            f'Sincronização manual: {ok_count} dashboards OK, {fail_count} com falha; '
+            f'{refresh_result.records_created} registros recalculados.'
+        ),
         new_values={
             'ok': ok_count,
             'failed': fail_count,
             'dashboards': [item.dashboard_uid for item in results],
+            'refreshed_records': refresh_result.records_created,
         },
     )
     if fail_count:
-        messages.warning(request, f'Grafana sincronizado parcialmente: {ok_count} OK, {fail_count} com falha.')
+        messages.warning(request, f'Dados recalculados, mas o Grafana sincronizou parcialmente: {ok_count} OK, {fail_count} com falha.')
     else:
-        messages.success(request, f'Grafana sincronizado: {ok_count} dashboard(s) atualizado(s).')
+        messages.success(request, f'Dados recalculados ({refresh_result.records_created} registros) e Grafana sincronizado: {ok_count} dashboard(s).')
     return redirect('metric_types_list')
 
 

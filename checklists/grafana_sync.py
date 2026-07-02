@@ -116,6 +116,15 @@ def _metric_sql(metric, panel_type):
     table = 'checklists_metricrecord'
     position_table = 'checklists_position'
     date_expr = "date_trunc('${periodo:raw}', r.date::timestamp)"
+    if panel_type in {'gauge', 'stat'}:
+        return f"""
+SELECT
+  COALESCE(SUM(r.value), 0)::numeric AS "Realizado"
+FROM {table} r
+WHERE r.metric_id = {metric.id}
+  AND $__timeFilter(r.date::timestamp)
+""".strip()
+
     if panel_type == 'table':
         return f"""
 SELECT
@@ -195,7 +204,7 @@ def _panel(metric, panel_id, x, y):
         'targets': [
             {
                 'datasource': {'type': 'postgres', 'uid': settings.GRAFANA_DATASOURCE_UID},
-                'format': 'table' if panel_type in {'table', 'barchart'} else 'time_series',
+                'format': 'table' if panel_type in {'table', 'barchart', 'gauge', 'stat'} else 'time_series',
                 'rawQuery': True,
                 'rawSql': _metric_sql(metric, panel_type),
                 'refId': 'A',

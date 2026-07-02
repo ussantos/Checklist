@@ -91,7 +91,13 @@
         <td>{{ item.total_responses }}</td>
         <td>{{ item.promoter_percent|floatformat:2 }}%</td>
         <td>{{ item.nps_score|floatformat:2 }}</td>
-        <td>{{ item.imported_by.get_full_name|default:item.imported_by.username|default:"-" }}</td>
+        <td>
+          {% if item.imported_by %}
+            {{ item.imported_by.get_full_name|default:item.imported_by.username }}
+          {% else %}
+            -
+          {% endif %}
+        </td>
       </tr>
       {% empty %}
       <tr><td colspan="6">Nenhuma importação NPS cadastrada.</td></tr>

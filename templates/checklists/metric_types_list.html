@@ -8,7 +8,7 @@
   <div class="row-actions">
     <form method="post" action="{% url 'metric_types_sync_grafana' %}" class="inline-form">
       {% csrf_token %}
-      <button class="btn" type="submit">Sincronizar Grafana</button>
+      <button class="btn" type="submit">Atualizar dados e Grafana</button>
     </form>
     <a class="btn primary" href="{% url 'metric_type_create' %}">Cadastrar meta/indicador</a>
   </div>
@@ -17,8 +17,8 @@
 <section class="panel info-light">
   <strong>Automação do Grafana</strong>
   <p class="muted">
-    Ao criar, alterar, ativar, desativar, excluir ou importar metas, o Checklist atualiza os dashboards do Grafana via API.
-    Nenhum painel deve ser criado manualmente no Grafana.
+    Ao importar metas ou usar o botão de atualização, o Checklist recalcula os registros dos indicadores e publica os dashboards
+    no Grafana via API. Nenhum painel deve ser criado manualmente no Grafana.
   </p>
 </section>
 

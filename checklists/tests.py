@@ -18,6 +18,7 @@ from openpyxl import Workbook, load_workbook
 from .forms import CommercialOpportunityForm, CourseForm, add_months
 from .grafana_sync import build_metric_dashboard, choose_metric_visualization
 from .metric_import import infer_metric_metadata
+from .metric_records import refresh_commercial_metric_records
 from .nps_import import import_nps_xlsx
 from .models import (
     CommercialFunnel, CommercialObjection, CommercialOpportunity, CommercialOpportunityFollowUp,
@@ -100,6 +101,49 @@ class MetricGrafanaRulesTests(TestCase):
         self.assertEqual(dashboard['uid'], 'checklist-metricas-1-contato')
         self.assertEqual(dashboard['panels'][0]['title'], 'Leads por semana')
         self.assertEqual(panel_ids[metric.id], 1)
+
+    def test_refresh_metric_records_materializes_current_week_won_records(self):
+        metric = MetricType.objects.create(
+            code='atendente-comercial-matriculas',
+            name='Qtd; de matriculas por semana/mês',
+            area='5 - Ganha',
+            position=self.position,
+            frequency=MetricType.FREQ_WEEKLY,
+            unit='un',
+            monthly_target=Decimal('9'),
+        )
+        funnel_model = FunnelModel.objects.create(name='Modelo comercial', active=True)
+        funnel = CommercialFunnel.objects.create(name='Qualificados', funnel_model=funnel_model, active=True)
+        stage = FunnelStage.objects.create(code='5-ganha-teste', name='5 - Ganha Teste')
+        opportunity = CommercialOpportunity.objects.create(
+            title='07-2026-0001',
+            commercial_funnel=funnel,
+            stage=stage,
+            contact_name='Responsável',
+            contact_phone='21999990000',
+            next_follow_up_date=timezone.localdate(),
+        )
+        CommercialOpportunityStageEvent.objects.create(
+            opportunity=opportunity,
+            new_stage=stage,
+            new_stage_label='5 - Matricula',
+        )
+
+        refresh_commercial_metric_records()
+
+        record = MetricRecord.objects.get(metric=metric)
+        self.assertLessEqual(record.date, timezone.localdate())
+        self.assertEqual(record.value, Decimal('1.00'))
+
+    @override_settings(ALLOWED_HOSTS=['testserver'])
+    def test_nps_dashboard_renders_import_without_user(self):
+        admin = User.objects.create_superuser(username='admin', password='x')
+        NPSImport.objects.create(source_file='nps.xlsx')
+        self.client.force_login(admin)
+
+        response = self.client.get(reverse('nps_dashboard'))
+
+        self.assertEqual(response.status_code, 200)
 
     def test_simplified_metrics_xlsx_imports_without_optional_columns(self):
         from .metric_import import import_metrics_xlsx

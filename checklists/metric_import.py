@@ -6,6 +6,7 @@ from django.utils.text import slugify
 from openpyxl import load_workbook
 
 from .grafana_sync import clear_metric_dashboards, sync_metric_area
+from .metric_records import refresh_commercial_metric_records
 from .models import MetricRecord, MetricType, Position
 
 
@@ -19,6 +20,7 @@ class MetricImportResult:
     cleared_dashboards: list[str] = field(default_factory=list)
     deleted_metrics: int = 0
     deleted_records: int = 0
+    refreshed_records: int = 0
 
 
 def _decimal_from_text(value):
@@ -200,6 +202,9 @@ def import_metrics_xlsx(path, *, sync_grafana=True, replace_existing=False):
             result.created += 1
         else:
             result.updated += 1
+
+    refresh_result = refresh_commercial_metric_records()
+    result.refreshed_records = refresh_result.records_created
 
     if sync_grafana:
         for area in sorted(touched_areas):
