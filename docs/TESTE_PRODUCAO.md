@@ -2,7 +2,7 @@
 
 Este documento deve ser usado antes de colocar o sistema Checklist em uso oficial na My Robot Barra da Tijuca.
 
-> Aviso: os módulos antigos de Ausências, Checklist do dia, Semana, Indicadores, Atividades e Comercial foram removidos em uma etapa de redesenho. As seções deste roteiro que citam esses módulos são legado e devem ser reescritas antes da homologação dos novos módulos.
+> Aviso: os módulos antigos de Ausências, Checklist do dia, Semana e Atividades operacionais antigas foram removidos em uma etapa de redesenho. As seções deste roteiro que citam rotinas antigas são legado; metas/indicadores e o módulo comercial devem ser testados pelos novos fluxos.
 
 O objetivo é validar instalação, autenticação, cadastro de usuários, cargos, auditoria, backup e restauração.
 

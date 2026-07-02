@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Excluir meta/indicador</h1>
+    <p class="muted">A exclusão remove o indicador do Checklist e atualiza automaticamente o dashboard da área no Grafana.</p>
+  </div>
+  <a class="btn" href="{% url 'metric_types_list' %}">Voltar</a>
+</div>
+
+<section class="panel danger-light">
+  <p>Confirma a exclusão definitiva de <strong>{{ metric.name }}</strong>?</p>
+  <p class="muted">Se houver registros históricos desse indicador, eles também serão removidos por pertencerem a ele.</p>
+  <form method="post" class="actions">
+    {% csrf_token %}
+    <a class="btn" href="{% url 'metric_types_list' %}">Cancelar</a>
+    <button class="btn danger" type="submit">Excluir e sincronizar Grafana</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>Metas e Indicadores</h1>
+    <p class="muted">Indicadores, metas e painéis Grafana gerados automaticamente pelo Checklist.</p>
+  </div>
+  <div class="row-actions">
+    <form method="post" action="{% url 'metric_types_sync_grafana' %}" class="inline-form">
+      {% csrf_token %}
+      <button class="btn" type="submit">Sincronizar Grafana</button>
+    </form>
+    <a class="btn primary" href="{% url 'metric_type_create' %}">Cadastrar meta/indicador</a>
+  </div>
+</div>
+
+<section class="panel info-light">
+  <strong>Automação do Grafana</strong>
+  <p class="muted">
+    Ao criar, alterar, ativar, desativar, excluir ou importar metas, o Checklist atualiza os dashboards do Grafana via API.
+    Nenhum painel deve ser criado manualmente no Grafana.
+  </p>
+</section>
+
+<section class="panel">
+  <h2>Importar XLSX</h2>
+  <form method="post" action="{% url 'metric_types_import_xlsx' %}" enctype="multipart/form-data" class="form-grid">
+    {% csrf_token %}
+    <label>{{ import_form.file.label }}{{ import_form.file }}</label>
+    <label class="checkbox-line">{{ import_form.sync_grafana }} {{ import_form.sync_grafana.label }}</label>
+    <button class="btn primary" type="submit">Importar e sincronizar</button>
+  </form>
+</section>
+
+<form method="get" class="filters panel">
+  <label>Status
+    <select class="input" name="status">
+      <option value="ativos" {% if status == "ativos" %}selected{% endif %}>Ativos</option>
+      <option value="inativos" {% if status == "inativos" %}selected{% endif %}>Inativos</option>
+      <option value="todos" {% if status == "todos" %}selected{% endif %}>Todos</option>
+    </select>
+  </label>
+  <label>Tipo/cargo
+    <select class="input" name="cargo">
+      <option value="">Todos</option>
+      {% for position in positions %}
+        <option value="{{ position.id }}" {% if position_id == position.id|stringformat:"s" %}selected{% endif %}>{{ position.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button class="btn">Filtrar</button>
+</form>
+
+<table class="panel-table">
+  <thead>
+    <tr>
+      <th>Indicador</th>
+      <th>Área</th>
+      <th>Frequência</th>
+      <th>Aplica-se ao</th>
+      <th>Meta</th>
+      <th>Grafana</th>
+      <th>Status</th>
+      <th>Ações</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for metric in metrics %}
+    <tr>
+      <td>
+        <strong>{{ metric.name }}</strong>
+        {% if metric.formula %}<div class="muted">{{ metric.formula|truncatechars:90 }}</div>{% endif %}
+      </td>
+      <td>{{ metric.area }}</td>
+      <td>{{ metric.get_frequency_display }}</td>
+      <td>{{ metric.position.name|default:"-" }}</td>
+      <td>
+        {% if metric.target_text %}
+          {{ metric.target_text }}
+        {% elif metric.monthly_target %}
+          {{ metric.monthly_target|floatformat:2 }} {{ metric.unit }}
+        {% else %}
+          -
+        {% endif %}
+      </td>
+      <td>
+        {% if metric.grafana_sync_status == "SYNCED" %}
+          <span class="badge done">Sincronizado</span>
+        {% elif metric.grafana_sync_status == "FAILED" %}
+          <span class="badge blocked" title="{{ metric.grafana_last_error }}">Falhou</span>
+        {% elif metric.grafana_sync_status == "DISABLED" %}
+          <span class="badge neutral">Desativado</span>
+        {% else %}
+          <span class="badge warning">Pendente</span>
+        {% endif %}
+        {% if metric.grafana_dashboard_uid %}
+          <div class="muted"><code>{{ metric.grafana_dashboard_uid }}</code></div>
+        {% endif %}
+      </td>
+      <td>{% if metric.active %}<span class="badge done">Ativo</span>{% else %}<span class="badge blocked">Inativo</span>{% endif %}</td>
+      <td>
+        <div class="row-actions">
+          <a class="btn small" href="{% url 'metric_type_edit' metric.id %}">Editar</a>
+          <form method="post" action="{% url 'metric_type_toggle' metric.id %}" class="inline-form">
+            {% csrf_token %}
+            <button class="btn small" type="submit">{% if metric.active %}Desativar{% else %}Ativar{% endif %}</button>
+          </form>
+          <a class="btn danger small" href="{% url 'metric_type_delete' metric.id %}">Excluir</a>
+        </div>
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="8">Nenhum indicador cadastrado.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

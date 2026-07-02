@@ -16,10 +16,12 @@ from django.utils import timezone
 from openpyxl import load_workbook
 
 from .forms import CommercialOpportunityForm, CourseForm, add_months
+from .grafana_sync import build_metric_dashboard, choose_metric_visualization
+from .metric_import import infer_metric_metadata
 from .models import (
     CommercialFunnel, CommercialObjection, CommercialOpportunity, CommercialOpportunityFollowUp,
     CommercialOpportunityStageEvent, Course, FunnelModel, FunnelStage, FunnelType, Lesson, LessonFeedback,
-    OpportunityOrigin, PedagogicalReportTask, PedagogicalStudent, Position,
+    MetricType, OpportunityOrigin, PedagogicalReportTask, PedagogicalStudent, Position,
     Room, SchoolHoliday, SponteSyncJob, TimeSlot, UserProfile,
 )
 from .sponte import (
@@ -39,6 +41,64 @@ User = get_user_model()
 def _agenda_week_bounds_for_test(target_date):
     start_date = target_date - timedelta(days=target_date.weekday())
     return start_date, start_date + timedelta(days=6)
+
+
+class MetricGrafanaRulesTests(TestCase):
+    def setUp(self):
+        self.position = Position.objects.create(name='Atendente Comercial', code='atendente-comercial')
+
+    def test_percentage_metric_with_target_uses_gauge(self):
+        metric = MetricType.objects.create(
+            code='atendente-comercial-conversao',
+            name='% visita para matricula',
+            area='4 - Follow-Up',
+            position=self.position,
+            frequency=MetricType.FREQ_MONTHLY,
+            unit='%',
+            monthly_target=Decimal('60'),
+        )
+
+        self.assertEqual(choose_metric_visualization(metric), 'gauge')
+
+    def test_time_or_at_most_metric_uses_stat(self):
+        metric = MetricType.objects.create(
+            code='atendente-comercial-tempo',
+            name='Tempo medio de matricula',
+            area='5 - Ganha',
+            position=self.position,
+            frequency=MetricType.FREQ_DAILY,
+            unit='min',
+            target_direction=MetricType.TARGET_AT_MOST,
+            target_max=Decimal('15'),
+        )
+
+        self.assertEqual(choose_metric_visualization(metric), 'stat')
+
+    def test_import_metadata_infers_weekly_range_from_target_text(self):
+        metadata = infer_metric_metadata('Leads por semana', '15 a 20 leads/semana')
+
+        self.assertEqual(metadata['frequency'], MetricType.FREQ_WEEKLY)
+        self.assertEqual(metadata['unit'], 'leads')
+        self.assertEqual(metadata['target_direction'], MetricType.TARGET_RANGE)
+        self.assertEqual(metadata['target_min'], Decimal('15'))
+        self.assertEqual(metadata['target_max'], Decimal('20'))
+
+    def test_dashboard_build_uses_deterministic_uid_and_panel(self):
+        metric = MetricType.objects.create(
+            code='atendente-comercial-leads',
+            name='Leads por semana',
+            area='1 - Contato',
+            position=self.position,
+            frequency=MetricType.FREQ_WEEKLY,
+            unit='leads',
+            monthly_target=Decimal('20'),
+        )
+
+        dashboard, panel_ids = build_metric_dashboard(metric.area, [metric])
+
+        self.assertEqual(dashboard['uid'], 'checklist-metricas-1-contato')
+        self.assertEqual(dashboard['panels'][0]['title'], 'Leads por semana')
+        self.assertEqual(panel_ids[metric.id], 1)
 
 
 class PedagogicalSchedulingRulesTests(TestCase):

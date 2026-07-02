@@ -6,7 +6,7 @@ Sistema web interno para administração operacional da My Robot Barra da Tijuca
 
 A aplicação controla acessos por **cargo**, mas o login é feito por **usuário nominal**. Isso evita uso de login genérico e preserva rastreabilidade administrativa.
 
-> Estado atual: os módulos antigos de Ausências, Checklist do dia, Semana, Indicadores, Atividades e Comercial foram removidos da navegação e das rotas internas. Os dados/modelos legados podem permanecer no banco para histórico até a definição dos novos módulos.
+> Estado atual: os módulos antigos de Ausências, Checklist do dia, Semana, Histórico e Atividades operacionais antigas foram removidos da navegação e das rotas internas. Os módulos comercial, pedagógico e de metas/indicadores estão em redesenho ativo.
 
 ## Licença e disclaimer de uso
 
@@ -26,6 +26,7 @@ Como o sistema pode armazenar dados de colaboradores, alunos, responsáveis e in
 
 - [Checklist de Teste de Produção](docs/TESTE_PRODUCAO.md)
 - [Operação Anual e Retenção por 5 anos](docs/OPERACAO_ANUAL.md)
+- [Metas, Indicadores e Grafana](docs/METAS_INDICADORES_GRAFANA.md)
 
 Use o checklist de produção antes de liberar o sistema oficialmente. Use o guia anual para congelar a instância de cada ano, validar backup/restauração e iniciar o ano seguinte.
 
@@ -62,6 +63,8 @@ Senhas criadas ou redefinidas por administradores seguem essa regra automaticame
 - Criação de usuários com função de Administrador ou cargo operacional.
 - Geração automática de senha temporária forte para novos usuários e redefinições.
 - CRUD administrativo de tipos/cargos.
+- Módulo administrativo de metas e indicadores com importação XLSX.
+- Sincronização automática de dashboards e painéis no Grafana via API.
 - Dashboard administrativo enxuto.
 - Auditoria administrativa com antes/depois e exportação CSV.
 - Exportação CSV.
@@ -69,7 +72,7 @@ Senhas criadas ou redefinidas por administradores seguem essa regra automaticame
 - Backup diário configurável com dump PostgreSQL, arquivos locais e configurações.
 - Script de restauração.
 
-Módulos removidos nesta etapa: Ausências, Checklist do dia, Semana, Histórico, Indicadores, Atividades e Comercial.
+Módulos removidos nesta etapa: Ausências, Checklist do dia, Semana, Histórico e Atividades operacionais antigas.
 
 ## Arquitetura
 
@@ -212,6 +215,8 @@ http://IP_DO_SERVIDOR:8000
 
 O Docker Compose também sobe um Grafana para validação e criação futura de dashboards. Ele é publicado por padrão apenas em `127.0.0.1:3000`, ou seja, acessível localmente na máquina/servidor onde o Compose está rodando.
 
+O módulo **Metas e Indicadores** cria e atualiza dashboards automaticamente via API do Grafana. Administradores devem cadastrar ou importar indicadores no Checklist; não é necessário criar painéis manualmente no Grafana.
+
 Variáveis no `.env`:
 
 ```env
@@ -226,7 +231,7 @@ Acesse localmente:
 http://127.0.0.1:3000
 ```
 
-O datasource PostgreSQL é provisionado automaticamente com o nome `Checklist PostgreSQL`, usando o banco da aplicação (`db:5432`). Nenhum dashboard é provisionado por padrão.
+O datasource PostgreSQL é provisionado automaticamente com o nome `Checklist PostgreSQL`, usando o banco da aplicação (`db:5432`). Os dashboards de metas e indicadores são criados pelo próprio Checklist quando há indicadores ativos.
 
 Estratégia de permissão: o Grafana não herda as permissões do Django. Por isso, nesta fase ele deve ser tratado como ferramenta administrativa, acessível apenas localmente, por VPN ou rede interna restrita. Usuários comuns devem acompanhar seus próprios indicadores pelo dashboard interno do Checklist, que aplica as permissões do sistema e impede acesso a outros cargos/usuários.
 
@@ -325,7 +330,7 @@ Internal web system for operational administration at My Robot Barra da Tijuca.
 
 The application controls access by **position**, but login is performed through **named user accounts**. This avoids generic shared logins and preserves administrative traceability.
 
-> Current status: the old Absences, Daily Checklist, Week, History, Indicators, Activities, and Commercial modules were removed from navigation and internal routes. Legacy data/models may remain in the database for retention until the new modules are defined.
+> Current status: the old Absences, Daily Checklist, Week, History, and old operational activities modules were removed from navigation and internal routes. The commercial, pedagogical, and goals/indicators modules are under active redesign.
 
 ## License and Usage Disclaimer
 
@@ -345,6 +350,7 @@ Because the system may store information about employees, students, guardians, a
 
 - [Production Test Checklist](docs/TESTE_PRODUCAO.md)
 - [Annual Operation and 5-Year Retention](docs/OPERACAO_ANUAL.md)
+- [Goals, Indicators, and Grafana](docs/METAS_INDICADORES_GRAFANA.md)
 
 Use the production checklist before officially releasing the system. Use the annual guide to freeze each year's instance, validate backup/restore, and start the following year.
 
@@ -381,6 +387,8 @@ Passwords created or reset by administrators follow this rule automatically. The
 - User creation as Administrator or operational position.
 - Automatic strong temporary password generation for new users and password resets.
 - Administrative CRUD for user types/positions.
+- Administrative goals and indicators module with XLSX import.
+- Automatic Grafana dashboard and panel synchronization through the Grafana API.
 - Lean administrative dashboard.
 - Administrative audit trail with before/after values and CSV export.
 - CSV export.
@@ -388,7 +396,7 @@ Passwords created or reset by administrators follow this rule automatically. The
 - Configurable daily backup with PostgreSQL dump, local files, and configuration files.
 - Restore script.
 
-Modules removed in this step: Absences, Daily Checklist, Week, History, Indicators, Activities, and Commercial.
+Modules removed in this step: Absences, Daily Checklist, Week, History, and old operational activities.
 
 ## Architecture
 
@@ -531,6 +539,8 @@ http://SERVER_IP:8000
 
 Docker Compose also starts Grafana for validation and future dashboard work. By default it is published only on `127.0.0.1:3000`, meaning it is accessible locally on the machine/server running Compose.
 
+The **Goals and Indicators** module creates and updates dashboards automatically through the Grafana API. Administrators should create or import indicators in Checklist; no Grafana panel should be created manually.
+
 Variables in `.env`:
 
 ```env
@@ -545,7 +555,7 @@ Access locally:
 http://127.0.0.1:3000
 ```
 
-The PostgreSQL datasource is provisioned automatically with the name `Checklist PostgreSQL`, using the application database (`db:5432`). No dashboards are provisioned by default.
+The PostgreSQL datasource is provisioned automatically with the name `Checklist PostgreSQL`, using the application database (`db:5432`). Goals and indicators dashboards are created by Checklist itself when active indicators exist.
 
 Permission strategy: Grafana does not inherit Django permissions. Therefore, at this stage it must be treated as an administrative tool, accessible only locally, through VPN, or via a restricted internal network. Common users must track their own indicators through the internal Checklist dashboard, which applies application permissions and prevents access to other positions/users.
 

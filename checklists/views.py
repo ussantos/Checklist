@@ -1,7 +1,9 @@
 import csv
 import json
+import os
 from calendar import monthrange as calendar_monthrange
 from datetime import datetime, timedelta
+from tempfile import NamedTemporaryFile
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required, user_passes_test
@@ -21,7 +23,7 @@ from .forms import (
     ActivityDeactivationSuggestionForm, ActivitySuggestionCreateForm,
     ActivitySuggestionReviewForm, AdminPasswordResetForm, BackupConfigurationForm,
     BackupRestorePasswordForm, BackupUploadForm, DailyNoteForm, EmployeeCreateForm, EmployeeUpdateForm,
-    MetricRecordForm, MetricTypeForm, OccurrenceUpdateForm, TaskTemplateForm,
+    MetricImportForm, MetricRecordForm, MetricTypeForm, OccurrenceUpdateForm, TaskTemplateForm,
 )
 from .models import (
     ActivityLog, ActivitySuggestion, BackupConfiguration, ChecklistOccurrence,
@@ -31,6 +33,8 @@ from .models import (
 from .activity_import import (
     build_activity_import_template, import_activity_rows, parse_activity_import,
 )
+from .grafana_sync import sync_all_metric_dashboards, sync_metric_area
+from .metric_import import import_metrics_xlsx
 from .services import (
     absence_for_user_on_date, create_due_occurrences, create_occurrences_for_positions,
     filter_absence_ignored_occurrences, get_user_position, is_admin_user,
@@ -50,7 +54,9 @@ TASK_TEMPLATE_AUDIT_FIELDS = [
 ]
 METRIC_TYPE_AUDIT_FIELDS = [
     'name', 'code', 'area', 'frequency', 'position', 'activity',
-    'monthly_target', 'unit', 'active',
+    'description', 'formula', 'data_source', 'monthly_target', 'target_text',
+    'target_min', 'target_max', 'target_direction', 'unit', 'deliverables',
+    'attention_points', 'visualization_type', 'active',
 ]
 METRIC_RECORD_AUDIT_FIELDS = ['metric', 'position', 'date', 'executor_full_name', 'value', 'notes']
 ACTIVITY_SUGGESTION_AUDIT_FIELDS = [
@@ -195,22 +201,23 @@ def _admin_module_placeholder(request, *, title, section):
     })
 
 
+def _notify_grafana_sync(request, result):
+    if result.ok:
+        messages.info(request, result.message)
+    elif result.error:
+        messages.warning(request, f'{result.message}: {result.error}')
+    else:
+        messages.warning(request, result.message)
+
+
 @user_passes_test(_admin_check)
 def commercial_indicators(request):
-    return _admin_module_placeholder(
-        request,
-        title='Indicadores',
-        section='Acompanhamento',
-    )
+    return redirect('metric_types_list')
 
 
 @user_passes_test(_admin_check)
 def commercial_goals(request):
-    return _admin_module_placeholder(
-        request,
-        title='Metas',
-        section='Acompanhamento',
-    )
+    return redirect('metric_types_list')
 
 
 @user_passes_test(_admin_check)
@@ -1259,6 +1266,7 @@ def metric_types_list(request):
         'positions': positions,
         'status': status,
         'position_id': position_id or '',
+        'import_form': MetricImportForm(),
         'is_admin': True,
     })
 
@@ -1278,6 +1286,7 @@ def metric_type_create(request):
                 new_values=snapshot_instance(metric, METRIC_TYPE_AUDIT_FIELDS),
             )
             messages.success(request, 'Indicador criado.')
+            _notify_grafana_sync(request, sync_metric_area(metric.area))
             return redirect('metric_types_list')
     else:
         form = MetricTypeForm()
@@ -1298,6 +1307,7 @@ def metric_type_create(request):
 def metric_type_edit(request, metric_id):
     metric = get_object_or_404(MetricType.objects.select_related('position', 'activity'), pk=metric_id)
     previous_active = metric.active
+    previous_area = metric.area
     previous_values_full = snapshot_instance(metric, METRIC_TYPE_AUDIT_FIELDS)
     if request.method == 'POST':
         form = MetricTypeForm(request.POST, instance=metric)
@@ -1323,6 +1333,9 @@ def metric_type_edit(request, metric_id):
                 new_values=new_values,
             )
             messages.success(request, 'Indicador atualizado.')
+            if previous_area != metric.area:
+                _notify_grafana_sync(request, sync_metric_area(previous_area))
+            _notify_grafana_sync(request, sync_metric_area(metric.area))
             return redirect('metric_types_list')
     else:
         form = MetricTypeForm(instance=metric)
@@ -1338,6 +1351,138 @@ def metric_type_edit(request, metric_id):
         'metric_obj': metric,
         'is_admin': True,
     })
+
+
+@user_passes_test(_admin_check)
+def metric_type_toggle(request, metric_id):
+    metric = get_object_or_404(MetricType, pk=metric_id)
+    if request.method != 'POST':
+        return redirect('metric_types_list')
+    previous_values_full = snapshot_instance(metric, METRIC_TYPE_AUDIT_FIELDS)
+    metric.active = not metric.active
+    metric.save(update_fields=['active'])
+    previous_values, new_values = changed_values(
+        previous_values_full,
+        snapshot_instance(metric, METRIC_TYPE_AUDIT_FIELDS),
+    )
+    log_activity(
+        actor=request.user,
+        obj=metric,
+        action='Indicador reativado' if metric.active else 'Indicador inativado',
+        object_label=metric.name,
+        details=f'Indicador: {metric.name}; área: {metric.area}; ativo: {metric.active}',
+        previous_values=previous_values,
+        new_values=new_values,
+    )
+    messages.success(request, 'Indicador ativado.' if metric.active else 'Indicador desativado.')
+    _notify_grafana_sync(request, sync_metric_area(metric.area))
+    return redirect('metric_types_list')
+
+
+@user_passes_test(_admin_check)
+def metric_type_delete(request, metric_id):
+    metric = get_object_or_404(MetricType, pk=metric_id)
+    if request.method == 'POST':
+        previous_area = metric.area
+        previous_values = snapshot_instance(metric, METRIC_TYPE_AUDIT_FIELDS)
+        object_label = metric.name
+        metric.delete()
+        log_activity(
+            actor=request.user,
+            action='Indicador excluído',
+            object_type='MetricType',
+            object_id=metric_id,
+            object_label=object_label,
+            details=f'Indicador excluído: {object_label}; área: {previous_area}',
+            previous_values=previous_values,
+        )
+        messages.success(request, 'Indicador excluído.')
+        _notify_grafana_sync(request, sync_metric_area(previous_area))
+        return redirect('metric_types_list')
+
+    return render(request, 'checklists/metric_type_confirm_delete.html', {
+        'metric': metric,
+        'is_admin': True,
+    })
+
+
+@user_passes_test(_admin_check)
+def metric_types_import_xlsx(request):
+    if request.method != 'POST':
+        return redirect('metric_types_list')
+    form = MetricImportForm(request.POST, request.FILES)
+    if not form.is_valid():
+        for errors in form.errors.values():
+            for error in errors:
+                messages.error(request, error)
+        return redirect('metric_types_list')
+
+    tmp_path = ''
+    try:
+        with NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+            tmp_path = tmp.name
+            for chunk in form.cleaned_data['file'].chunks():
+                tmp.write(chunk)
+        result = import_metrics_xlsx(
+            tmp_path,
+            sync_grafana=form.cleaned_data.get('sync_grafana', True),
+        )
+    except Exception as exc:
+        messages.error(request, f'Importação não concluída: {exc}')
+        return redirect('metric_types_list')
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+    log_activity(
+        actor=request.user,
+        action='Importação XLSX de metas e indicadores',
+        object_type='MetricType',
+        object_label='Metas e Indicadores',
+        details=(
+            f'Importação XLSX: {result.created} criados, {result.updated} atualizados, '
+            f'{result.skipped} ignorados. Áreas sincronizadas: {", ".join(result.synced_areas) or "-"}'
+        ),
+        new_values={
+            'created': result.created,
+            'updated': result.updated,
+            'skipped': result.skipped,
+            'synced_areas': result.synced_areas,
+            'errors': result.errors[:20],
+        },
+    )
+    messages.success(request, f'Importação concluída: {result.created} criados, {result.updated} atualizados.')
+    if result.skipped:
+        messages.warning(request, f'{result.skipped} linha(s) ignorada(s).')
+    for error in result.errors[:5]:
+        messages.warning(request, error)
+    return redirect('metric_types_list')
+
+
+@user_passes_test(_admin_check)
+def metric_types_sync_grafana(request):
+    if request.method != 'POST':
+        return redirect('metric_types_list')
+    results = sync_all_metric_dashboards()
+    ok_count = sum(1 for item in results if item.ok)
+    fail_count = len(results) - ok_count
+    log_activity(
+        actor=request.user,
+        action='Sincronização manual Grafana',
+        object_type='MetricType',
+        object_label='Metas e Indicadores',
+        details=f'Sincronização manual: {ok_count} dashboards OK, {fail_count} com falha.',
+        new_values={
+            'ok': ok_count,
+            'failed': fail_count,
+            'dashboards': [item.dashboard_uid for item in results],
+        },
+    )
+    if fail_count:
+        messages.warning(request, f'Grafana sincronizado parcialmente: {ok_count} OK, {fail_count} com falha.')
+    else:
+        messages.success(request, f'Grafana sincronizado: {ok_count} dashboard(s) atualizado(s).')
+    return redirect('metric_types_list')
 
 
 @login_required

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>{{ title }}</h1>
+    <p class="muted">Defina a meta, a fonte dos dados e a regra que alimentará o dashboard automático.</p>
+  </div>
+  <a class="btn" href="{% url 'metric_types_list' %}">Voltar</a>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+    <section class="panel danger-light">{{ form.non_field_errors }}</section>
+  {% endif %}
+
+  <section class="panel">
+    <h2>Identificação</h2>
+    <div class="form-grid">
+      <label>{{ form.name.label }}{{ form.name }}{{ form.name.errors }}</label>
+      <label>{{ form.area.label }}{{ form.area }}{{ form.area.errors }}</label>
+      <label>{{ form.frequency.label }}{{ form.frequency }}{{ form.frequency.errors }}</label>
+      <label>{{ form.position.label }}{{ form.position }}{{ form.position.errors }}</label>
+      <label>{{ form.activity.label }}{{ form.activity }}{{ form.activity.errors }}</label>
+      <label class="checkbox-line">{{ form.active }} {{ form.active.label }}</label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Regra de cálculo</h2>
+    <div class="form-grid">
+      <label class="form-grid-wide">{{ form.description.label }}{{ form.description }}{{ form.description.errors }}</label>
+      <label class="form-grid-wide">{{ form.formula.label }}{{ form.formula }}{{ form.formula.errors }}</label>
+      <label>{{ form.data_source.label }}{{ form.data_source }}{{ form.data_source.errors }}</label>
+      <label>{{ form.unit.label }}{{ form.unit }}{{ form.unit.errors }}</label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Meta</h2>
+    <div class="form-grid">
+      <label>{{ form.target_text.label }}{{ form.target_text }}{{ form.target_text.errors }}</label>
+      <label>{{ form.monthly_target.label }}{{ form.monthly_target }}{{ form.monthly_target.errors }}</label>
+      <label>{{ form.target_direction.label }}{{ form.target_direction }}{{ form.target_direction.errors }}</label>
+      <label>{{ form.target_min.label }}{{ form.target_min }}{{ form.target_min.errors }}</label>
+      <label>{{ form.target_max.label }}{{ form.target_max }}{{ form.target_max.errors }}</label>
+      <label>{{ form.visualization_type.label }}{{ form.visualization_type }}{{ form.visualization_type.errors }}</label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Execução</h2>
+    <div class="form-grid">
+      <label class="form-grid-wide">{{ form.deliverables.label }}{{ form.deliverables }}{{ form.deliverables.errors }}</label>
+      <label class="form-grid-wide">{{ form.attention_points.label }}{{ form.attention_points }}{{ form.attention_points.errors }}</label>
+    </div>
+  </section>
+
+  {% if metric_obj %}
+  <section class="panel info-light">
+    <strong>Grafana</strong>
+    <p class="muted">
+      Status: {{ metric_obj.get_grafana_sync_status_display }}.
+      {% if metric_obj.grafana_dashboard_uid %}Dashboard: <code>{{ metric_obj.grafana_dashboard_uid }}</code>.{% endif %}
+      {% if metric_obj.grafana_panel_id %}Painel: {{ metric_obj.grafana_panel_id }}.{% endif %}
+    </p>
+    {% if metric_obj.grafana_last_error %}
+      <p class="muted">Último erro: {{ metric_obj.grafana_last_error|truncatechars:300 }}</p>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <button class="btn primary" type="submit">{{ submit_label }}</button>
+</form>
+{% endblock %}

@@ -1,6 +1,6 @@
 # Dashboards Grafana — Checklist
 
-O Grafana é provisionado automaticamente pelo Docker Compose para uso administrativo/local.
+O Grafana é iniciado pelo Docker Compose para uso administrativo/local. O datasource PostgreSQL é provisionado em `grafana/provisioning/datasources/checklist-postgres.yml`.
 
 ## Segurança e permissões
 
@@ -10,43 +10,32 @@ O Grafana não conhece as permissões do Django. Portanto:
 - mantenha `GRAFANA_BIND=127.0.0.1:3000` sempre que possível;
 - exponha apenas via VPN/rede interna quando necessário;
 - considere as contas do Grafana como contas administrativas;
-- usuários comuns devem usar o dashboard interno do Django em `/metricas/`.
+- usuários comuns devem usar as telas internas do Checklist.
 
-Essa decisão evita vazamento de indicadores entre cargos/usuários enquanto não existir um proxy/embed protegido pelo Django.
+## Criação dos dashboards
 
-## Provisionamento
+Dashboards de metas e indicadores não são mais editados manualmente nem mantidos como JSON estático por um operador.
 
-- Datasource: `grafana/provisioning/datasources/checklist-postgres.yml`
-- Provider de dashboards: `grafana/provisioning/dashboards/checklist-dashboards.yml`
-- Dashboards versionados: `grafana/dashboards/*.json`
+O Checklist gera dashboards automaticamente via API do Grafana quando o administrador altera o módulo **Metas e Indicadores**:
 
-## Dashboards
+- criação;
+- edição;
+- ativação;
+- desativação;
+- exclusão;
+- importação XLSX;
+- sincronização manual.
 
-Os dashboards provisionados são:
+Cada área de indicador gera um dashboard com UID determinístico `checklist-metricas-<area>`. A chamada usa `overwrite=true`, então a sincronização é idempotente e não duplica painéis.
 
-- diário;
-- semanal;
-- mensal;
-- anual.
+## Regras de visualização
 
-Todos consultam o PostgreSQL real da aplicação via datasource `Checklist PostgreSQL`.
+As regras programáticas estão documentadas em `docs/METAS_INDICADORES_GRAFANA.md` e implementadas em `checklists/grafana_sync.py`.
 
-## Filtros
+Resumo:
 
-Cada dashboard possui variáveis:
-
-- `Tipo/cargo`;
-- `Usuário`.
-
-O filtro de usuário é apenas operacional para administradores. Ele não deve ser entendido como controle de segurança para usuário comum.
-
-## Consultas
-
-As queries ficam versionadas nos JSONs dos dashboards em `targets[].rawSql`, usando CTEs legíveis para:
-
-- definir o período pelo time picker do Grafana;
-- listar indicadores ativos por cargo;
-- calcular meta proporcional conforme frequência do indicador;
-- somar realizado por indicador;
-- detalhar realizado por usuário;
-- gerar totalizadores por cargo e total geral.
+- percentuais com meta numérica usam medidor;
+- tempo ou regra "menor ou igual" usa número em destaque;
+- séries diárias, semanais, mensais e anuais usam série temporal;
+- indicadores inativos saem do dashboard automático;
+- falhas ficam registradas no próprio indicador para ressincronização posterior.

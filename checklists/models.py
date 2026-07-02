@@ -1299,6 +1299,45 @@ class DailyNote(models.Model):
 class MetricType(models.Model):
     """Indicador acompanhado no dashboard."""
 
+    TARGET_AT_LEAST = 'AT_LEAST'
+    TARGET_AT_MOST = 'AT_MOST'
+    TARGET_RANGE = 'RANGE'
+    TARGET_INCREASE = 'INCREASE'
+    TARGET_EXACT = 'EXACT'
+    TARGET_CHOICES = [
+        (TARGET_AT_LEAST, 'Maior ou igual'),
+        (TARGET_AT_MOST, 'Menor ou igual'),
+        (TARGET_RANGE, 'Faixa'),
+        (TARGET_INCREASE, 'Aumento'),
+        (TARGET_EXACT, 'Valor exato'),
+    ]
+
+    VIZ_AUTO = 'AUTO'
+    VIZ_TIMESERIES = 'TIMESERIES'
+    VIZ_GAUGE = 'GAUGE'
+    VIZ_STAT = 'STAT'
+    VIZ_BAR = 'BAR'
+    VIZ_TABLE = 'TABLE'
+    VIZ_CHOICES = [
+        (VIZ_AUTO, 'Automático'),
+        (VIZ_TIMESERIES, 'Série temporal'),
+        (VIZ_GAUGE, 'Medidor'),
+        (VIZ_STAT, 'Número destaque'),
+        (VIZ_BAR, 'Barras'),
+        (VIZ_TABLE, 'Tabela'),
+    ]
+
+    GRAFANA_PENDING = 'PENDING'
+    GRAFANA_SYNCED = 'SYNCED'
+    GRAFANA_FAILED = 'FAILED'
+    GRAFANA_DISABLED = 'DISABLED'
+    GRAFANA_STATUS_CHOICES = [
+        (GRAFANA_PENDING, 'Pendente'),
+        (GRAFANA_SYNCED, 'Sincronizado'),
+        (GRAFANA_FAILED, 'Falhou'),
+        (GRAFANA_DISABLED, 'Desativado'),
+    ]
+
     FREQ_DAILY = 'DAILY'
     FREQ_WEEKLY = 'WEEKLY'
     FREQ_MONTHLY = 'MONTHLY'
@@ -1314,10 +1353,30 @@ class MetricType(models.Model):
     name = models.CharField('Indicador', max_length=140)
     area = models.CharField('Área', max_length=70, default='Operacional')
     frequency = models.CharField('Frequência', max_length=20, choices=FREQ_CHOICES, default=FREQ_MONTHLY)
+    description = models.TextField('Definição', blank=True)
+    formula = models.TextField('Fórmula de cálculo', blank=True)
+    data_source = models.CharField('Fonte de dados', max_length=180, blank=True)
     position = models.ForeignKey(Position, on_delete=models.CASCADE, related_name='metric_types', null=True, blank=True)
     activity = models.ForeignKey(TaskTemplate, on_delete=models.PROTECT, related_name='metric_types', null=True, blank=True)
     monthly_target = models.DecimalField('Meta mensal', max_digits=10, decimal_places=2, default=0)
+    target_text = models.CharField('Meta/alvo textual', max_length=180, blank=True)
+    target_min = models.DecimalField('Meta mínima', max_digits=10, decimal_places=2, null=True, blank=True)
+    target_max = models.DecimalField('Meta máxima', max_digits=10, decimal_places=2, null=True, blank=True)
+    target_direction = models.CharField('Direção da meta', max_length=20, choices=TARGET_CHOICES, default=TARGET_AT_LEAST)
     unit = models.CharField('Unidade', max_length=40, default='un')
+    deliverables = models.TextField('Entregáveis', blank=True)
+    attention_points = models.TextField('Pontos de atenção', blank=True)
+    visualization_type = models.CharField('Visualização Grafana', max_length=20, choices=VIZ_CHOICES, default=VIZ_AUTO)
+    grafana_dashboard_uid = models.CharField('UID do dashboard Grafana', max_length=120, blank=True)
+    grafana_panel_id = models.PositiveIntegerField('ID do painel Grafana', null=True, blank=True)
+    grafana_sync_status = models.CharField(
+        'Status da sincronização Grafana',
+        max_length=20,
+        choices=GRAFANA_STATUS_CHOICES,
+        default=GRAFANA_PENDING,
+    )
+    grafana_last_sync_at = models.DateTimeField('Última sincronização Grafana', null=True, blank=True)
+    grafana_last_error = models.TextField('Último erro Grafana', blank=True)
     active = models.BooleanField('Ativo', default=True)
 
     class Meta:

@@ -125,6 +125,25 @@ class MetricRecordForm(forms.ModelForm):
         }
 
 
+class MetricImportForm(forms.Form):
+    file = forms.FileField(
+        label='Planilha XLSX',
+        widget=forms.FileInput(attrs={'class': 'input', 'accept': '.xlsx'}),
+    )
+    sync_grafana = forms.BooleanField(
+        label='Sincronizar Grafana após importar',
+        required=False,
+        initial=True,
+        widget=forms.CheckboxInput(),
+    )
+
+    def clean_file(self):
+        file = self.cleaned_data['file']
+        if not file.name.lower().endswith('.xlsx'):
+            raise forms.ValidationError('Envie um arquivo .xlsx.')
+        return file
+
+
 class MetricTypeForm(forms.ModelForm):
     name = forms.CharField(
         label='Nome do indicador',
@@ -139,25 +158,53 @@ class MetricTypeForm(forms.ModelForm):
 
     class Meta:
         model = MetricType
-        fields = ['name', 'area', 'frequency', 'position', 'activity', 'monthly_target', 'unit', 'active']
+        fields = [
+            'name', 'area', 'frequency', 'position', 'activity',
+            'description', 'formula', 'data_source',
+            'monthly_target', 'target_text', 'target_min', 'target_max', 'target_direction',
+            'unit', 'deliverables', 'attention_points', 'visualization_type', 'active',
+        ]
         widgets = {
             'frequency': forms.Select(attrs={'class': 'input'}),
             'position': forms.Select(attrs={'class': 'input'}),
             'activity': forms.Select(attrs={'class': 'input'}),
+            'description': forms.Textarea(attrs={'class': 'input', 'rows': 3}),
+            'formula': forms.Textarea(attrs={'class': 'input', 'rows': 3}),
+            'data_source': forms.TextInput(attrs={'class': 'input'}),
             'monthly_target': forms.NumberInput(attrs={'class': 'input', 'step': '0.01'}),
+            'target_text': forms.TextInput(attrs={'class': 'input'}),
+            'target_min': forms.NumberInput(attrs={'class': 'input', 'step': '0.01'}),
+            'target_max': forms.NumberInput(attrs={'class': 'input', 'step': '0.01'}),
+            'target_direction': forms.Select(attrs={'class': 'input'}),
             'unit': forms.TextInput(attrs={'class': 'input'}),
+            'deliverables': forms.Textarea(attrs={'class': 'input', 'rows': 3}),
+            'attention_points': forms.Textarea(attrs={'class': 'input', 'rows': 3}),
+            'visualization_type': forms.Select(attrs={'class': 'input'}),
             'active': forms.CheckboxInput(),
         }
         labels = {
             'frequency': 'Frequência',
             'position': 'Aplica-se ao',
             'activity': 'Atividade',
-            'monthly_target': 'Meta',
+            'description': 'Definição',
+            'formula': 'Fórmula de cálculo',
+            'data_source': 'Fonte de dados',
+            'monthly_target': 'Meta numérica base',
+            'target_text': 'Meta/alvo descrito',
+            'target_min': 'Meta mínima',
+            'target_max': 'Meta máxima',
+            'target_direction': 'Direção da meta',
             'unit': 'Unidade',
+            'deliverables': 'Entregáveis',
+            'attention_points': 'Pontos de atenção',
+            'visualization_type': 'Visualização no Grafana',
             'active': 'Ativo',
         }
         help_texts = {
             'activity': 'Opcional. Selecione uma atividade do tipo/cargo escolhido.',
+            'monthly_target': 'Valor usado nos cálculos do dashboard interno e nas faixas do Grafana.',
+            'target_text': 'Texto original da meta, quando a regra não couber em um único número.',
+            'visualization_type': 'Use Automático para o sistema escolher o painel com base na regra programática.',
             'active': 'Desmarque para inativar sem apagar histórico.',
         }
 
@@ -184,6 +231,10 @@ class MetricTypeForm(forms.ModelForm):
         activity = cleaned.get('activity')
         if activity and position and activity.position_id != position.id:
             raise forms.ValidationError('A atividade selecionada deve pertencer ao tipo/cargo do indicador.')
+        target_min = cleaned.get('target_min')
+        target_max = cleaned.get('target_max')
+        if target_min is not None and target_max is not None and target_min > target_max:
+            self.add_error('target_max', 'A meta máxima deve ser maior ou igual à meta mínima.')
         return cleaned
 
     def _unique_code(self, metric):
