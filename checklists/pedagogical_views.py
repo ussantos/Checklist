@@ -188,8 +188,11 @@ def _notify_sponte_job(request, job, created):
 def _feedback_lessons_queryset():
     return (
         Lesson.objects
-        .filter(lesson_type=Lesson.TYPE_REGULAR, student__status=PedagogicalStudent.STATUS_ACTIVE)
-        .exclude(status=Lesson.STATUS_CANCELLED)
+        .filter(
+            lesson_type=Lesson.TYPE_REGULAR,
+            status=Lesson.STATUS_DONE,
+            student__status=PedagogicalStudent.STATUS_ACTIVE,
+        )
         .select_related('student', 'course', 'room', 'feedback', 'feedback__created_by', 'feedback__updated_by')
         .order_by('-date', '-start_time', 'student_name_snapshot')
     )

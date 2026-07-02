@@ -639,6 +639,54 @@ class LessonFeedbackTests(TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertFalse(PedagogicalReportTask.objects.exists())
 
+    def test_feedback_list_only_requires_presence_lessons(self):
+        not_given_student = PedagogicalStudent.objects.create(
+            name='Aluno Aula Nao Dada',
+            responsible_name='Responsável Aula Nao Dada',
+            whatsapp='21999990004',
+        )
+        absent_student = PedagogicalStudent.objects.create(
+            name='Aluno Aula Falta',
+            responsible_name='Responsável Aula Falta',
+            whatsapp='21999990005',
+        )
+        Lesson.objects.create(
+            lesson_type=Lesson.TYPE_REGULAR,
+            student=not_given_student,
+            course=self.course,
+            room=self.room,
+            date=self.day,
+            start_time=time(9, 0),
+            end_time=time(10, 59),
+            status=Lesson.STATUS_NOT_GIVEN,
+            source=Lesson.SOURCE_SPONTE,
+            external_id='aula-nao-dada',
+        )
+        Lesson.objects.create(
+            lesson_type=Lesson.TYPE_REGULAR,
+            student=absent_student,
+            course=self.course,
+            room=self.room,
+            date=self.day,
+            start_time=time(11, 0),
+            end_time=time(11, 59),
+            status=Lesson.STATUS_ABSENT,
+            source=Lesson.SOURCE_SPONTE,
+            external_id='aula-falta',
+        )
+        self.client.force_login(self.instructor)
+
+        response = self.client.get(reverse('pedagogical_lesson_feedbacks'), {
+            'data_inicio': self.day.isoformat(),
+            'data_fim': self.day.isoformat(),
+            'status': 'todos',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.student.name)
+        self.assertNotContains(response, not_given_student.name)
+        self.assertNotContains(response, absent_student.name)
+
     def test_feedback_list_filters_by_date_range_and_can_list_all(self):
         range_student = PedagogicalStudent.objects.create(
             name='Aluno Dentro do Periodo',
@@ -694,6 +742,35 @@ class LessonFeedbackTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context['list_all'])
         self.assertContains(response, outside_student.name)
+
+
+class LessonFeedbackImportHelpersTests(TestCase):
+    def test_import_treats_explicit_no_programming_notes_as_without_programming(self):
+        from checklists.management.commands.import_lesson_feedbacks_xlsx import _is_programming_empty
+
+        self.assertTrue(_is_programming_empty('Aula focada em montagem, sem etapa de programação.', None))
+        self.assertTrue(_is_programming_empty('Não avançamos para a etapa lógica de codificação neste encontro.', None))
+        self.assertTrue(_is_programming_empty('A programação será feita na próxima aula.', None))
+        self.assertFalse(_is_programming_empty('Programou com apoio e concluiu a lógica.', None))
+        self.assertFalse(_is_programming_empty('Sem etapa de programação.', Decimal('8.5')))
+
+    def test_import_matches_student_by_sheet_enrollment_prefix_before_name(self):
+        from checklists.management.commands.import_lesson_feedbacks_xlsx import Command
+
+        student = PedagogicalStudent.objects.create(
+            name='Vicente Guerreiro',
+            enrollment_number='14',
+            responsible_name='Responsável Vicente',
+        )
+        PedagogicalStudent.objects.create(
+            name='Vicente Carvalho Diferente',
+            enrollment_number='99',
+            responsible_name='Outro Responsável',
+        )
+
+        lookup = Command()._student_lookup()
+
+        self.assertEqual(lookup('14 - Vicente Carvalho'), student)
 
 
 class InstructorExperienceTests(TestCase):

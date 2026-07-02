@@ -28,6 +28,28 @@ from checklists.sponte_client import SponteAPIError, SponteSOAPClient
 
 
 PROGRAMMING_EMPTY_VALUES = {'', '-', 'n/a', 'na', 'não se aplica', 'nao se aplica'}
+PROGRAMMING_NOT_REQUIRED_MARKERS = (
+    'sem etapa de programacao',
+    'sem etapas de programacao',
+    'nao tem programacao',
+    'nao havendo atividade de programacao',
+    'nao inclui atividades de programacao',
+    'sem programacao',
+    'sem etapa de codificacao',
+    'nao havendo etapa de codificacao',
+    'nao avancamos para a etapa logica de codificacao',
+    'codificacao nao pode ser realizada',
+    'programacao sera feita',
+    'programacao sera concluida',
+    'focada apenas em montagem',
+    'focado apenas em montagem',
+    'focada em montagem',
+    'focado em montagem',
+    'focada exclusivamente',
+    'focado exclusivamente',
+    'dedicada a montagem',
+    'dedicado a montagem',
+)
 
 
 @dataclass
@@ -92,6 +114,11 @@ def _sheet_student_name(sheet_name):
     if '-' in sheet_name:
         return sheet_name.split('-', 1)[1].strip()
     return sheet_name.strip()
+
+
+def _sheet_prefix_number(sheet_name):
+    match = re.match(r'\s*(\d+)\s*-', str(sheet_name or ''))
+    return match.group(1) if match else ''
 
 
 def _parse_date(value):
@@ -160,7 +187,12 @@ def _text(value):
 
 
 def _is_programming_empty(comment, score):
-    return _normalize(comment) in PROGRAMMING_EMPTY_VALUES and score is None
+    if score is not None:
+        return False
+    normalized = _normalize(comment)
+    if normalized in PROGRAMMING_EMPTY_VALUES:
+        return True
+    return any(marker in normalized for marker in PROGRAMMING_NOT_REQUIRED_MARKERS)
 
 
 def _header_index(header_keys, *candidates):
@@ -276,8 +308,16 @@ class Command(BaseCommand):
     def _student_lookup(self):
         students = list(PedagogicalStudent.objects.all())
         exact = {_normalize(student.name): student for student in students}
+        by_enrollment = {
+            str(student.enrollment_number).strip(): student
+            for student in students
+            if str(student.enrollment_number).strip()
+        }
 
         def find(sheet_name):
+            enrollment_number = _sheet_prefix_number(sheet_name)
+            if enrollment_number and enrollment_number in by_enrollment:
+                return by_enrollment[enrollment_number]
             normalized = _normalize(_sheet_student_name(sheet_name))
             if not normalized:
                 return None
