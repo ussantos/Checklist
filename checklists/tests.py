@@ -2804,6 +2804,28 @@ class CommercialDashboardTests(TestCase):
         funnel_names = [group['funnel'].name for group in response.context['opportunity_funnel_groups'][:3]]
         self.assertEqual(funnel_names, ['Qualificados', 'Pós-Venda', 'Parcerias'])
 
+    def test_commercial_dashboard_orders_won_stage_before_lost_stage(self):
+        today = timezone.localdate()
+        lost_stage, _ = FunnelStage.objects.update_or_create(
+            code='5-perdido',
+            defaults={'name': '5 - Perdido', 'active': True, 'order': 5},
+        )
+        won_stage, _ = FunnelStage.objects.update_or_create(
+            code='5-ganha',
+            defaults={'name': '5 - Ganha', 'active': True, 'order': 5},
+        )
+        self._opportunity(title='Venda perdida', owner=self.user, next_follow_up_date=today, stage=lost_stage)
+        self._opportunity(title='Venda ganha', owner=self.user, next_follow_up_date=today, stage=won_stage)
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse('commercial_dashboard'))
+
+        stage_names = [
+            stage_group['stage'].name
+            for stage_group in response.context['opportunity_funnel_groups'][0]['stages']
+        ]
+        self.assertEqual(stage_names, ['5 - Ganha', '5 - Perdido'])
+
     def test_commercial_operator_menu_includes_lesson_agenda(self):
         self.client.force_login(self.user)
 
@@ -2869,6 +2891,37 @@ class CommercialDashboardTests(TestCase):
         self.assertContains(response, 'Venda ganha própria')
         self.assertNotContains(response, 'Venda ganha de outro atendente')
         self.assertNotContains(response, 'Venda ainda ativa')
+        self.assertEqual(response.context['sales_count'], 1)
+
+    def test_commercial_won_opportunities_calendar_uses_original_date_for_imported_sales(self):
+        won_stage, _ = FunnelStage.objects.get_or_create(
+            code='5-ganha',
+            defaults={'name': '5 - Ganha', 'active': True, 'order': 5},
+        )
+        original_datetime = timezone.make_aware(datetime(2026, 5, 18, 12, 0))
+        imported_sale = self._opportunity(
+            title='Venda ganha importada',
+            owner=self.user,
+            next_follow_up_date=original_datetime.date(),
+            stage=won_stage,
+            active=False,
+        )
+        CommercialOpportunity.objects.filter(pk=imported_sale.pk).update(created_at=original_datetime)
+        imported_sale.refresh_from_db()
+        CommercialOpportunityStageEvent.objects.create(
+            opportunity=imported_sale,
+            previous_stage_label='',
+            new_stage=won_stage,
+            new_stage_label='5 - Matricula',
+            actor=self.user,
+            note='Importação direta da planilha Oportunidades.xlsx.',
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(f"{reverse('commercial_won_sales')}?periodo=mes&data=2026-05-18")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Venda ganha importada')
         self.assertEqual(response.context['sales_count'], 1)
 
     def test_commercial_follow_up_agenda_groups_week_and_is_scoped(self):

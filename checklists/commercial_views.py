@@ -15,7 +15,7 @@ from .audit import changed_values, log_activity, snapshot_instance
 from .forms import (
     CommercialFunnelForm, CommercialObjectionForm, CommercialOpportunityForm, FunnelModelFieldFormSet,
     FunnelModelForm, FunnelStageForm, FunnelTypeForm, OpportunityOriginForm,
-    add_months, is_lost_stage,
+    add_months, is_lost_stage, order_commercial_stages,
 )
 from .models import (
     CommercialFunnel, CommercialObjection, CommercialOpportunity, CommercialOpportunityFollowUp,
@@ -152,6 +152,9 @@ def _group_opportunities_by_funnel_stage(opportunities, *, max_per_stage=None):
         stage_group['total'] += 1
         if max_per_stage is None or len(stage_group['opportunities']) < max_per_stage:
             stage_group['opportunities'].append(opportunity)
+
+    for group in groups:
+        group['stages'] = sorted(group['stages'], key=lambda item: _stage_display_order_key(item.get('stage')))
     return groups
 
 
@@ -171,12 +174,38 @@ def _sort_funnel_groups(groups):
     return sorted(groups, key=lambda group: _funnel_display_order_key(group.get('funnel')))
 
 
+def _stage_display_order_key(stage):
+    if not stage:
+        return (999, '')
+    text = slugify(f'{stage.code} {stage.name}')
+    if text.startswith('1-'):
+        priority = 10
+    elif text.startswith('2-'):
+        priority = 20
+    elif text.startswith('3-'):
+        priority = 30
+    elif text.startswith('4-'):
+        priority = 40
+    elif text.startswith('5-') and ('ganha' in text or 'matricula' in text):
+        priority = 50
+    elif text.startswith('5-') and 'perdid' in text:
+        priority = 51
+    elif text.startswith('5-'):
+        priority = 52
+    elif text.startswith('6-'):
+        priority = 60
+    else:
+        priority = 900
+    return (priority, stage.order, stage.name)
+
+
 def _kanban_columns_for_funnel(opportunities):
-    stages = list(FunnelStage.objects.filter(active=True).order_by('order', 'name'))
+    stages = list(order_commercial_stages(FunnelStage.objects.filter(active=True)))
     stage_ids = {stage.id for stage in stages}
     extra_stage_ids = {opportunity.stage_id for opportunity in opportunities if opportunity.stage_id and opportunity.stage_id not in stage_ids}
     if extra_stage_ids:
-        stages.extend(FunnelStage.objects.filter(pk__in=extra_stage_ids).order_by('order', 'name'))
+        stages.extend(order_commercial_stages(FunnelStage.objects.filter(pk__in=extra_stage_ids)))
+        stages = sorted(stages, key=_stage_display_order_key)
 
     columns = []
     index = {}
@@ -277,8 +306,14 @@ def _opportunity_won_datetime(opportunity):
         if _event_points_to_won_stage(event)
     ]
     if won_events:
-        return max(won_events, key=lambda event: event.created_at).created_at
-    return opportunity.updated_at
+        won_event = max(won_events, key=lambda event: event.created_at)
+        if (
+            not won_event.previous_stage_label
+            and won_event.note.startswith('Importação direta')
+        ):
+            return opportunity.created_at
+        return won_event.created_at
+    return opportunity.created_at
 
 
 def _interested_funnel_type():
@@ -858,7 +893,10 @@ def commercial_won_sales(request):
 
 @user_passes_test(_commercial_access_check)
 def commercial_funnel_board(request):
-    funnels = list(CommercialFunnel.objects.filter(active=True).select_related('funnel_model').order_by('name'))
+    funnels = sorted(
+        CommercialFunnel.objects.filter(active=True).select_related('funnel_model'),
+        key=_funnel_display_order_key,
+    )
     selected_funnel_id = request.GET.get('funil', '')
     selected_funnel = None
     if selected_funnel_id and selected_funnel_id.isdigit():
@@ -873,7 +911,7 @@ def commercial_funnel_board(request):
         selected_funnel_id = str(selected_funnel.id)
         if selected_funnel not in funnels:
             funnels.append(selected_funnel)
-            funnels.sort(key=lambda item: item.name.casefold())
+            funnels.sort(key=_funnel_display_order_key)
     else:
         selected_funnel_id = ''
 
@@ -883,7 +921,8 @@ def commercial_funnel_board(request):
     )
     if selected_funnel:
         opportunities = opportunities.filter(commercial_funnel=selected_funnel)
-    opportunities = list(opportunities.order_by('stage__order', 'stage__name', 'next_follow_up_date', 'title'))
+    opportunities = list(opportunities.order_by('next_follow_up_date', 'title'))
+    opportunities.sort(key=lambda opportunity: (_stage_display_order_key(opportunity.stage), opportunity.next_follow_up_date, opportunity.title))
     columns = _kanban_columns_for_funnel(opportunities) if selected_funnel else []
     today = timezone.localdate()
     for opportunity in opportunities:
@@ -1062,7 +1101,7 @@ def funnel_type_delete(request, funnel_type_id):
 @user_passes_test(_admin_check)
 def funnel_stages_list(request):
     status = request.GET.get('status', 'ativas')
-    stages = FunnelStage.objects.all().order_by('order', 'name')
+    stages = order_commercial_stages(FunnelStage.objects.all())
     if status == 'inativas':
         stages = stages.filter(active=False)
     elif status != 'todas':
@@ -1706,7 +1745,7 @@ def commercial_opportunities_list(request):
         'opportunities': opportunities,
         'opportunity_count': len(opportunities),
         'funnel_types': FunnelType.objects.all().order_by('name'),
-        'stages': FunnelStage.objects.all().order_by('order', 'name'),
+        'stages': order_commercial_stages(FunnelStage.objects.all()),
         'funnels': CommercialFunnel.objects.select_related('funnel_model').order_by('name'),
         'status': status,
         'funnel_type_id': funnel_type_id,
