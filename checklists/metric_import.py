@@ -5,8 +5,8 @@ from decimal import Decimal
 from django.utils.text import slugify
 from openpyxl import load_workbook
 
-from .grafana_sync import sync_metric_area
-from .models import MetricType, Position
+from .grafana_sync import clear_metric_dashboards, sync_metric_area
+from .models import MetricRecord, MetricType, Position
 
 
 @dataclass
@@ -16,6 +16,9 @@ class MetricImportResult:
     skipped: int = 0
     errors: list[str] = field(default_factory=list)
     synced_areas: list[str] = field(default_factory=list)
+    cleared_dashboards: list[str] = field(default_factory=list)
+    deleted_metrics: int = 0
+    deleted_records: int = 0
 
 
 def _decimal_from_text(value):
@@ -132,11 +135,11 @@ def _row_dict(headers, row):
     return {str(header or '').strip(): value for header, value in zip(headers, row)}
 
 
-def import_metrics_xlsx(path, *, sync_grafana=True):
+def import_metrics_xlsx(path, *, sync_grafana=True, replace_existing=False):
     wb = load_workbook(path, data_only=True)
     ws = wb.active
     headers = [str(value or '').strip() for value in next(ws.iter_rows(min_row=1, max_row=1, values_only=True))]
-    required = {'Etapa', 'Descrição', 'Indicador Principal', 'Meta', 'Entregáveis', 'Pontos de Atenção'}
+    required = {'Etapa', 'Descrição', 'Indicador Principal', 'Meta'}
     missing = required - set(headers)
     if missing:
         raise ValueError(f'Planilha sem colunas obrigatórias: {", ".join(sorted(missing))}')
@@ -147,6 +150,12 @@ def import_metrics_xlsx(path, *, sync_grafana=True):
     )
     result = MetricImportResult()
     touched_areas = set()
+
+    if replace_existing:
+        if sync_grafana:
+            result.cleared_dashboards = clear_metric_dashboards()
+        result.deleted_records, _ = MetricRecord.objects.all().delete()
+        result.deleted_metrics, _ = MetricType.objects.all().delete()
 
     for row_number, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         data = _row_dict(headers, row)

@@ -136,6 +136,25 @@ class MetricImportForm(forms.Form):
         initial=True,
         widget=forms.CheckboxInput(),
     )
+    replace_existing = forms.BooleanField(
+        label='Substituir metas/indicadores cadastrados',
+        required=False,
+        initial=False,
+        widget=forms.CheckboxInput(),
+    )
+
+    def clean_file(self):
+        file = self.cleaned_data['file']
+        if not file.name.lower().endswith('.xlsx'):
+            raise forms.ValidationError('Envie um arquivo .xlsx.')
+        return file
+
+
+class NPSImportForm(forms.Form):
+    file = forms.FileField(
+        label='Planilha NPS',
+        widget=forms.FileInput(attrs={'class': 'input', 'accept': '.xlsx'}),
+    )
 
     def clean_file(self):
         file = self.cleaned_data['file']

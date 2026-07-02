@@ -1,5 +1,5 @@
 from decimal import Decimal
-from datetime import date, timedelta, time
+from datetime import date, datetime, timedelta, time
 from io import BytesIO, StringIO
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -13,15 +13,16 @@ from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 
 from .forms import CommercialOpportunityForm, CourseForm, add_months
 from .grafana_sync import build_metric_dashboard, choose_metric_visualization
 from .metric_import import infer_metric_metadata
+from .nps_import import import_nps_xlsx
 from .models import (
     CommercialFunnel, CommercialObjection, CommercialOpportunity, CommercialOpportunityFollowUp,
     CommercialOpportunityStageEvent, Course, FunnelModel, FunnelStage, FunnelType, Lesson, LessonFeedback,
-    MetricType, OpportunityOrigin, PedagogicalReportTask, PedagogicalStudent, Position,
+    MetricRecord, MetricType, NPSImport, NPSResponse, OpportunityOrigin, PedagogicalReportTask, PedagogicalStudent, Position,
     Room, SchoolHoliday, SponteSyncJob, TimeSlot, UserProfile,
 )
 from .sponte import (
@@ -99,6 +100,49 @@ class MetricGrafanaRulesTests(TestCase):
         self.assertEqual(dashboard['uid'], 'checklist-metricas-1-contato')
         self.assertEqual(dashboard['panels'][0]['title'], 'Leads por semana')
         self.assertEqual(panel_ids[metric.id], 1)
+
+    def test_simplified_metrics_xlsx_imports_without_optional_columns(self):
+        from .metric_import import import_metrics_xlsx
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.append(['Etapa', 'Descrição', 'Indicador Principal', 'Meta'])
+        sheet.append(['6 - Pós-Venda', 'Pesquisa', 'Pesquisa de NPS após relatório pedagógico enviado', '≥ 85% promotores'])
+        with NamedTemporaryFile(suffix='.xlsx') as tmp:
+            workbook.save(tmp.name)
+            result = import_metrics_xlsx(tmp.name, sync_grafana=False)
+
+        metric = MetricType.objects.get(name='Pesquisa de NPS após relatório pedagógico enviado')
+        self.assertEqual(result.created, 1)
+        self.assertEqual(metric.area, '6 - Pós-Venda')
+        self.assertEqual(metric.unit, '%')
+        self.assertEqual(metric.target_min, Decimal('85'))
+
+    def test_nps_import_creates_responses_and_metric_record(self):
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.append([
+            'ID',
+            'Hora de início',
+            'Hora de conclusão',
+            'Nome do(a) aluno(a)',
+            'Nome do(a) responsável',
+            'De forma geral, como você avalia este relatório pedagógico?',
+            'O que você mais gostou neste relatório?',
+        ])
+        sheet.append([1, datetime(2026, 5, 1, 10, 0), datetime(2026, 5, 1, 10, 5), 'Aluno A', 'Resp A', 5, 'Clareza'])
+        sheet.append([2, datetime(2026, 5, 2, 10, 0), datetime(2026, 5, 2, 10, 5), 'Aluno B', 'Resp B', 4, 'Objetivo'])
+        with NamedTemporaryFile(suffix='.xlsx') as tmp:
+            workbook.save(tmp.name)
+            result = import_nps_xlsx(tmp.name, source_file='nps.xlsx', sync_grafana=False)
+
+        batch = NPSImport.objects.get()
+        self.assertEqual(result.imported, 2)
+        self.assertEqual(batch.promoters, 1)
+        self.assertEqual(batch.passives, 1)
+        self.assertEqual(batch.promoter_percent, Decimal('50.00'))
+        self.assertEqual(NPSResponse.objects.count(), 2)
+        self.assertEqual(MetricRecord.objects.get().value, Decimal('50.00'))
 
 
 class PedagogicalSchedulingRulesTests(TestCase):

@@ -14,10 +14,19 @@ class Command(BaseCommand):
             action='store_true',
             help='Importa os dados sem tentar sincronizar o Grafana.',
         )
+        parser.add_argument(
+            '--replace',
+            action='store_true',
+            help='Apaga metas/indicadores cadastrados e dashboards automáticos antes de importar.',
+        )
 
     def handle(self, *args, **options):
         try:
-            result = import_metrics_xlsx(options['path'], sync_grafana=not options['no_grafana'])
+            result = import_metrics_xlsx(
+                options['path'],
+                sync_grafana=not options['no_grafana'],
+                replace_existing=options['replace'],
+            )
         except Exception as exc:
             raise CommandError(str(exc)) from exc
 
@@ -25,6 +34,11 @@ class Command(BaseCommand):
             'Importação concluída. '
             f'Criados: {result.created}. Atualizados: {result.updated}. Ignorados: {result.skipped}.'
         ))
+        if options['replace']:
+            self.stdout.write(
+                f'Removidos: {result.deleted_metrics} indicadores, '
+                f'{result.deleted_records} registros e {len(result.cleared_dashboards)} dashboard(s) Grafana.'
+            )
         log_activity(
             actor=None,
             action='Importação XLSX de metas e indicadores',
@@ -32,12 +46,17 @@ class Command(BaseCommand):
             object_label='Metas e Indicadores',
             details=(
                 f'Importação via comando: {result.created} criados, {result.updated} atualizados, '
-                f'{result.skipped} ignorados. Áreas sincronizadas: {", ".join(result.synced_areas) or "-"}'
+                f'{result.skipped} ignorados, {result.deleted_metrics} indicadores removidos, '
+                f'{result.deleted_records} registros removidos. '
+                f'Áreas sincronizadas: {", ".join(result.synced_areas) or "-"}'
             ),
             new_values={
                 'created': result.created,
                 'updated': result.updated,
                 'skipped': result.skipped,
+                'deleted_metrics': result.deleted_metrics,
+                'deleted_records': result.deleted_records,
+                'cleared_dashboards': result.cleared_dashboards,
                 'synced_areas': result.synced_areas,
                 'errors': result.errors[:20],
             },

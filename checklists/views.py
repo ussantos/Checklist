@@ -23,18 +23,19 @@ from .forms import (
     ActivityDeactivationSuggestionForm, ActivitySuggestionCreateForm,
     ActivitySuggestionReviewForm, AdminPasswordResetForm, BackupConfigurationForm,
     BackupRestorePasswordForm, BackupUploadForm, DailyNoteForm, EmployeeCreateForm, EmployeeUpdateForm,
-    MetricImportForm, MetricRecordForm, MetricTypeForm, OccurrenceUpdateForm, TaskTemplateForm,
+    MetricImportForm, MetricRecordForm, MetricTypeForm, NPSImportForm, OccurrenceUpdateForm, TaskTemplateForm,
 )
 from .models import (
     ActivityLog, ActivitySuggestion, BackupConfiguration, ChecklistOccurrence,
     ChecklistOccurrenceStatusEvent, DailyNote,
-    MetricRecord, MetricType, Position, TaskTemplate, UserProfile,
+    MetricRecord, MetricType, NPSImport, NPSResponse, Position, TaskTemplate, UserProfile,
 )
 from .activity_import import (
     build_activity_import_template, import_activity_rows, parse_activity_import,
 )
 from .grafana_sync import sync_all_metric_dashboards, sync_metric_area
 from .metric_import import import_metrics_xlsx
+from .nps_import import import_nps_xlsx
 from .services import (
     absence_for_user_on_date, create_due_occurrences, create_occurrences_for_positions,
     filter_absence_ignored_occurrences, get_user_position, is_admin_user,
@@ -1426,6 +1427,7 @@ def metric_types_import_xlsx(request):
         result = import_metrics_xlsx(
             tmp_path,
             sync_grafana=form.cleaned_data.get('sync_grafana', True),
+            replace_existing=form.cleaned_data.get('replace_existing', False),
         )
     except Exception as exc:
         messages.error(request, f'Importação não concluída: {exc}')
@@ -1441,12 +1443,17 @@ def metric_types_import_xlsx(request):
         object_label='Metas e Indicadores',
         details=(
             f'Importação XLSX: {result.created} criados, {result.updated} atualizados, '
-            f'{result.skipped} ignorados. Áreas sincronizadas: {", ".join(result.synced_areas) or "-"}'
+            f'{result.skipped} ignorados, {result.deleted_metrics} indicadores removidos, '
+            f'{result.deleted_records} registros removidos. '
+            f'Áreas sincronizadas: {", ".join(result.synced_areas) or "-"}'
         ),
         new_values={
             'created': result.created,
             'updated': result.updated,
             'skipped': result.skipped,
+            'deleted_metrics': result.deleted_metrics,
+            'deleted_records': result.deleted_records,
+            'cleared_dashboards': result.cleared_dashboards,
             'synced_areas': result.synced_areas,
             'errors': result.errors[:20],
         },
@@ -1457,6 +1464,72 @@ def metric_types_import_xlsx(request):
     for error in result.errors[:5]:
         messages.warning(request, error)
     return redirect('metric_types_list')
+
+
+@user_passes_test(_admin_check)
+def nps_dashboard(request):
+    if request.method == 'POST':
+        form = NPSImportForm(request.POST, request.FILES)
+        if not form.is_valid():
+            for errors in form.errors.values():
+                for error in errors:
+                    messages.error(request, error)
+            return redirect('nps_dashboard')
+
+        uploaded_file = form.cleaned_data['file']
+        tmp_path = ''
+        try:
+            with NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+                tmp_path = tmp.name
+                for chunk in uploaded_file.chunks():
+                    tmp.write(chunk)
+            result = import_nps_xlsx(
+                tmp_path,
+                imported_by=request.user,
+                source_file=uploaded_file.name,
+                sync_grafana=True,
+            )
+        except Exception as exc:
+            messages.error(request, f'Importação NPS não concluída: {exc}')
+            return redirect('nps_dashboard')
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+        log_activity(
+            actor=request.user,
+            action='Importação XLSX de NPS',
+            object_type='NPSImport',
+            object_id=str(result.batch.pk if result.batch else ''),
+            object_label=uploaded_file.name,
+            details=(
+                f'NPS importado: {result.imported} respostas válidas, {result.skipped} ignoradas, '
+                f'{result.batch.promoter_percent if result.batch else 0}% promotores.'
+            ),
+            new_values={
+                'imported': result.imported,
+                'skipped': result.skipped,
+                'errors': result.errors[:20],
+                'metric_record': result.metric_record.pk if result.metric_record else None,
+            },
+        )
+        messages.success(request, f'NPS importado: {result.imported} resposta(s) válida(s).')
+        if result.skipped:
+            messages.warning(request, f'{result.skipped} linha(s) ignorada(s).')
+        for error in result.errors[:5]:
+            messages.warning(request, error)
+        return redirect('nps_dashboard')
+
+    imports = NPSImport.objects.select_related('imported_by', 'metric_record').order_by('-imported_at')
+    latest = imports.first()
+    responses = NPSResponse.objects.filter(import_batch=latest).order_by('-completed_at', 'student_name')[:100] if latest else []
+    return render(request, 'checklists/nps_dashboard.html', {
+        'form': NPSImportForm(),
+        'imports': imports[:30],
+        'latest': latest,
+        'responses': responses,
+        'is_admin': True,
+    })
 
 
 @user_passes_test(_admin_check)

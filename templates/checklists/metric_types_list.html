@@ -28,6 +28,7 @@
     {% csrf_token %}
     <label>{{ import_form.file.label }}{{ import_form.file }}</label>
     <label class="checkbox-line">{{ import_form.sync_grafana }} {{ import_form.sync_grafana.label }}</label>
+    <label class="checkbox-line">{{ import_form.replace_existing }} {{ import_form.replace_existing.label }}</label>
     <button class="btn primary" type="submit">Importar e sincronizar</button>
   </form>
 </section>

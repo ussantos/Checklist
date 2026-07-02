@@ -285,6 +285,22 @@ def _delete_dashboard(uid):
             raise
 
 
+def clear_metric_dashboards():
+    """Remove dashboards automáticos de metas/indicadores do Grafana."""
+    removed = []
+    if not settings.GRAFANA_SYNC_ENABLED:
+        return removed
+
+    dashboards = _grafana_request('GET', '/api/search?tag=metas-indicadores')
+    for item in dashboards:
+        uid = item.get('uid')
+        if not uid:
+            continue
+        _delete_dashboard(uid)
+        removed.append(uid)
+    return removed
+
+
 def _mark_area_failed(area, error):
     MetricType.objects.filter(area=area).update(
         grafana_sync_status=MetricType.GRAFANA_FAILED,

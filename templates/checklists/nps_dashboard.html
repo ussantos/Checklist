@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <h1>NPS</h1>
+    <p class="muted">Importe respostas de pesquisa para alimentar a meta de promotores no Grafana.</p>
+  </div>
+  <a class="btn" href="{% url 'metric_types_list' %}">Metas e Indicadores</a>
+</div>
+
+<section class="panel">
+  <h2>Importar pesquisa</h2>
+  <form method="post" enctype="multipart/form-data" class="form-grid">
+    {% csrf_token %}
+    <label>{{ form.file.label }}{{ form.file }}</label>
+    <button class="btn primary" type="submit">Importar NPS</button>
+  </form>
+</section>
+
+{% if latest %}
+<section class="grid">
+  <article class="panel">
+    <h2>Último NPS</h2>
+    <div class="info-grid">
+      <div><span>Promotores</span><strong>{{ latest.promoter_percent|floatformat:2 }}%</strong></div>
+      <div><span>NPS líquido</span><strong>{{ latest.nps_score|floatformat:2 }}</strong></div>
+      <div><span>Respostas</span><strong>{{ latest.total_responses }}</strong></div>
+      <div><span>Período</span><strong>{% if latest.period_start %}{{ latest.period_start|date:"d/m/Y" }} a {{ latest.period_end|date:"d/m/Y" }}{% else %}-{% endif %}</strong></div>
+    </div>
+  </article>
+  <article class="panel">
+    <h2>Composição</h2>
+    <div class="info-grid">
+      <div><span>Promotores</span><strong>{{ latest.promoters }}</strong></div>
+      <div><span>Neutros/passivos</span><strong>{{ latest.passives }}</strong></div>
+      <div><span>Detratores</span><strong>{{ latest.detractors }}</strong></div>
+      <div><span>Registro Grafana</span><strong>{% if latest.metric_record_id %}OK{% else %}-{% endif %}</strong></div>
+    </div>
+  </article>
+</section>
+
+<section class="panel">
+  <h2>Respostas do último lote</h2>
+  <table class="panel-table">
+    <thead>
+      <tr>
+        <th>Data</th>
+        <th>Aluno</th>
+        <th>Responsável</th>
+        <th>Nota</th>
+        <th>Categoria</th>
+        <th>Comentário</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for response in responses %}
+      <tr>
+        <td>{% if response.completed_at %}{{ response.completed_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</td>
+        <td>{{ response.student_name|default:"-" }}</td>
+        <td>{{ response.responsible_name|default:"-" }}</td>
+        <td>{{ response.score_0_10|floatformat:1 }}</td>
+        <td>{{ response.get_category_display }}</td>
+        <td>{{ response.comment|default:"-"|truncatechars:90 }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6">Nenhuma resposta importada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Histórico de importações</h2>
+  <table class="panel-table">
+    <thead>
+      <tr>
+        <th>Data</th>
+        <th>Arquivo</th>
+        <th>Respostas</th>
+        <th>Promotores</th>
+        <th>NPS</th>
+        <th>Usuário</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in imports %}
+      <tr>
+        <td>{{ item.imported_at|date:"d/m/Y H:i" }}</td>
+        <td>{{ item.source_file }}</td>
+        <td>{{ item.total_responses }}</td>
+        <td>{{ item.promoter_percent|floatformat:2 }}%</td>
+        <td>{{ item.nps_score|floatformat:2 }}</td>
+        <td>{{ item.imported_by.get_full_name|default:item.imported_by.username|default:"-" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="6">Nenhuma importação NPS cadastrada.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

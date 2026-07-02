@@ -56,6 +56,7 @@ urlpatterns = [
     path('acompanhamento/indicadores/', views.commercial_indicators, name='commercial_indicators'),
     path('acompanhamento/metas/', views.commercial_goals, name='commercial_goals'),
     path('acompanhamento/metas-indicadores/', views.metric_types_list, name='metric_types_list'),
+    path('acompanhamento/nps/', views.nps_dashboard, name='nps_dashboard'),
     path('acompanhamento/metas-indicadores/novo/', views.metric_type_create, name='metric_type_create'),
     path('acompanhamento/metas-indicadores/importar-xlsx/', views.metric_types_import_xlsx, name='metric_types_import_xlsx'),
     path('acompanhamento/metas-indicadores/sincronizar-grafana/', views.metric_types_sync_grafana, name='metric_types_sync_grafana'),

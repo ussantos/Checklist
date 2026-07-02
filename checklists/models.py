@@ -1409,6 +1409,65 @@ class MetricRecord(models.Model):
         return f'{self.date} - {self.metric.name}: {self.value}'
 
 
+class NPSImport(models.Model):
+    """Lote de respostas NPS importado por planilha."""
+
+    source_file = models.CharField('Arquivo de origem', max_length=255)
+    imported_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    imported_at = models.DateTimeField('Importado em', auto_now_add=True)
+    period_start = models.DateField('Início do período', null=True, blank=True)
+    period_end = models.DateField('Fim do período', null=True, blank=True)
+    total_responses = models.PositiveIntegerField('Respostas válidas', default=0)
+    promoters = models.PositiveIntegerField('Promotores', default=0)
+    passives = models.PositiveIntegerField('Neutros/passivos', default=0)
+    detractors = models.PositiveIntegerField('Detratores', default=0)
+    promoter_percent = models.DecimalField('% de promotores', max_digits=6, decimal_places=2, default=0)
+    nps_score = models.DecimalField('NPS', max_digits=6, decimal_places=2, default=0)
+    metric_record = models.ForeignKey(MetricRecord, on_delete=models.SET_NULL, null=True, blank=True, related_name='nps_imports')
+
+    class Meta:
+        ordering = ['-imported_at']
+        verbose_name = 'Importação NPS'
+        verbose_name_plural = 'Importações NPS'
+
+    def __str__(self):
+        return f'NPS {self.imported_at:%d/%m/%Y %H:%M}'
+
+
+class NPSResponse(models.Model):
+    """Resposta individual de pesquisa NPS preservada para auditoria."""
+
+    CATEGORY_PROMOTER = 'PROMOTER'
+    CATEGORY_PASSIVE = 'PASSIVE'
+    CATEGORY_DETRACTOR = 'DETRACTOR'
+    CATEGORY_CHOICES = [
+        (CATEGORY_PROMOTER, 'Promotor'),
+        (CATEGORY_PASSIVE, 'Neutro/passivo'),
+        (CATEGORY_DETRACTOR, 'Detrator'),
+    ]
+
+    import_batch = models.ForeignKey(NPSImport, on_delete=models.CASCADE, related_name='responses')
+    external_id = models.CharField('ID externo', max_length=80, blank=True)
+    started_at = models.DateTimeField('Início da resposta', null=True, blank=True)
+    completed_at = models.DateTimeField('Conclusão da resposta', null=True, blank=True)
+    student_name = models.CharField('Aluno', max_length=180, blank=True)
+    responsible_name = models.CharField('Responsável', max_length=180, blank=True)
+    original_rating = models.DecimalField('Nota original', max_digits=5, decimal_places=2, null=True, blank=True)
+    score_0_10 = models.DecimalField('Nota normalizada 0-10', max_digits=5, decimal_places=2)
+    category = models.CharField('Categoria', max_length=20, choices=CATEGORY_CHOICES)
+    comment = models.TextField('Comentário', blank=True)
+    raw_data = models.JSONField('Linha original', default=dict, blank=True)
+    created_at = models.DateTimeField('Criado em', auto_now_add=True)
+
+    class Meta:
+        ordering = ['-completed_at', 'student_name']
+        verbose_name = 'Resposta NPS'
+        verbose_name_plural = 'Respostas NPS'
+
+    def __str__(self):
+        return f'{self.student_name or "Resposta"} - {self.score_0_10}'
+
+
 class BackupConfiguration(models.Model):
     """Configuracao operacional de backup em nuvem via rclone."""
 
