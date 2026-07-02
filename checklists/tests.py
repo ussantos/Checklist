@@ -16,7 +16,10 @@ from django.utils import timezone
 from openpyxl import Workbook, load_workbook
 
 from .forms import CommercialOpportunityForm, CourseForm, add_months
-from .grafana_sync import build_metric_dashboard, choose_metric_visualization
+from .grafana_sync import (
+    HISTORICAL_METRICS_DASHBOARD_UID, build_historical_metric_dashboard,
+    build_metric_dashboard, choose_metric_visualization,
+)
 from .metric_import import infer_metric_metadata
 from .metric_records import refresh_commercial_metric_records
 from .nps_import import import_nps_xlsx
@@ -102,6 +105,36 @@ class MetricGrafanaRulesTests(TestCase):
         self.assertEqual(dashboard['panels'][0]['title'], 'Leads por semana')
         self.assertEqual(panel_ids[metric.id], 1)
 
+    def test_historical_dashboard_builds_multi_indicator_comparison(self):
+        won = MetricType.objects.create(
+            code='atendente-comercial-ganhas',
+            name='Oportunidades ganhas',
+            area='5 - Ganha',
+            position=self.position,
+            frequency=MetricType.FREQ_MONTHLY,
+            unit='un',
+        )
+        lost = MetricType.objects.create(
+            code='atendente-comercial-perdidas',
+            name='Oportunidades perdidas',
+            area='5 - Perdido',
+            position=self.position,
+            frequency=MetricType.FREQ_MONTHLY,
+            unit='un',
+        )
+
+        dashboard = build_historical_metric_dashboard([won, lost])
+
+        self.assertEqual(dashboard['uid'], HISTORICAL_METRICS_DASHBOARD_UID)
+        variables = {item['name']: item for item in dashboard['templating']['list']}
+        self.assertTrue(variables['indicadores']['multi'])
+        self.assertTrue(variables['indicadores']['includeAll'])
+        self.assertEqual(variables['indicadores']['allValue'], '-1')
+        sql = dashboard['panels'][0]['targets'][0]['rawSql']
+        self.assertIn('checklists_metricrecord', sql)
+        self.assertIn('m.id IN (${indicadores:csv})', sql)
+        self.assertIn("date_trunc('${periodo:raw}'", sql)
+
     def test_refresh_metric_records_materializes_current_week_won_records(self):
         metric = MetricType.objects.create(
             code='atendente-comercial-matriculas',
@@ -133,6 +166,44 @@ class MetricGrafanaRulesTests(TestCase):
 
         record = MetricRecord.objects.get(metric=metric)
         self.assertLessEqual(record.date, timezone.localdate())
+        self.assertEqual(record.value, Decimal('1.00'))
+
+    def test_refresh_metric_records_materializes_lost_opportunity_records(self):
+        metric = MetricType.objects.create(
+            code='atendente-comercial-perdidas',
+            name='Oportunidades perdidas por semana/mês',
+            area='5 - Perdido',
+            position=self.position,
+            frequency=MetricType.FREQ_WEEKLY,
+            unit='un',
+            monthly_target=Decimal('0'),
+        )
+        funnel_model = FunnelModel.objects.create(name='Modelo perda', active=True)
+        funnel = CommercialFunnel.objects.create(name='Interessados', funnel_model=funnel_model, active=True)
+        contact_stage = FunnelStage.objects.create(code='1-contato-perda-teste', name='1 - Contato')
+        lost_stage = FunnelStage.objects.create(code='5-perdido-teste', name='5 - Perdido')
+        opportunity = CommercialOpportunity.objects.create(
+            title='07-2026-0002',
+            commercial_funnel=funnel,
+            stage=lost_stage,
+            contact_name='Responsável Perdido',
+            contact_phone='21999990001',
+            next_follow_up_date=timezone.localdate(),
+        )
+        CommercialOpportunityStageEvent.objects.create(
+            opportunity=opportunity,
+            new_stage=contact_stage,
+            new_stage_label='1 - Contato',
+        )
+        CommercialOpportunityStageEvent.objects.create(
+            opportunity=opportunity,
+            new_stage=lost_stage,
+            new_stage_label='5 - Perdido',
+        )
+
+        refresh_commercial_metric_records()
+
+        record = MetricRecord.objects.get(metric=metric)
         self.assertEqual(record.value, Decimal('1.00'))
 
     @override_settings(ALLOWED_HOSTS=['testserver'])

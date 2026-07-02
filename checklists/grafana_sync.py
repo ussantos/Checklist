@@ -17,6 +17,9 @@ from .models import MetricType
 logger = logging.getLogger(__name__)
 
 
+HISTORICAL_METRICS_DASHBOARD_UID = 'checklist-historico-indicadores'
+
+
 @dataclass
 class GrafanaSyncResult:
     ok: bool
@@ -213,6 +216,10 @@ def _panel(metric, panel_id, x, y):
     }
 
 
+def _dashboard_datasource():
+    return {'type': 'postgres', 'uid': settings.GRAFANA_DATASOURCE_UID}
+
+
 def build_metric_dashboard(area, metrics):
     panels = []
     panel_ids = {}
@@ -247,6 +254,158 @@ def build_metric_dashboard(area, metrics):
         'panels': panels,
     }
     return dashboard, panel_ids
+
+
+def _historical_metric_timeseries_sql():
+    return """
+SELECT
+  date_trunc('${periodo:raw}', r.date::timestamp) AS "time",
+  CONCAT(COALESCE(p.name, 'Geral'), ' / ', m.area, ' / ', m.name) AS metric,
+  SUM(r.value)::double precision AS value
+FROM checklists_metricrecord r
+JOIN checklists_metrictype m ON m.id = r.metric_id
+LEFT JOIN checklists_position p ON p.id = r.position_id
+WHERE $__timeFilter(r.date::timestamp)
+  AND m.active = true
+  AND (-1 IN (${indicadores:csv}) OR m.id IN (${indicadores:csv}))
+GROUP BY 1, 2
+ORDER BY 1, 2
+""".strip()
+
+
+def _historical_metric_table_sql():
+    return """
+SELECT
+  COALESCE(p.name, 'Geral') AS "Tipo/Cargo",
+  m.area AS "Área",
+  m.name AS "Indicador",
+  MIN(r.date) AS "Primeiro registro",
+  MAX(r.date) AS "Último registro",
+  SUM(r.value)::numeric AS "Realizado no período",
+  COALESCE(MAX(m.target_text), '') AS "Meta textual",
+  COALESCE(MAX(m.unit), '') AS "Unidade"
+FROM checklists_metricrecord r
+JOIN checklists_metrictype m ON m.id = r.metric_id
+LEFT JOIN checklists_position p ON p.id = r.position_id
+WHERE $__timeFilter(r.date::timestamp)
+  AND m.active = true
+  AND (-1 IN (${indicadores:csv}) OR m.id IN (${indicadores:csv}))
+GROUP BY p.name, m.area, m.name
+ORDER BY m.area, m.name, p.name
+""".strip()
+
+
+def build_historical_metric_dashboard(metrics):
+    datasource = _dashboard_datasource()
+    metric_variable_query = """
+SELECT
+  m.id AS __value,
+  CONCAT(m.area, ' / ', COALESCE(p.name, 'Geral'), ' / ', m.name) AS __text
+FROM checklists_metrictype m
+LEFT JOIN checklists_position p ON p.id = m.position_id
+WHERE m.active = true
+ORDER BY m.area, COALESCE(p.name, 'Geral'), m.name
+""".strip()
+    return {
+        'uid': HISTORICAL_METRICS_DASHBOARD_UID,
+        'title': 'Checklist - Histórico Consolidado de Indicadores',
+        'tags': ['checklist', 'automatico', 'metas-indicadores', 'historico-indicadores'],
+        'timezone': 'browser',
+        'schemaVersion': 39,
+        'refresh': '5m',
+        'time': {'from': 'now-180d', 'to': 'now'},
+        'templating': {
+            'list': [
+                {
+                    'name': 'periodo',
+                    'type': 'custom',
+                    'label': 'Agrupar por',
+                    'query': 'day,week,month,year',
+                    'current': {'selected': True, 'text': 'month', 'value': 'month'},
+                    'hide': 0,
+                },
+                {
+                    'name': 'indicadores',
+                    'type': 'query',
+                    'label': 'Indicadores',
+                    'datasource': datasource,
+                    'definition': metric_variable_query,
+                    'query': metric_variable_query,
+                    'refresh': 1,
+                    'sort': 1,
+                    'multi': True,
+                    'includeAll': True,
+                    'allValue': '-1',
+                    'current': {'selected': True, 'text': 'Todos', 'value': ['$__all']},
+                    'hide': 0,
+                },
+            ]
+        },
+        'panels': [
+            {
+                'id': 1,
+                'type': 'timeseries',
+                'title': 'Evolução histórica dos indicadores selecionados',
+                'description': (
+                    'Use a variável Indicadores para marcar quais séries comparar. '
+                    'Exemplo: oportunidades ganhas x oportunidades perdidas ao longo do tempo.'
+                ),
+                'datasource': datasource,
+                'gridPos': {'h': 12, 'w': 24, 'x': 0, 'y': 0},
+                'fieldConfig': {
+                    'defaults': {
+                        'unit': 'short',
+                        'custom': {
+                            'drawStyle': 'line',
+                            'lineInterpolation': 'smooth',
+                            'lineWidth': 2,
+                            'fillOpacity': 12,
+                            'showPoints': 'auto',
+                        },
+                    },
+                    'overrides': [],
+                },
+                'options': {
+                    'legend': {'displayMode': 'table', 'placement': 'bottom', 'calcs': ['lastNotNull', 'sum']},
+                    'tooltip': {'mode': 'multi', 'sort': 'desc'},
+                },
+                'targets': [
+                    {
+                        'datasource': datasource,
+                        'format': 'time_series',
+                        'rawQuery': True,
+                        'rawSql': _historical_metric_timeseries_sql(),
+                        'refId': 'A',
+                    }
+                ],
+            },
+            {
+                'id': 2,
+                'type': 'table',
+                'title': 'Resumo dos indicadores no período',
+                'datasource': datasource,
+                'gridPos': {'h': 9, 'w': 24, 'x': 0, 'y': 12},
+                'fieldConfig': {
+                    'defaults': {'unit': 'short'},
+                    'overrides': [],
+                },
+                'options': {
+                    'showHeader': True,
+                    'cellHeight': 'sm',
+                    'footer': {'show': True, 'reducer': ['sum'], 'fields': ['Realizado no período']},
+                },
+                'targets': [
+                    {
+                        'datasource': datasource,
+                        'format': 'table',
+                        'rawQuery': True,
+                        'rawSql': _historical_metric_table_sql(),
+                        'refId': 'A',
+                    }
+                ],
+            },
+        ],
+    }
 
 
 def _grafana_request(method, path, payload=None):
@@ -375,6 +534,30 @@ def sync_metric(metric):
     return sync_metric_area(metric.area)
 
 
+def sync_historical_metric_dashboard():
+    uid = HISTORICAL_METRICS_DASHBOARD_UID
+    metrics = list(
+        MetricType.objects.filter(active=True)
+        .select_related('position')
+        .order_by('area', 'position__name', 'name')
+    )
+
+    if not settings.GRAFANA_SYNC_ENABLED:
+        return GrafanaSyncResult(False, 'Sincronização com Grafana desativada.', uid)
+
+    try:
+        if not metrics:
+            _delete_dashboard(uid)
+            return GrafanaSyncResult(True, f'Dashboard {uid} removido ou já ausente.', uid)
+        _post_dashboard(build_historical_metric_dashboard(metrics))
+        return GrafanaSyncResult(True, f'Dashboard {uid} sincronizado.', uid)
+    except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
+        logger.warning('Falha ao sincronizar dashboard Grafana %s: %s', uid, exc)
+        return GrafanaSyncResult(False, 'Falha ao sincronizar dashboard histórico Grafana.', uid, str(exc))
+
+
 def sync_all_metric_dashboards():
     areas = list(MetricType.objects.order_by('area').values_list('area', flat=True).distinct())
-    return [sync_metric_area(area) for area in areas]
+    results = [sync_metric_area(area) for area in areas]
+    results.append(sync_historical_metric_dashboard())
+    return results

@@ -125,6 +125,8 @@ def _metric_kind(metric):
         return 'google_review'
     if 'matricula' in text or 'matriculas' in text or 'ganha' in text:
         return 'won'
+    if 'perdida' in text or 'perdido' in text:
+        return 'lost'
     if 'compareceu' in text or 'follow-up' in text or 'follow up' in text:
         return 'followup_or_beyond'
     if 'aula experimental' in text:
@@ -142,6 +144,8 @@ def _event_matches(kind, label):
         return order >= 4 and not _is_lost(label)
     if kind in {'won', 'google_review'}:
         return _is_won(label)
+    if kind == 'lost':
+        return _is_lost(label)
     if kind == 'followup':
         return order == 4 and not _is_lost(label)
     if kind == 'stage_count':

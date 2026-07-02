@@ -217,6 +217,8 @@ O Docker Compose também sobe um Grafana para validação e criação futura de 
 
 O módulo **Metas e Indicadores** cria e atualiza dashboards automaticamente via API do Grafana. Administradores devem cadastrar ou importar indicadores no Checklist; não é necessário criar painéis manualmente no Grafana.
 
+Além dos dashboards por área/etapa, o Grafana recebe o dashboard **Checklist - Histórico Consolidado de Indicadores**, que permite selecionar múltiplos indicadores e compará-los ao longo do tempo.
+
 Variáveis no `.env`:
 
 ```env
@@ -540,6 +542,8 @@ http://SERVER_IP:8000
 Docker Compose also starts Grafana for validation and future dashboard work. By default it is published only on `127.0.0.1:3000`, meaning it is accessible locally on the machine/server running Compose.
 
 The **Goals and Indicators** module creates and updates dashboards automatically through the Grafana API. Administrators should create or import indicators in Checklist; no Grafana panel should be created manually.
+
+In addition to the area/stage dashboards, Grafana receives the **Checklist - Histórico Consolidado de Indicadores** dashboard, which lets administrators select multiple indicators and compare them over time.
 
 Variables in `.env`:
 
